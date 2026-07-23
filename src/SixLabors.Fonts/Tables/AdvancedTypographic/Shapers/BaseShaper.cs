@@ -79,10 +79,12 @@ internal abstract class BaseShaper
     protected abstract void AssignFeatures(GlyphShapingCollection collection, int index, int count);
 
     /// <summary>
-    /// Gets the ordered collection of shaping stages for this shaper.
+    /// Gets the ordered collection of shaping stages for this shaper. The concrete
+    /// list type lets the per-section stage walk enumerate without interface
+    /// dispatch or a boxed enumerator.
     /// </summary>
     /// <returns>The shaping stages.</returns>
-    public abstract IEnumerable<ShapingStage> GetShapingStages();
+    public abstract List<ShapingStage> GetShapingStages();
 
     /// <summary>
     /// Recalculates the count when the collection size changes during shaping.

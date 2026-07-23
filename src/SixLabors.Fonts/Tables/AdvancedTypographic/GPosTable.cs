@@ -228,7 +228,7 @@ internal class GPosTable : Table
 
             // Plan positioning features for each glyph.
             shaper.Plan(collection, index, count);
-            IEnumerable<ShapingStage> shapingStages = shaper.GetShapingStages();
+            List<ShapingStage> shapingStages = shaper.GetShapingStages();
             SkippingGlyphIterator iterator = new(fontMetrics, collection, index, default, 0);
             foreach (ShapingStage stage in shapingStages)
             {

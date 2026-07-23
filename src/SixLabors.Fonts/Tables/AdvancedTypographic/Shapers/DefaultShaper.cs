@@ -80,8 +80,12 @@ internal class DefaultShaper : BaseShaper
     /// <summary>The solidus (slash) code point (U+002F).</summary>
     private static readonly CodePoint Slash = new(0x002F);
 
-    /// <summary>The set of shaping stages accumulated during feature planning.</summary>
-    private readonly HashSet<ShapingStage> shapingStages = [];
+    /// <summary>
+    /// The shaping stages accumulated during feature planning, in registration order.
+    /// Stage counts are small (≤ ~16), so duplicate suppression scans the list by tag;
+    /// this keeps application order deterministic and avoids per-call hashing.
+    /// </summary>
+    private readonly List<ShapingStage> shapingStages = new(16);
 
     /// <summary>The kerning mode from the text options.</summary>
     private readonly KerningMode kerningMode;
@@ -239,11 +243,22 @@ internal class DefaultShaper : BaseShaper
 
         collection.AddShapingFeatureRange(index, count, new TagEntry(feature, enabled));
 
-        this.shapingStages.Add(new ShapingStage(feature, preAction, postAction));
+        // First registration wins, matching the previous set semantics: a duplicate
+        // tag keeps the originally supplied pre and post actions.
+        List<ShapingStage> stages = this.shapingStages;
+        for (int i = 0; i < stages.Count; i++)
+        {
+            if (stages[i].FeatureTag == feature)
+            {
+                return;
+            }
+        }
+
+        stages.Add(new ShapingStage(feature, preAction, postAction));
     }
 
     /// <inheritdoc />
-    public override IEnumerable<ShapingStage> GetShapingStages() => this.shapingStages;
+    public override List<ShapingStage> GetShapingStages() => this.shapingStages;
 
     /// <summary>
     /// Assigns fractional feature tags (numerator, denominator, fraction) to glyphs forming fraction sequences.

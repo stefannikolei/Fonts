@@ -205,7 +205,7 @@ internal class GSubTable : Table
             i += delta;
             count += delta;
 
-            IEnumerable<ShapingStage> stages = shaper.GetShapingStages();
+            List<ShapingStage> stages = shaper.GetShapingStages();
             SkippingGlyphIterator iterator = new(fontMetrics, collection, index, default, 0);
             foreach (ShapingStage stage in stages)
             {

@@ -248,29 +248,32 @@ internal sealed class TextLine
     /// <summary>
     /// Adds an inline placeholder entry at an existing source codepoint position without consuming source text.
     /// </summary>
-    /// <param name="placeholder">The positioned placeholder glyph data.</param>
+    /// <param name="placeholderGlyph">The placeholder glyph metrics.</param>
+    /// <param name="run">The shaped run carrying the placeholder's font, point size, text run, and bidi run.</param>
+    /// <param name="offset">The source codepoint index at the placeholder insertion point.</param>
     /// <param name="graphemeIndex">The source grapheme index at the placeholder insertion point.</param>
     /// <param name="stringIndex">The source UTF-16 index at the placeholder insertion point.</param>
     /// <param name="isHorizontalLayout"><see langword="true"/> when the current layout advances horizontally.</param>
     /// <param name="isVerticalMixedLayout"><see langword="true"/> when the current layout is vertical mixed.</param>
     /// <param name="lineSpacing">The line-spacing factor to apply to placeholder line height.</param>
     public void AddPlaceholder(
-        GlyphPositioningCollection.GlyphPositioningData placeholder,
+        FontGlyphMetrics placeholderGlyph,
+        in ShapedTextRun run,
+        int offset,
         int graphemeIndex,
         int stringIndex,
         bool isHorizontalLayout,
         bool isVerticalMixedLayout,
         float lineSpacing)
     {
-        FontGlyphMetrics placeholderGlyph = placeholder.Metrics;
         bool isPlaceholderHorizontal = isHorizontalLayout || isVerticalMixedLayout;
         float placeholderAdvance = isPlaceholderHorizontal
             ? placeholderGlyph.AdvanceWidth
             : placeholderGlyph.AdvanceHeight;
 
         Vector2 placeholderScale = new(
-            placeholder.PointSize / placeholderGlyph.ScaleFactor.X,
-            placeholder.PointSize / placeholderGlyph.ScaleFactor.Y);
+            run.PointSize / placeholderGlyph.ScaleFactor.X,
+            run.PointSize / placeholderGlyph.ScaleFactor.Y);
 
         placeholderAdvance *= isPlaceholderHorizontal ? placeholderScale.X : placeholderScale.Y;
 
@@ -278,7 +281,7 @@ internal sealed class TextLine
             ? GlyphLayoutMode.Horizontal
             : GlyphLayoutMode.Vertical;
 
-        FontRectangle placeholderBox = placeholderGlyph.GetBoundingBox(placeholderMode, Vector2.Zero, placeholder.PointSize, placeholder.Data.TextRun, Vector2.Zero);
+        FontRectangle placeholderBox = placeholderGlyph.GetBoundingBox(placeholderMode, Vector2.Zero, run.PointSize, run.TextRun, Vector2.Zero);
 
         IMetricsHeader metricsHeader = isPlaceholderHorizontal
             ? placeholderGlyph.FontMetrics.HorizontalMetrics
@@ -288,7 +291,7 @@ internal sealed class TextLine
         // normal ascender/descender band. Keep the run font line-box model as
         // the baseline contribution, then expand only the side the placeholder
         // actually overhangs so following lines reserve enough space.
-        float placeholderScaleY = placeholder.PointSize / placeholderGlyph.ScaleFactor.Y;
+        float placeholderScaleY = run.PointSize / placeholderGlyph.ScaleFactor.Y;
         float placeholderLineHeight = placeholderGlyph.UnitsPerEm * placeholderScaleY;
         float placeholderDelta = ((metricsHeader.LineHeight * placeholderScaleY) - placeholderLineHeight) * .5F;
         float placeholderAscender = (metricsHeader.Ascender * placeholderScaleY) - placeholderDelta;
@@ -302,18 +305,18 @@ internal sealed class TextLine
         // Placeholders share the source codepoint offset at their insertion point,
         // but they do not consume source grapheme, codepoint, or UTF-16 indexes.
         this.Add(
-            [new(placeholderGlyph, placeholderGlyph.AdvanceWidth, placeholderGlyph.AdvanceHeight, Vector2.Zero, placeholder.Data.TextRun)],
-            placeholder.Font,
-            placeholder.PointSize,
+            [new(placeholderGlyph, placeholderGlyph.AdvanceWidth, placeholderGlyph.AdvanceHeight, Vector2.Zero, run.TextRun)],
+            run.Font,
+            run.PointSize,
             placeholderAdvance,
             placeholderLineHeight,
             placeholderAscender,
             placeholderDescender,
             placeholderDelta,
-            placeholder.Data.BidiRun,
+            run.BidiRun,
             graphemeIndex,
             true,
-            placeholder.Offset,
+            offset,
             0,
             false,
             false,

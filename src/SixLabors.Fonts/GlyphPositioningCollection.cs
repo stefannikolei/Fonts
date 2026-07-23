@@ -70,72 +70,6 @@ internal sealed class GlyphPositioningCollection : GlyphShapingCollection
     }
 
     /// <summary>
-    /// Gets the glyph metrics at the given codepoint offset.
-    /// </summary>
-    /// <param name="offset">The zero-based index within the input codepoint collection.</param>
-    /// <param name="startIndex">
-    /// The index within the glyph list to start searching from. Updated to the position of the match
-    /// so that subsequent calls with increasing offsets avoid rescanning from the beginning.
-    /// </param>
-    /// <param name="pointSize">The font size in PT units of the font containing this glyph.</param>
-    /// <param name="isSubstituted">Whether the glyph is the result of a substitution.</param>
-    /// <param name="isVerticalSubstitution">Whether the glyph is the result of a vertical substitution.</param>
-    /// <param name="isDecomposed">Whether the glyph is the result of a decomposition substitution.</param>
-    /// <param name="data">
-    /// When this method returns, contains the glyph metrics associated with the specified offset,
-    /// if the value is found; otherwise, the default value for the type of the metrics parameter.
-    /// This parameter is passed uninitialized.
-    /// </param>
-    /// <returns>The metrics.</returns>
-    public bool TryGetGlyphMetricsAtOffset(
-        int offset,
-        ref int startIndex,
-        out float pointSize,
-        out bool isSubstituted,
-        out bool isVerticalSubstitution,
-        out bool isDecomposed,
-        [NotNullWhen(true)] out IReadOnlyList<GlyphPositioningData>? data)
-    {
-        List<GlyphPositioningData> match = [];
-        pointSize = 0;
-        isSubstituted = false;
-        isVerticalSubstitution = false;
-        isDecomposed = false;
-
-        ulong verticalMask = this.GetVerticalFeatureMask();
-
-        for (int i = startIndex; i < this.glyphs.Count; i++)
-        {
-            if (this.glyphs[i].Offset == offset)
-            {
-                if (match.Count == 0)
-                {
-                    startIndex = i;
-                }
-
-                GlyphPositioningData glyph = this.glyphs[i];
-                if (!glyph.Data.IsPlaceholder)
-                {
-                    isSubstituted = glyph.Data.IsSubstituted;
-                    isDecomposed = glyph.Data.IsDecomposed;
-                    isVerticalSubstitution |= (glyph.Data.AppliedFeatureMask & verticalMask) != 0;
-                    pointSize = glyph.PointSize;
-                }
-
-                match.Add(glyph);
-            }
-            else if (match.Count > 0)
-            {
-                // Offsets, though non-sequential, are sorted, so we can stop searching.
-                break;
-            }
-        }
-
-        data = match;
-        return match.Count > 0;
-    }
-
-    /// <summary>
     /// Updates the collection of glyph ids to the metrics collection to overwrite any glyphs that have been previously
     /// identified as fallbacks.
     /// </summary>
@@ -261,16 +195,7 @@ internal sealed class GlyphPositioningCollection : GlyphShapingCollection
             {
                 // Placeholders are synthetic glyphs: they need layout metrics but must not
                 // go through font glyph lookup, fallback resolution, or GPOS positioning.
-                StreamFontMetrics streamFontMetrics = fontMetrics is FileFontMetrics fileFontMetrics
-                    ? fileFontMetrics.StreamFontMetrics
-                    : (StreamFontMetrics)fontMetrics;
-
-                FontGlyphMetrics placeholderMetrics = new PlaceholderGlyphMetrics(
-                    streamFontMetrics,
-                    data.TextRun.Placeholder.GetValueOrDefault(),
-                    font.Size,
-                    this.TextOptions.Dpi,
-                    data.TextRun);
+                FontGlyphMetrics placeholderMetrics = PlaceholderGlyphMetrics.Create(font, data.TextRun, this.TextOptions.Dpi);
 
                 GlyphShapingData placeholderData = data;
                 placeholderData.ClearFeatures();
@@ -386,7 +311,7 @@ internal sealed class GlyphPositioningCollection : GlyphShapingCollection
     /// substitution and read here after the copy into this collection.
     /// </summary>
     /// <returns>The combined mask, or zero when no vertical feature was registered.</returns>
-    private ulong GetVerticalFeatureMask()
+    internal ulong GetVerticalFeatureMask()
         => this.FeatureMap.GetMask(KnownFeatureTags.VerticalAlternates)
         | this.FeatureMap.GetMask(KnownFeatureTags.VerticalAlternatesAndRotation)
         | this.FeatureMap.GetMask(KnownFeatureTags.VerticalAlternatesForRotation);

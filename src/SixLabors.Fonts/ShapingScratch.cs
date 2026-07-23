@@ -7,8 +7,7 @@ namespace SixLabors.Fonts;
 
 /// <summary>
 /// Reusable shaping pipeline state: the substitution and positioning collections, their
-/// shared feature map, and the pool of retired glyph data instances. This is the port of
-/// the reference engine's reusable buffer memory model (hb_buffer_t): storage grows to
+/// shared feature map, and the pool of retired glyph data instances. Storage grows to
 /// the workload's high-water mark and is reused across calls, so steady-state shaping
 /// performs no per-call allocation for pipeline state.
 /// </summary>

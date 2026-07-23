@@ -15,6 +15,14 @@ namespace SixLabors.Fonts;
 public static partial class TextShaper
 {
     /// <summary>
+    /// The pool of reusable pipeline state. A scratch is exclusively owned between
+    /// <see cref="ObjectPool{T}.Get"/> and <see cref="ObjectPool{T}.Return"/>, and the
+    /// shaped result is copied out by value before the scratch is returned, so nothing
+    /// pooled escapes a call. Retained scratch storage stays at its high-water mark.
+    /// </summary>
+    private static readonly ObjectPool<ShapingScratch> ScratchPool = new(new ShapingScratchPooledObjectPolicy());
+
+    /// <summary>
     /// Resolves the ordered sequence of <see cref="TextRun"/> instances that cover <paramref name="text"/>.
     /// </summary>
     /// <remarks>
@@ -113,28 +121,33 @@ public static partial class TextShaper
     /// <returns>The wrapping-independent shaping state.</returns>
     internal static ShapedText ShapeText(ReadOnlySpan<char> text, TextOptions options)
     {
-        // One feature bit assignment for the whole pass: applied feature bits written
-        // while substituting are read after the glyph data is copied into the
-        // positioning collection, so both collections must agree on bit meaning.
-        ShapingFeatureMap featureMap = new();
-        GlyphSubstitutionCollection substitutions = new(options, featureMap);
-        GlyphPositioningCollection positionings = new(options, featureMap);
-
-        return ShapeText(text, options, substitutions, positionings);
+        // The single pooling site for the shaping pipeline: rent the reusable pipeline
+        // state, shape, copy the result out by value, and return the state before the
+        // caller sees the result. Every consumer of shaping goes through here and
+        // shares the pooled machinery without knowing it exists.
+        ShapingScratch scratch = ScratchPool.Get();
+        try
+        {
+            (GlyphSubstitutionCollection substitutions, GlyphPositioningCollection positionings) = scratch.Prepare(options);
+            return ShapeText(text, options, substitutions, positionings);
+        }
+        finally
+        {
+            ScratchPool.Return(scratch);
+        }
     }
 
     /// <summary>
-    /// Shapes <paramref name="text"/> using caller-supplied shaping collections,
-    /// allowing a reusable buffer to supply pre-reset collections whose storage
-    /// survives across calls. Both collections must share one
-    /// <see cref="ShapingFeatureMap"/> and already reflect <paramref name="options"/>.
+    /// Shapes <paramref name="text"/> using caller-supplied shaping collections. Both
+    /// collections must share one <see cref="ShapingFeatureMap"/> and already reflect
+    /// <paramref name="options"/>.
     /// </summary>
     /// <param name="text">The text to process.</param>
     /// <param name="options">The text options used while shaping.</param>
     /// <param name="substitutions">The substitution collection to shape into.</param>
     /// <param name="positionings">The positioning collection to shape into.</param>
     /// <returns>The wrapping-independent shaping state.</returns>
-    internal static ShapedText ShapeText(
+    private static ShapedText ShapeText(
         ReadOnlySpan<char> text,
         TextOptions options,
         GlyphSubstitutionCollection substitutions,
@@ -319,7 +332,72 @@ public static partial class TextShaper
 
         ShapingProbe.Exit(ShapingProbe.Positioning, probe);
 
-        return new ShapedText(positionings, bidiRuns, bidiMap, layoutMode);
+        // Copy the shaped result out of the pooled collections: run-constant state
+        // deduplicates into a run table and per-glyph state splits into parallel
+        // identity and geometry arrays of pure values, so the scratch can go back to
+        // the pool before consumption and no metrics reference survives shaping.
+        ulong verticalMask = positionings.GetVerticalFeatureMask();
+        int count = positionings.Count;
+        ShapedGlyphInfo[] infos = new ShapedGlyphInfo[count];
+        ShapedGlyphPosition[] positions = new ShapedGlyphPosition[count];
+        List<ShapedTextRun> runs = [];
+
+        Font? runFont = null;
+        TextRun? runTextRun = null;
+        BidiRun runBidiRun = default;
+        for (int i = 0; i < count; i++)
+        {
+            GlyphPositioningCollection.GlyphPositioningData data = positionings.GetPositioningData(i);
+            GlyphShapingData shaping = data.Data;
+
+            // Placeholders carry a bidi run of their own, so they always cut a run.
+            if (data.Font != runFont
+                || shaping.TextRun != runTextRun
+                || (shaping.IsPlaceholder && !shaping.BidiRun.Equals(runBidiRun)))
+            {
+                runFont = data.Font;
+                runTextRun = shaping.TextRun;
+                runBidiRun = shaping.BidiRun;
+                runs.Add(new(data.Font, data.PointSize, shaping.TextRun, shaping.BidiRun));
+            }
+
+            ShapedGlyphFlags flags = ShapedGlyphFlags.None;
+            if (shaping.IsPlaceholder)
+            {
+                flags |= ShapedGlyphFlags.Placeholder;
+            }
+
+            if (shaping.IsSubstituted)
+            {
+                flags |= ShapedGlyphFlags.Substituted;
+            }
+
+            if (shaping.IsDecomposed)
+            {
+                flags |= ShapedGlyphFlags.Decomposed;
+            }
+
+            if ((shaping.AppliedFeatureMask & verticalMask) != 0)
+            {
+                flags |= ShapedGlyphFlags.VerticalSubstituted;
+            }
+
+            infos[i] = new(
+                data.Offset,
+                shaping.CodePoint,
+                shaping.CodePointCount,
+                data.Metrics.GlyphId,
+                (ushort)(runs.Count - 1),
+                flags);
+
+            positions[i] = new(
+                data.AdvanceWidth,
+                data.AdvanceHeight,
+                data.PositionOffset,
+                data.Metrics.Offset);
+        }
+
+        return new ShapedText([.. runs], infos, positions, bidiRuns, bidiMap, layoutMode);
     }
 
     /// <summary>
@@ -508,5 +586,19 @@ public static partial class TextShaper
                 collection.Replace(i, glyphId, KnownFeatureTags.VerticalAlternates);
             }
         }
+    }
+
+    /// <summary>
+    /// The pooling policy for <see cref="ShapingScratch"/> instances: scratch state is
+    /// reset on acquisition by <see cref="ShapingScratch.Prepare"/>, so returned
+    /// instances are always accepted.
+    /// </summary>
+    private sealed class ShapingScratchPooledObjectPolicy : IPooledObjectPolicy<ShapingScratch>
+    {
+        /// <inheritdoc/>
+        public ShapingScratch Create() => new();
+
+        /// <inheritdoc/>
+        public bool Return(ShapingScratch obj) => true;
     }
 }

@@ -51,6 +51,23 @@ internal sealed class PlaceholderGlyphMetrics : FontGlyphMetrics
         this.dpi = dpi;
     }
 
+    /// <summary>
+    /// Creates placeholder metrics for the given font and placeholder text run.
+    /// </summary>
+    /// <param name="font">The font whose metrics anchor the placeholder's line metrics.</param>
+    /// <param name="textRun">The placeholder text run.</param>
+    /// <param name="dpi">The resolution used to convert placeholder pixels into layout units.</param>
+    /// <returns>The placeholder metrics.</returns>
+    internal static PlaceholderGlyphMetrics Create(Font font, TextRun textRun, float dpi)
+    {
+        FontMetrics fontMetrics = font.FontMetrics;
+        StreamFontMetrics streamFontMetrics = fontMetrics is FileFontMetrics fileFontMetrics
+            ? fileFontMetrics.StreamFontMetrics
+            : (StreamFontMetrics)fontMetrics;
+
+        return new(streamFontMetrics, textRun.Placeholder.GetValueOrDefault(), font.Size, dpi, textRun);
+    }
+
     /// <inheritdoc/>
     internal override void RenderTo(
         IGlyphRenderer renderer,

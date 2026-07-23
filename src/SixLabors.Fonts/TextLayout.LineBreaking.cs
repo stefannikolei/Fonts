@@ -61,14 +61,15 @@ internal static partial class TextLayout
                 SpanCodePointEnumerator codePointEnumerator = new(grapheme);
                 while (codePointEnumerator.MoveNext())
                 {
-                    if (!shapedText.Positionings.TryGetGlyphMetricsAtOffset(
+                    if (!shapedText.TryGetGlyphsAtOffset(
                         codePointIndex,
                         ref glyphSearchIndex,
+                        out int glyphStart,
+                        out int glyphCount,
                         out float pointSize,
                         out bool isSubstituted,
                         out bool isVerticalSubstitution,
-                        out bool isDecomposed,
-                        out IReadOnlyList<GlyphPositioningCollection.GlyphPositioningData>? glyphData))
+                        out bool isDecomposed))
                     {
                         // Codepoint was skipped during original enumeration.
                         codePointIndex++;
@@ -77,13 +78,17 @@ internal static partial class TextLayout
                     }
 
                     List<PositionedGlyphMetrics> metrics = [];
-                    for (int i = 0; i < glyphData.Count; i++)
+                    List<Font> metricFonts = [];
+                    for (int i = 0; i < glyphCount; i++)
                     {
-                        GlyphPositioningCollection.GlyphPositioningData data = glyphData[i];
-                        if (data.Data.IsPlaceholder)
+                        ref readonly ShapedGlyphInfo info = ref shapedText.Infos[glyphStart + i];
+                        ShapedTextRun run = shapedText.Runs[info.RunIndex];
+                        if (info.IsPlaceholder)
                         {
                             textLine.AddPlaceholder(
-                                data,
+                                PlaceholderGlyphMetrics.Create(run.Font, run.TextRun, options.Dpi),
+                                in run,
+                                info.CodePointIndex,
                                 graphemeIndex,
                                 stringIndex,
                                 isHorizontalLayout,
@@ -93,9 +98,20 @@ internal static partial class TextLayout
                             continue;
                         }
 
-                        // Post-GPOS positions live in the shaping bounds; the shared
-                        // metrics instance is never mutated by positioning.
-                        metrics.Add(new(data.Metrics, data.AdvanceWidth, data.AdvanceHeight, data.PositionOffset, data.Data.TextRun));
+                        // The shaped result carries numbers only; composition resolves
+                        // the metrics instance from the owning font's cache by the same
+                        // arguments shaping used, so the same instance is returned.
+                        ref readonly ShapedGlyphPosition position = ref shapedText.Positions[glyphStart + i];
+                        FontGlyphMetrics glyphMetrics = run.Font.FontMetrics.GetGlyphMetrics(
+                            info.CodePoint,
+                            info.GlyphId,
+                            run.TextRun.TextAttributes,
+                            run.TextRun.TextDecorations,
+                            shapedText.LayoutMode,
+                            options.ColorFontSupport);
+
+                        metrics.Add(new(glyphMetrics, position.AdvanceWidth, position.AdvanceHeight, position.Offset, run.TextRun));
+                        metricFonts.Add(run.Font);
                     }
 
                     if (metrics.Count == 0)
@@ -282,14 +298,11 @@ internal static partial class TextLayout
 
                         float decomposedAdvance = decomposedAdvances[i];
 
-                        // Work out the scaled metrics for the glyph.
-                        while (glyphData[glyphDataIndex].Data.IsPlaceholder)
-                        {
-                            glyphDataIndex++;
-                        }
-
-                        GlyphPositioningCollection.GlyphPositioningData positionedGlyph = glyphData[glyphDataIndex];
-                        FontGlyphMetrics metric = positionedGlyph.Metrics;
+                        // Work out the scaled metrics for the glyph. The metrics list
+                        // excludes placeholders, so the loop index addresses it directly.
+                        PositionedGlyphMetrics positioned = metrics[glyphDataIndex];
+                        FontGlyphMetrics metric = positioned.Metrics;
+                        Font positionedFont = metricFonts[glyphDataIndex];
 
                         // Adjust the advance for the last decomposed glyph to add tracking if applicable.
                         // Tracking should only be added once per grapheme, so only on the last codepoint of the grapheme.
@@ -369,14 +382,14 @@ internal static partial class TextLayout
                                 stringIndex,
                                 hyphenationMarkerCodePoint.Value,
                                 shapedText.LayoutMode,
-                                positionedGlyph.Font,
+                                positionedFont,
                                 options));
                         }
 
                         // Add our metrics to the line.
                         textLine.Add(
-                            isDecomposed ? [new PositionedGlyphMetrics(metric, positionedGlyph.AdvanceWidth, positionedGlyph.AdvanceHeight, positionedGlyph.PositionOffset, positionedGlyph.Data.TextRun)] : metrics,
-                            positionedGlyph.Font,
+                            isDecomposed ? [positioned] : metrics,
+                            positionedFont,
                             pointSize,
                             decomposedAdvance,
                             lineHeight,
@@ -416,22 +429,26 @@ internal static partial class TextLayout
         // Placeholders do not consume source text. A placeholder inserted at
         // the final source position has no following codepoint to visit in
         // the main loop, so we add those trailing placeholder entries here.
-        if (shapedText.Positionings.TryGetGlyphMetricsAtOffset(
+        if (shapedText.TryGetGlyphsAtOffset(
             codePointIndex,
             ref glyphSearchIndex,
+            out int endStart,
+            out int endCount,
             out _,
             out _,
             out _,
-            out _,
-            out IReadOnlyList<GlyphPositioningCollection.GlyphPositioningData>? endGlyphData))
+            out _))
         {
-            for (int i = 0; i < endGlyphData.Count; i++)
+            for (int i = 0; i < endCount; i++)
             {
-                GlyphPositioningCollection.GlyphPositioningData data = endGlyphData[i];
-                if (data.Data.IsPlaceholder)
+                ref readonly ShapedGlyphInfo info = ref shapedText.Infos[endStart + i];
+                if (info.IsPlaceholder)
                 {
+                    ShapedTextRun run = shapedText.Runs[info.RunIndex];
                     textLine.AddPlaceholder(
-                        data,
+                        PlaceholderGlyphMetrics.Create(run.Font, run.TextRun, options.Dpi),
+                        in run,
+                        info.CodePointIndex,
                         graphemeIndex,
                         stringIndex,
                         isHorizontalLayout,

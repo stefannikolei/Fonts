@@ -23,6 +23,12 @@ internal abstract class CoverageTable
     public abstract int CoverageIndexOf(ushort glyphId);
 
     /// <summary>
+    /// Adds every glyph this table covers to the digest.
+    /// </summary>
+    /// <param name="digest">The digest to add to.</param>
+    public abstract void CollectDigest(ref GlyphSetDigest digest);
+
+    /// <summary>
     /// Loads a <see cref="CoverageTable"/> from the binary reader at the specified offset.
     /// </summary>
     /// <param name="reader">The big endian binary reader.</param>
@@ -81,6 +87,15 @@ internal sealed class CoverageFormat1Table : CoverageTable
     {
         int n = Array.BinarySearch(this.glyphArray, glyphId);
         return n < 0 ? -1 : n;
+    }
+
+    /// <inheritdoc />
+    public override void CollectDigest(ref GlyphSetDigest digest)
+    {
+        foreach (ushort glyphId in this.glyphArray)
+        {
+            digest.Add(glyphId);
+        }
     }
 
     /// <summary>
@@ -150,6 +165,15 @@ internal sealed class CoverageFormat2Table : CoverageTable
         return -1;
     }
 
+    /// <inheritdoc />
+    public override void CollectDigest(ref GlyphSetDigest digest)
+    {
+        foreach (CoverageRangeRecord record in this.records)
+        {
+            digest.AddRange(record.StartGlyphId, record.EndGlyphId);
+        }
+    }
+
     /// <summary>
     /// Loads a <see cref="CoverageFormat2Table"/> from the binary reader.
     /// The format identifier has already been read.
@@ -209,5 +233,11 @@ internal sealed class CoverageFormat2Table : CoverageTable
 
         /// <inheritdoc />
         public override int CoverageIndexOf(ushort glyphId) => -1;
+
+        /// <inheritdoc />
+        public override void CollectDigest(ref GlyphSetDigest digest)
+        {
+            // This table never matches a glyph, so contributing nothing is exact.
+        }
     }
 }

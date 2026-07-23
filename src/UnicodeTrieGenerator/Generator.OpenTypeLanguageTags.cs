@@ -46,11 +46,21 @@ public static partial class Generator
     {
         List<LanguageTagEntry> entries = ParseOpenTypeLanguageTagRegistry();
 
-        // Key the registry rows by each ISO 639 code they list. Rows are alphabetical by
-        // language system name; within one code deprecated tags order after current ones.
+        // The Syriac script-variant tags are equivalents of ISO 15924 script codes, not
+        // languages: they are selected by BCP 47 script subtag in the hand-written
+        // resolver, and keying them by the ISO codes their rows list would outrank the
+        // plain Syriac tag for every Syriac language.
+        string[] scriptVariantTags = ["SYRE", "SYRJ", "SYRN"];
+
+        // Key the registry rows by each ISO 639 code they list.
         Dictionary<string, List<LanguageTagEntry>> map = new(StringComparer.Ordinal);
         foreach (LanguageTagEntry entry in entries)
         {
+            if (scriptVariantTags.Contains(entry.Tag))
+            {
+                continue;
+            }
+
             foreach (string code in entry.IsoCodes)
             {
                 if (!map.TryGetValue(code, out List<LanguageTagEntry>? list))
@@ -59,17 +69,31 @@ public static partial class Generator
                     map[code] = list;
                 }
 
-                if (list.Any(x => x.Tag == entry.Tag))
+                if (!list.Any(x => x.Tag == entry.Tag))
                 {
-                    continue;
+                    list.Add(entry);
                 }
-
-                int insertAt = entry.Deprecated ? list.Count : list.FindIndex(x => x.Deprecated);
-                list.Insert(insertAt < 0 ? list.Count : insertAt, entry);
             }
         }
 
+        // Order each code's candidates the way HarfBuzz disambiguates: current tags
+        // before deprecated ones, then tags registered for fewer languages first because
+        // they are the more specific claim (HYE0 "Armenian East" lists only hye, so it
+        // outranks HYE "Armenian" which also covers hyw), then registry order.
+        foreach (List<LanguageTagEntry> list in map.Values)
+        {
+            List<LanguageTagEntry> ordered = [.. list
+                .Select((entry, index) => (Entry: entry, Index: index))
+                .OrderBy(x => x.Entry.Deprecated)
+                .ThenBy(x => x.Entry.IsoCodes.Count)
+                .ThenBy(x => x.Index)
+                .Select(x => x.Entry)];
+            list.Clear();
+            list.AddRange(ordered);
+        }
+
         AddIanaAliases(map);
+        AddCuratedOverrides(map, entries);
 
         StringBuilder sb = new();
         sb.AppendLine("// Copyright (c) Six Labors.");
@@ -159,6 +183,84 @@ public static partial class Generator
     }
 
     /// <summary>
+    /// Applies the curated rows for which the two registries alone do not determine
+    /// the mapping. These follow the Uniscribe and DirectWrite behavior the OpenType
+    /// ecosystem is built around: Chinese macrolanguage members shape as simplified
+    /// Chinese with Literary Chinese as traditional, the Quechua family leads with
+    /// Cusco Quechua, and retired codes the IANA registry split without a preferred
+    /// value keep their historically assigned tag. The deliberate exception is
+    /// Serbo-Croatian (sh), which the runtime canonicalizes to Serbian before
+    /// resolution and therefore maps to SRB.
+    /// </summary>
+    /// <param name="map">The map keyed by ISO 639 code.</param>
+    /// <param name="entries">The parsed registry entries, for tag lookup.</param>
+    private static void AddCuratedOverrides(
+        Dictionary<string, List<LanguageTagEntry>> map,
+        List<LanguageTagEntry> entries)
+    {
+        (string Code, string[] Tags)[] overrides =
+        [
+
+            // Chinese macrolanguage members.
+            ("cdo", ["ZHS "]),
+            ("cjy", ["ZHS "]),
+            ("cnp", ["ZHS "]),
+            ("cpx", ["ZHS "]),
+            ("csp", ["ZHS "]),
+            ("czh", ["ZHS "]),
+            ("czo", ["ZHS "]),
+            ("gan", ["ZHS "]),
+            ("hak", ["ZHS "]),
+            ("hnm", ["ZHS "]),
+            ("hsn", ["ZHS "]),
+            ("luh", ["ZHS "]),
+            ("lzh", ["ZHT "]),
+            ("mnp", ["ZHS "]),
+            ("nan", ["ZHS "]),
+            ("sjc", ["ZHS "]),
+            ("wuu", ["ZHS "]),
+
+            // The Quechua family maps to Cusco Quechua; the registry defines no
+            // general Quechua tag.
+            ("que", ["QUZ "]),
+            ("quf", ["QUZ "]),
+            ("quk", ["QUZ "]),
+            ("quy", ["QUZ "]),
+            ("qvc", ["QUZ "]),
+            ("qve", ["QUZ "]),
+            ("qvs", ["QUZ "]),
+            ("qwc", ["QUZ "]),
+            ("qxp", ["QUZ "]),
+            ("qxu", ["QUZ "]),
+
+            // Retired codes split by IANA without a preferred value.
+            ("dwk", ["KUI "]),
+            ("uki", ["KUI "]),
+            ("ggo", ["GON "]),
+            ("kpp", ["KRN "]),
+            ("nln", ["NAH "]),
+            ("xwo", ["TOD "]),
+        ];
+
+        Dictionary<string, LanguageTagEntry> entriesByTag = [];
+        foreach (LanguageTagEntry entry in entries)
+        {
+            entriesByTag.TryAdd(entry.Tag, entry);
+        }
+
+        foreach ((string code, string[] tags) in overrides)
+        {
+            List<LanguageTagEntry> list = [];
+            foreach (string tag in tags)
+            {
+                list.Add(entriesByTag[tag]);
+            }
+
+            map[code] = list;
+        }
+    }
+
+    /// <summary>
     /// Adds map keys for macrolanguages' sublanguages and retired codes' replacements
     /// from the IANA BCP 47 subtag registry, so lookups by those codes resolve to the
     /// tags of the language the registry points them at.
@@ -217,16 +319,25 @@ public static partial class Generator
             }
         }
 
-        foreach ((string subtag, string target) in aliases.OrderBy(x => x.Subtag, StringComparer.Ordinal))
+        // Resolve to a fixpoint so chained redirects land: a retired code can point at a
+        // sublanguage whose tags only exist through its macrolanguage, for example
+        // drh -> khk -> mn resolves to the Mongolian tags on the second pass.
+        bool added = true;
+        while (added)
         {
-            if (map.ContainsKey(subtag))
+            added = false;
+            foreach ((string subtag, string target) in aliases.OrderBy(x => x.Subtag, StringComparer.Ordinal))
             {
-                continue;
-            }
+                if (map.ContainsKey(subtag))
+                {
+                    continue;
+                }
 
-            if (TryResolveEntries(map, target, out List<LanguageTagEntry>? entries))
-            {
-                map[subtag] = entries;
+                if (TryResolveEntries(map, target, out List<LanguageTagEntry>? entries))
+                {
+                    map[subtag] = entries;
+                    added = true;
+                }
             }
         }
     }

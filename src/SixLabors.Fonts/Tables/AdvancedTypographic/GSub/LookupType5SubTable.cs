@@ -79,7 +79,10 @@ internal sealed class LookupType5Format1SubTable : LookupSubTable
         return new LookupType5Format1SubTable(coverageTable, seqRuleSets, lookupFlags, markFilteringSet);
     }
 
-    /// <inheritdoc />
+    /// <inheritdoc/>
+    public override void CollectDigest(ref GlyphSetDigest digest) => this.coverageTable.CollectDigest(ref digest);
+
+    /// <inheritdoc/>
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,
@@ -193,7 +196,10 @@ internal sealed class LookupType5Format2SubTable : LookupSubTable
         return new LookupType5Format2SubTable(classSeqRuleSets, classDefTable, coverageTable, lookupFlags, markFilteringSet);
     }
 
-    /// <inheritdoc />
+    /// <inheritdoc/>
+    public override void CollectDigest(ref GlyphSetDigest digest) => this.coverageTable.CollectDigest(ref digest);
+
+    /// <inheritdoc/>
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,
@@ -309,7 +315,21 @@ internal sealed class LookupType5Format3SubTable : LookupSubTable
         return new LookupType5Format3SubTable(coverageTables, seqLookupRecords, lookupFlags, markFilteringSet);
     }
 
-    /// <inheritdoc />
+    /// <inheritdoc/>
+    public override void CollectDigest(ref GlyphSetDigest digest)
+    {
+        if (this.coverageTables.Length == 0)
+        {
+            // Degenerate table data: without a first position coverage the gate
+            // cannot be known, so the lookup is always attempted.
+            digest.AddAll();
+            return;
+        }
+
+        this.coverageTables[0].CollectDigest(ref digest);
+    }
+
+    /// <inheritdoc/>
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,

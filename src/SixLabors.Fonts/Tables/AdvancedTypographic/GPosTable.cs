@@ -26,6 +26,11 @@ internal class GPosTable : Table
     private static readonly Tag VKernTag = Tag.Parse("vkrn");
 
     /// <summary>
+    /// The invalid but widely shipped language system record tag 'dflt'.
+    /// </summary>
+    private static readonly Tag DefaultLangSysTag = Tag.Parse("dflt");
+
+    /// <summary>
     /// The OpenType table tag for the GPOS table.
     /// </summary>
     internal const string TableName = "GPOS";
@@ -222,12 +227,28 @@ internal class GPosTable : Table
                 stage.PreProcessFeature(collection, index, count);
 
                 Tag featureTag = stage.FeatureTag;
-                if (this.TryGetFeatureLookups(fontMetrics, in featureTag, current, out List<(Tag Feature, ushort Index, LookupTable LookupTable)>? lookups))
+                var lookupProbe = ShapingProbe.Enter();
+                bool found = this.TryGetFeatureLookups(fontMetrics, in featureTag, current, collection.LanguageTags, out List<(Tag Feature, ushort Index, LookupTable LookupTable)>? lookups);
+                ShapingProbe.Exit(ShapingProbe.LookupResolve, lookupProbe);
+                if (found && lookups is not null)
                 {
                     // Apply features in order.
                     foreach ((Tag Feature, ushort Index, LookupTable LookupTable) featureLookup in lookups)
                     {
                         Tag feature = featureLookup.Feature;
+
+                        // Skip the whole lookup when its coverage cannot intersect any
+                        // glyph id the collection has ever contained; most fonts carry
+                        // many lookups for glyphs a given text never produces.
+                        if (!featureLookup.LookupTable.Digest.MightIntersect(collection.GlyphDigest))
+                        {
+                            continue;
+                        }
+
+                        // Resolve the feature's mask bit once per lookup; the per-glyph
+                        // gate below is then a single bitwise AND against the glyph's
+                        // enabled mask.
+                        ulong featureMask = collection.FeatureMap.GetMask(feature);
                         LookupTable featureLookupTable = featureLookup.LookupTable;
                         iterator.Reset(index, featureLookupTable.LookupFlags, featureLookupTable.MarkFilteringSet);
 
@@ -239,7 +260,7 @@ internal class GPosTable : Table
                                 goto EndLookups;
                             }
 
-                            if (!collection[iterator.Index].EnabledFeatureTags.Contains(feature))
+                            if ((collection[iterator.Index].FeatureMask & featureMask) == 0)
                             {
                                 iterator.Next();
                                 continue;
@@ -276,17 +297,22 @@ internal class GPosTable : Table
     }
 
     /// <summary>
-    /// Tries to get the feature lookups for the given stage feature and script.
+    /// Tries to get the feature lookups for the given stage feature, script, and language.
     /// </summary>
     /// <param name="fontMetrics">The font metrics.</param>
     /// <param name="stageFeature">The feature tag for the current shaping stage.</param>
     /// <param name="script">The script class.</param>
+    /// <param name="languageTags">
+    /// The candidate OpenType language system tags, most specific first. An empty array
+    /// selects the default language system.
+    /// </param>
     /// <param name="value">When this method returns, contains the list of feature lookups if found.</param>
     /// <returns><see langword="true"/> if lookups were found; otherwise, <see langword="false"/>.</returns>
     private bool TryGetFeatureLookups(
         FontMetrics fontMetrics,
         in Tag stageFeature,
         ScriptClass script,
+        Tag[] languageTags,
         [NotNullWhen(true)] out List<(Tag Feature, ushort Index, LookupTable LookupTable)>? value)
     {
         if (this.ScriptList is null)
@@ -299,6 +325,9 @@ internal class GPosTable : Table
         FeatureTableSubstitutionRecord[]? substitutions = this.FeatureVariations
             ?.FindMatchingSubstitutions(fontMetrics.GetNormalizedCoordinates());
 
+        // Step 1: script selection. Map the Unicode script class onto the font's
+        // script table, falling back to the font's first script when the font does not
+        // declare the script.
         ScriptListTable scriptListTable = this.ScriptList.Default();
         Tag[] tags = UnicodeScriptTagMap.Instance[script];
         for (int i = 0; i < tags.Length; i++)
@@ -310,6 +339,42 @@ internal class GPosTable : Table
             }
         }
 
+        // Step 2: language selection. Walk the culture's candidate tags in priority
+        // order, most specific first, scanning the script's named language systems for
+        // a tag match; the first candidate the font declares wins, so a zh-HK run
+        // selects ZHH before ZHT. A match commits even when the selected language
+        // system lacks this stage feature: per the specification a LangSys table is the
+        // complete feature set for its language, so falling through to the default
+        // below would merge two languages' features, exactly the output language
+        // systems exist to prevent. An empty candidate array skips this step entirely.
+        LangSysTable[] langSysTables = scriptListTable.LangSysTables;
+        for (int i = 0; i < languageTags.Length; i++)
+        {
+            uint language = languageTags[i].Value;
+            for (int j = 0; j < langSysTables.Length; j++)
+            {
+                if (langSysTables[j].LangSysTag == language)
+                {
+                    value = this.GetFeatureLookups(stageFeature, substitutions, langSysTables[j]);
+                    return value.Count > 0;
+                }
+            }
+        }
+
+        // Step 3: no culture, or no candidate the font declares. A language system
+        // record explicitly tagged dflt is preferred over the true default: the tag is
+        // invalid per the specification, but fonts built from old documentation typos
+        // carry one, and the reference engines honor it.
+        LangSysTable[] langSysRecords = scriptListTable.LangSysTables;
+        for (int i = 0; i < langSysRecords.Length; i++)
+        {
+            if (langSysRecords[i].LangSysTag == DefaultLangSysTag.Value)
+            {
+                value = this.GetFeatureLookups(stageFeature, substitutions, langSysRecords[i]);
+                return value.Count > 0;
+            }
+        }
+
         LangSysTable? defaultLangSysTable = scriptListTable.DefaultLangSysTable;
         if (defaultLangSysTable != null)
         {
@@ -317,8 +382,13 @@ internal class GPosTable : Table
             return value.Count > 0;
         }
 
-        value = this.GetFeatureLookups(stageFeature, substitutions, scriptListTable.LangSysTables);
-        return value.Count > 0;
+        // Step 4: no default language system either. Nothing applies: the font scoped
+        // every feature to specific languages, and the reference engines agree that no
+        // language system means no lookups. Features such as SimSun's vertical
+        // alternates, which live only under its Chinese language systems, are reached by
+        // setting TextOptions.Culture to a Chinese culture.
+        value = null;
+        return false;
     }
 
     /// <summary>

@@ -75,6 +75,9 @@ internal static class LookupType7SubTable
         }
 
         /// <inheritdoc/>
+        public override void CollectDigest(ref GlyphSetDigest digest) => this.coverageTable.CollectDigest(ref digest);
+
+        /// <inheritdoc/>
         public override bool TryUpdatePosition(
             FontMetrics fontMetrics,
             GPosTable table,
@@ -181,6 +184,9 @@ internal static class LookupType7SubTable
         }
 
         /// <inheritdoc/>
+        public override void CollectDigest(ref GlyphSetDigest digest) => this.coverageTable.CollectDigest(ref digest);
+
+        /// <inheritdoc/>
         public override bool TryUpdatePosition(
             FontMetrics fontMetrics,
             GPosTable table,
@@ -279,6 +285,20 @@ internal static class LookupType7SubTable
                 TableLoadingUtils.LoadSequenceContextFormat3(reader, offset, out CoverageTable[] coverageTables);
 
             return new LookupType7Format3SubTable(coverageTables, seqLookupRecords, lookupFlags, markFilteringSet);
+        }
+
+        /// <inheritdoc/>
+        public override void CollectDigest(ref GlyphSetDigest digest)
+        {
+            if (this.coverageTables.Length == 0)
+            {
+                // Degenerate table data: without a first position coverage the gate
+                // cannot be known, so the lookup is always attempted.
+                digest.AddAll();
+                return;
+            }
+
+            this.coverageTables[0].CollectDigest(ref digest);
         }
 
         /// <inheritdoc/>

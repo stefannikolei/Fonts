@@ -93,7 +93,10 @@ internal sealed class LookupType1Format1SubTable : LookupSubTable
         return new LookupType1Format1SubTable(deltaGlyphId, coverageTable, lookupFlags, markFilteringSet);
     }
 
-    /// <inheritdoc />
+    /// <inheritdoc/>
+    public override void CollectDigest(ref GlyphSetDigest digest) => this.coverageTable.CollectDigest(ref digest);
+
+    /// <inheritdoc/>
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,
@@ -180,7 +183,10 @@ internal sealed class LookupType1Format2SubTable : LookupSubTable
         return new LookupType1Format2SubTable(substituteGlyphIds, coverageTable, lookupFlags, markFilteringSet);
     }
 
-    /// <inheritdoc />
+    /// <inheritdoc/>
+    public override void CollectDigest(ref GlyphSetDigest digest) => this.coverageTable.CollectDigest(ref digest);
+
+    /// <inheritdoc/>
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,

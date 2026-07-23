@@ -27,7 +27,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "abq", new[] { Tag.Parse("ABA ") } }, // Abaza
             { "abs", new[] { Tag.Parse("CPP ") } }, // Creoles
             { "abv", new[] { Tag.Parse("ARA ") } }, // Arabic
-            { "acf", new[] { Tag.Parse("CPP "), Tag.Parse("FAN ") } }, // Creoles; French Antillean
+            { "acf", new[] { Tag.Parse("FAN "), Tag.Parse("CPP ") } }, // French Antillean; Creoles
             { "ach", new[] { Tag.Parse("ACH ") } }, // Acholi
             { "acm", new[] { Tag.Parse("ARA ") } }, // Arabic
             { "acq", new[] { Tag.Parse("ARA ") } }, // Arabic
@@ -181,11 +181,11 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "btd", new[] { Tag.Parse("BTD "), Tag.Parse("BTK ") } }, // Batak Dairi (Pakpak); Batak languages
             { "btj", new[] { Tag.Parse("MLY ") } }, // Malay
             { "btk", new[] { Tag.Parse("BTK ") } }, // Batak languages
-            { "btm", new[] { Tag.Parse("BTK "), Tag.Parse("BTM ") } }, // Batak languages; Batak Mandailing
+            { "btm", new[] { Tag.Parse("BTM "), Tag.Parse("BTK ") } }, // Batak Mandailing; Batak languages
             { "bto", new[] { Tag.Parse("BIK ") } }, // Bikol
-            { "bts", new[] { Tag.Parse("BTK "), Tag.Parse("BTS ") } }, // Batak languages; Batak Simalungun
-            { "btx", new[] { Tag.Parse("BTK "), Tag.Parse("BTX ") } }, // Batak languages; Batak Karo
-            { "btz", new[] { Tag.Parse("BTK "), Tag.Parse("BTZ ") } }, // Batak languages; Batak Alas-Kluet
+            { "bts", new[] { Tag.Parse("BTS "), Tag.Parse("BTK ") } }, // Batak Simalungun; Batak languages
+            { "btx", new[] { Tag.Parse("BTX "), Tag.Parse("BTK ") } }, // Batak Karo; Batak languages
+            { "btz", new[] { Tag.Parse("BTZ "), Tag.Parse("BTK ") } }, // Batak Alas-Kluet; Batak languages
             { "bug", new[] { Tag.Parse("BUG ") } }, // Bugis
             { "bul", new[] { Tag.Parse("BGR ") } }, // Bulgarian
             { "bum", new[] { Tag.Parse("BTI ") } }, // Beti
@@ -197,13 +197,13 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "bxp", new[] { Tag.Parse("BTI ") } }, // Beti
             { "bxr", new[] { Tag.Parse("RBU ") } }, // Russian Buriat
             { "byn", new[] { Tag.Parse("BIL ") } }, // Bilen
-            { "byv", new[] { Tag.Parse("BML "), Tag.Parse("BYV ") } }, // Bamileke; Medumba
+            { "byv", new[] { Tag.Parse("BYV "), Tag.Parse("BML ") } }, // Medumba; Bamileke
             { "bzc", new[] { Tag.Parse("MLG ") } }, // Malagasy
             { "bzj", new[] { Tag.Parse("CPP ") } }, // Creoles
             { "bzk", new[] { Tag.Parse("CPP ") } }, // Creoles
             { "caa", new[] { Tag.Parse("MYN ") } }, // Mayan
             { "cac", new[] { Tag.Parse("MYN ") } }, // Mayan
-            { "caf", new[] { Tag.Parse("ATH "), Tag.Parse("CRR ") } }, // Athapaskan languages; Carrier
+            { "caf", new[] { Tag.Parse("CRR "), Tag.Parse("ATH ") } }, // Carrier; Athapaskan languages
             { "cak", new[] { Tag.Parse("CAK "), Tag.Parse("MYN ") } }, // Kaqchikel; Mayan
             { "cat", new[] { Tag.Parse("CAT ") } }, // Catalan
             { "cay", new[] { Tag.Parse("CAY ") } }, // Cayuga
@@ -214,6 +214,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "ccm", new[] { Tag.Parse("CPP ") } }, // Creoles
             { "cco", new[] { Tag.Parse("CCHN") } }, // Chinantec
             { "ccq", new[] { Tag.Parse("ARK ") } }, // Rakhine
+            { "cdo", new[] { Tag.Parse("ZHS ") } }, // Chinese, Simplified
             { "ceb", new[] { Tag.Parse("CEB ") } }, // Cebuano
             { "cek", new[] { Tag.Parse("QIN ") } }, // Chin
             { "ces", new[] { Tag.Parse("CSY ") } }, // Czech
@@ -227,7 +228,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "chk", new[] { Tag.Parse("CHK0") } }, // Chuukese
             { "chn", new[] { Tag.Parse("CPP ") } }, // Creoles
             { "cho", new[] { Tag.Parse("CHO ") } }, // Choctaw
-            { "chp", new[] { Tag.Parse("ATH "), Tag.Parse("CHP "), Tag.Parse("SAY ") } }, // Athapaskan languages; Chipewyan; Sayisi
+            { "chp", new[] { Tag.Parse("CHP "), Tag.Parse("SAY "), Tag.Parse("ATH ") } }, // Chipewyan; Sayisi; Athapaskan languages
             { "chq", new[] { Tag.Parse("CCHN") } }, // Chinantec
             { "chr", new[] { Tag.Parse("CHR ") } }, // Cherokee
             { "chu", new[] { Tag.Parse("CSL ") } }, // Church Slavonic
@@ -237,6 +238,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "ciw", new[] { Tag.Parse("OJB ") } }, // Ojibway
             { "cja", new[] { Tag.Parse("CJA ") } }, // Western Cham
             { "cjm", new[] { Tag.Parse("CJM ") } }, // Eastern Cham
+            { "cjy", new[] { Tag.Parse("ZHS ") } }, // Chinese, Simplified
             { "cka", new[] { Tag.Parse("QIN ") } }, // Chin
             { "ckb", new[] { Tag.Parse("KUR ") } }, // Kurdish
             { "ckn", new[] { Tag.Parse("QIN ") } }, // Chin
@@ -255,6 +257,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "cnh", new[] { Tag.Parse("QIN ") } }, // Chin
             { "cnk", new[] { Tag.Parse("QIN ") } }, // Chin
             { "cnl", new[] { Tag.Parse("CCHN") } }, // Chinantec
+            { "cnp", new[] { Tag.Parse("ZHS ") } }, // Chinese, Simplified
             { "cnr", new[] { Tag.Parse("SRB ") } }, // Serbian
             { "cnt", new[] { Tag.Parse("CCHN") } }, // Chinantec
             { "cnu", new[] { Tag.Parse("BBR ") } }, // Berber
@@ -271,6 +274,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "cpf", new[] { Tag.Parse("CPP ") } }, // Creoles
             { "cpi", new[] { Tag.Parse("CPP ") } }, // Creoles
             { "cpp", new[] { Tag.Parse("CPP ") } }, // Creoles
+            { "cpx", new[] { Tag.Parse("ZHS ") } }, // Chinese, Simplified
             { "cqd", new[] { Tag.Parse("HMN ") } }, // Hmong
             { "cqu", new[] { Tag.Parse("QUH ") } }, // Quechua (Bolivia)
             { "cre", new[] { Tag.Parse("CRE ") } }, // Cree
@@ -282,12 +286,13 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "crm", new[] { Tag.Parse("LCR "), Tag.Parse("MCR ") } }, // L-Cree; Moose Cree
             { "crp", new[] { Tag.Parse("CPP ") } }, // Creoles
             { "crs", new[] { Tag.Parse("CPP ") } }, // Creoles
-            { "crx", new[] { Tag.Parse("ATH "), Tag.Parse("CRR ") } }, // Athapaskan languages; Carrier
+            { "crx", new[] { Tag.Parse("CRR "), Tag.Parse("ATH ") } }, // Carrier; Athapaskan languages
             { "csa", new[] { Tag.Parse("CCHN") } }, // Chinantec
             { "csb", new[] { Tag.Parse("CSB ") } }, // Kashubian
             { "csh", new[] { Tag.Parse("QIN ") } }, // Chin
             { "csj", new[] { Tag.Parse("QIN ") } }, // Chin
             { "cso", new[] { Tag.Parse("CCHN") } }, // Chinantec
+            { "csp", new[] { Tag.Parse("ZHS ") } }, // Chinese, Simplified
             { "csv", new[] { Tag.Parse("QIN ") } }, // Chin
             { "csw", new[] { Tag.Parse("NCR "), Tag.Parse("NHC ") } }, // N-Cree; Norway House Cree
             { "csy", new[] { Tag.Parse("QIN ") } }, // Chin
@@ -306,6 +311,8 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "cvn", new[] { Tag.Parse("CCHN") } }, // Chinantec
             { "cwd", new[] { Tag.Parse("DCR "), Tag.Parse("TCR ") } }, // Woods Cree; TH-Cree
             { "cym", new[] { Tag.Parse("WEL ") } }, // Welsh
+            { "czh", new[] { Tag.Parse("ZHS ") } }, // Chinese, Simplified
+            { "czo", new[] { Tag.Parse("ZHS ") } }, // Chinese, Simplified
             { "czt", new[] { Tag.Parse("QIN ") } }, // Chin
             { "dag", new[] { Tag.Parse("DAG ") } }, // Dagbani
             { "dan", new[] { Tag.Parse("DAN ") } }, // Danish
@@ -314,7 +321,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "dar", new[] { Tag.Parse("DAR ") } }, // Dargwa
             { "dax", new[] { Tag.Parse("DAX ") } }, // Dayi
             { "dcr", new[] { Tag.Parse("CPP ") } }, // Creoles
-            { "den", new[] { Tag.Parse("ATH "), Tag.Parse("SLA ") } }, // Athapaskan languages; Slavey
+            { "den", new[] { Tag.Parse("SLA "), Tag.Parse("ATH ") } }, // Slavey; Athapaskan languages
             { "dep", new[] { Tag.Parse("CPP ") } }, // Creoles
             { "deu", new[] { Tag.Parse("DEU ") } }, // German
             { "dgo", new[] { Tag.Parse("DGO ") } }, // Dogri (individual language)
@@ -335,11 +342,13 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "dng", new[] { Tag.Parse("DUN ") } }, // Dungan
             { "dnj", new[] { Tag.Parse("DNJ ") } }, // Dan
             { "doi", new[] { Tag.Parse("DGR ") } }, // Dogri (macrolanguage)
+            { "drh", new[] { Tag.Parse("MNG ") } }, // Mongolian
             { "drw", new[] { Tag.Parse("DRI ") } }, // Dari
             { "dsb", new[] { Tag.Parse("LSB ") } }, // Lower Sorbian
             { "dty", new[] { Tag.Parse("NEP ") } }, // Nepali
             { "duj", new[] { Tag.Parse("DUJ ") } }, // Dhuwal
             { "dup", new[] { Tag.Parse("MLY ") } }, // Malay
+            { "dwk", new[] { Tag.Parse("KUI ") } }, // Kui
             { "dwu", new[] { Tag.Parse("DUJ ") } }, // Dhuwal
             { "dwy", new[] { Tag.Parse("DUJ ") } }, // Dhuwal
             { "dyu", new[] { Tag.Parse("JUL ") } }, // Jula
@@ -372,13 +381,13 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "fan", new[] { Tag.Parse("FAN0") } }, // Fang
             { "fao", new[] { Tag.Parse("FOS ") } }, // Faroese
             { "fas", new[] { Tag.Parse("FAR ") } }, // Persian
-            { "fat", new[] { Tag.Parse("AKA "), Tag.Parse("FAT ") } }, // Akan; Fanti
+            { "fat", new[] { Tag.Parse("FAT "), Tag.Parse("AKA ") } }, // Fanti; Akan
             { "fbl", new[] { Tag.Parse("BIK ") } }, // Bikol
             { "ffm", new[] { Tag.Parse("FUL ") } }, // Fulah
             { "fij", new[] { Tag.Parse("FJI ") } }, // Fijian
             { "fil", new[] { Tag.Parse("PIL ") } }, // Filipino
             { "fin", new[] { Tag.Parse("FIN ") } }, // Finnish
-            { "fmp", new[] { Tag.Parse("BML "), Tag.Parse("FMP ") } }, // Bamileke; Fe’fe’
+            { "fmp", new[] { Tag.Parse("FMP "), Tag.Parse("BML ") } }, // Fe’fe’; Bamileke
             { "fng", new[] { Tag.Parse("CPP ") } }, // Creoles
             { "fon", new[] { Tag.Parse("FON ") } }, // Fon
             { "fpe", new[] { Tag.Parse("CPP ") } }, // Creoles
@@ -399,6 +408,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "gaa", new[] { Tag.Parse("GAD ") } }, // Ga
             { "gac", new[] { Tag.Parse("CPP ") } }, // Creoles
             { "gag", new[] { Tag.Parse("GAG ") } }, // Gagauz
+            { "gan", new[] { Tag.Parse("ZHS ") } }, // Chinese, Simplified
             { "gax", new[] { Tag.Parse("ORO ") } }, // Oromo
             { "gaz", new[] { Tag.Parse("ORO ") } }, // Oromo
             { "gbm", new[] { Tag.Parse("GAW ") } }, // Garhwali
@@ -408,6 +418,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "gcr", new[] { Tag.Parse("CPP ") } }, // Creoles
             { "gda", new[] { Tag.Parse("RAJ ") } }, // Rajasthani
             { "gez", new[] { Tag.Parse("GEZ ") } }, // Geez
+            { "ggo", new[] { Tag.Parse("GON ") } }, // Gondi
             { "gha", new[] { Tag.Parse("BBR ") } }, // Berber
             { "ghc", new[] { Tag.Parse("IRT ") } }, // Irish Traditional
             { "ghk", new[] { Tag.Parse("KRN ") } }, // Karen
@@ -452,8 +463,9 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "haa", new[] { Tag.Parse("ATH ") } }, // Athapaskan languages
             { "hae", new[] { Tag.Parse("ORO ") } }, // Oromo
             { "hai", new[] { Tag.Parse("HAI0") } }, // Haida
+            { "hak", new[] { Tag.Parse("ZHS ") } }, // Chinese, Simplified
             { "har", new[] { Tag.Parse("HRI ") } }, // Harari
-            { "hat", new[] { Tag.Parse("CPP "), Tag.Parse("HAI ") } }, // Creoles; Haitian (Haitian Creole)
+            { "hat", new[] { Tag.Parse("HAI "), Tag.Parse("CPP ") } }, // Haitian (Haitian Creole); Creoles
             { "hau", new[] { Tag.Parse("HAU ") } }, // Hausa
             { "haw", new[] { Tag.Parse("HAW ") } }, // Hawaiian
             { "hax", new[] { Tag.Parse("HAI0") } }, // Haida
@@ -480,7 +492,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "hml", new[] { Tag.Parse("HMN ") } }, // Hmong
             { "hmm", new[] { Tag.Parse("HMN ") } }, // Hmong
             { "hmn", new[] { Tag.Parse("HMN ") } }, // Hmong
-            { "hmo", new[] { Tag.Parse("CPP "), Tag.Parse("HMO ") } }, // Creoles; Hiri Motu
+            { "hmo", new[] { Tag.Parse("HMO "), Tag.Parse("CPP ") } }, // Hiri Motu; Creoles
             { "hmp", new[] { Tag.Parse("HMN ") } }, // Hmong
             { "hmq", new[] { Tag.Parse("HMN ") } }, // Hmong
             { "hmr", new[] { Tag.Parse("QIN ") } }, // Chin
@@ -491,6 +503,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "hnd", new[] { Tag.Parse("HND ") } }, // Hindko
             { "hne", new[] { Tag.Parse("CHH ") } }, // Chattisgarhi
             { "hnj", new[] { Tag.Parse("HMN ") } }, // Hmong
+            { "hnm", new[] { Tag.Parse("ZHS ") } }, // Chinese, Simplified
             { "hno", new[] { Tag.Parse("HND ") } }, // Hindko
             { "hoc", new[] { Tag.Parse("HO  ") } }, // Ho
             { "hoi", new[] { Tag.Parse("ATH ") } }, // Athapaskan languages
@@ -500,13 +513,14 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "hrm", new[] { Tag.Parse("HMN ") } }, // Hmong
             { "hrv", new[] { Tag.Parse("HRV ") } }, // Croatian
             { "hsb", new[] { Tag.Parse("USB ") } }, // Upper Sorbian
+            { "hsn", new[] { Tag.Parse("ZHS ") } }, // Chinese, Simplified
             { "huj", new[] { Tag.Parse("HMN ") } }, // Hmong
             { "hun", new[] { Tag.Parse("HUN ") } }, // Hungarian
             { "hup", new[] { Tag.Parse("ATH ") } }, // Athapaskan languages
             { "hur", new[] { Tag.Parse("HUR ") } }, // Halkomelem
             { "hus", new[] { Tag.Parse("MYN ") } }, // Mayan
             { "hwc", new[] { Tag.Parse("CPP ") } }, // Creoles
-            { "hye", new[] { Tag.Parse("HYE "), Tag.Parse("HYE0") } }, // Armenian; Armenian East
+            { "hye", new[] { Tag.Parse("HYE0"), Tag.Parse("HYE ") } }, // Armenian East; Armenian
             { "hyw", new[] { Tag.Parse("HYE ") } }, // Armenian
             { "iba", new[] { Tag.Parse("IBA ") } }, // Iban
             { "ibb", new[] { Tag.Parse("IBB ") } }, // Ibibio
@@ -544,7 +558,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "ixl", new[] { Tag.Parse("MYN ") } }, // Mayan
             { "jac", new[] { Tag.Parse("MYN ") } }, // Mayan
             { "jak", new[] { Tag.Parse("MLY ") } }, // Malay
-            { "jam", new[] { Tag.Parse("CPP "), Tag.Parse("JAM ") } }, // Creoles; Jamaican Creole
+            { "jam", new[] { Tag.Parse("JAM "), Tag.Parse("CPP ") } }, // Jamaican Creole; Creoles
             { "jav", new[] { Tag.Parse("JAV ") } }, // Javanese
             { "jax", new[] { Tag.Parse("MLY ") } }, // Malay
             { "jbe", new[] { Tag.Parse("BBR ") } }, // Berber
@@ -560,7 +574,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "jvd", new[] { Tag.Parse("CPP ") } }, // Creoles
             { "jw", new[] { Tag.Parse("JAV ") } }, // Javanese
             { "kaa", new[] { Tag.Parse("KRK ") } }, // Karakalpak
-            { "kab", new[] { Tag.Parse("BBR "), Tag.Parse("KAB0") } }, // Berber; Kabyle
+            { "kab", new[] { Tag.Parse("KAB0"), Tag.Parse("BBR ") } }, // Kabyle; Berber
             { "kal", new[] { Tag.Parse("GRN ") } }, // Greenlandic
             { "kam", new[] { Tag.Parse("KMB ") } }, // Kamba
             { "kan", new[] { Tag.Parse("KAN ") } }, // Kannada
@@ -578,7 +592,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "kde", new[] { Tag.Parse("KDE ") } }, // Makonde
             { "kdr", new[] { Tag.Parse("KRM ") } }, // Karaim
             { "kdt", new[] { Tag.Parse("KUY ") } }, // Kuy
-            { "kea", new[] { Tag.Parse("CPP "), Tag.Parse("KEA ") } }, // Creoles; Kabuverdianu (Crioulo)
+            { "kea", new[] { Tag.Parse("KEA "), Tag.Parse("CPP ") } }, // Kabuverdianu (Crioulo); Creoles
             { "kek", new[] { Tag.Parse("KEK "), Tag.Parse("MYN ") } }, // Kekchi; Mayan
             { "kex", new[] { Tag.Parse("KKN ") } }, // Kokni
             { "kfa", new[] { Tag.Parse("KOD ") } }, // Kodagu
@@ -619,23 +633,24 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "kok", new[] { Tag.Parse("KOK ") } }, // Konkani
             { "kom", new[] { Tag.Parse("KOM ") } }, // Komi
             { "kon", new[] { Tag.Parse("KON0") } }, // Kongo
-            { "kor", new[] { Tag.Parse("KOH "), Tag.Parse("KOR ") } }, // Korean Old Hangul; Korean
+            { "kor", new[] { Tag.Parse("KOR "), Tag.Parse("KOH ") } }, // Korean; Korean Old Hangul
             { "kos", new[] { Tag.Parse("KOS ") } }, // Kosraean
             { "koy", new[] { Tag.Parse("ATH ") } }, // Athapaskan languages
             { "kpe", new[] { Tag.Parse("KPL ") } }, // Kpelle
+            { "kpp", new[] { Tag.Parse("KRN ") } }, // Karen
             { "kpv", new[] { Tag.Parse("KOZ ") } }, // Komi-Zyrian
             { "kpy", new[] { Tag.Parse("KYK ") } }, // Koryak
             { "kqs", new[] { Tag.Parse("KIS ") } }, // Kisii
             { "kqy", new[] { Tag.Parse("KRT ") } }, // Koorete
             { "krc", new[] { Tag.Parse("BAL "), Tag.Parse("KAR ") } }, // Balkar; Karachay
-            { "kri", new[] { Tag.Parse("CPP "), Tag.Parse("KRI ") } }, // Creoles; Krio
+            { "kri", new[] { Tag.Parse("KRI "), Tag.Parse("CPP ") } }, // Krio; Creoles
             { "krl", new[] { Tag.Parse("KRL ") } }, // Karelian
             { "krt", new[] { Tag.Parse("KNR ") } }, // Kanuri
             { "kru", new[] { Tag.Parse("KUU ") } }, // Kurukh
             { "ksh", new[] { Tag.Parse("KSH0") } }, // Ripuarian
             { "kss", new[] { Tag.Parse("KIS ") } }, // Kisii
             { "ksu", new[] { Tag.Parse("KSU ") } }, // Khamyang
-            { "ksw", new[] { Tag.Parse("KRN "), Tag.Parse("KSW ") } }, // Karen; S’gaw Karen
+            { "ksw", new[] { Tag.Parse("KSW "), Tag.Parse("KRN ") } }, // S’gaw Karen; Karen
             { "ktb", new[] { Tag.Parse("KEB ") } }, // Kebena
             { "ktu", new[] { Tag.Parse("KON ") } }, // Kikongo
             { "ktw", new[] { Tag.Parse("ATH ") } }, // Athapaskan languages
@@ -646,7 +661,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "kuw", new[] { Tag.Parse("BAD0") } }, // Banda
             { "kvb", new[] { Tag.Parse("MLY ") } }, // Malay
             { "kvl", new[] { Tag.Parse("KRN ") } }, // Karen
-            { "kvq", new[] { Tag.Parse("KRN "), Tag.Parse("KVQ ") } }, // Karen; Geba Karen
+            { "kvq", new[] { Tag.Parse("KVQ "), Tag.Parse("KRN ") } }, // Geba Karen; Karen
             { "kvr", new[] { Tag.Parse("MLY ") } }, // Malay
             { "kvt", new[] { Tag.Parse("KRN ") } }, // Karen
             { "kvu", new[] { Tag.Parse("KRN ") } }, // Karen
@@ -660,7 +675,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "kxk", new[] { Tag.Parse("KRN ") } }, // Karen
             { "kxl", new[] { Tag.Parse("KUU ") } }, // Kurukh
             { "kxu", new[] { Tag.Parse("KUI ") } }, // Kui
-            { "kyu", new[] { Tag.Parse("KRN "), Tag.Parse("KYU ") } }, // Karen; Western Kayah
+            { "kyu", new[] { Tag.Parse("KYU "), Tag.Parse("KRN ") } }, // Western Kayah; Karen
             { "lac", new[] { Tag.Parse("MYN ") } }, // Mayan
             { "lad", new[] { Tag.Parse("JUD ") } }, // Ladino
             { "lao", new[] { Tag.Parse("LAO ") } }, // Lao
@@ -709,6 +724,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "lua", new[] { Tag.Parse("LUA ") } }, // Luba-Lulua
             { "lub", new[] { Tag.Parse("LUB ") } }, // Luba-Katanga
             { "lug", new[] { Tag.Parse("LUG ") } }, // Ganda
+            { "luh", new[] { Tag.Parse("ZHS ") } }, // Chinese, Simplified
             { "luo", new[] { Tag.Parse("LUO ") } }, // Luo
             { "lus", new[] { Tag.Parse("MIZ "), Tag.Parse("QIN ") } }, // Mizo; Chin
             { "lut", new[] { Tag.Parse("LUT ") } }, // Lushootseed
@@ -716,6 +732,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "luz", new[] { Tag.Parse("LRC ") } }, // Luri
             { "lvs", new[] { Tag.Parse("LVI ") } }, // Latvian
             { "lwg", new[] { Tag.Parse("LUH ") } }, // Luyia
+            { "lzh", new[] { Tag.Parse("ZHT ") } }, // Chinese, Traditional
             { "lzz", new[] { Tag.Parse("LAZ ") } }, // Laz
             { "mad", new[] { Tag.Parse("MAD ") } }, // Madura
             { "mag", new[] { Tag.Parse("MAG ") } }, // Magahi
@@ -740,7 +757,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "mev", new[] { Tag.Parse("MEV ") } }, // Mano
             { "mfa", new[] { Tag.Parse("MFA ") } }, // Pattani Malay
             { "mfb", new[] { Tag.Parse("MLY ") } }, // Malay
-            { "mfe", new[] { Tag.Parse("CPP "), Tag.Parse("MFE ") } }, // Creoles; Morisyen
+            { "mfe", new[] { Tag.Parse("MFE "), Tag.Parse("CPP ") } }, // Morisyen; Creoles
             { "mfp", new[] { Tag.Parse("CPP ") } }, // Creoles
             { "mga", new[] { Tag.Parse("SGA ") } }, // Old Irish
             { "mhc", new[] { Tag.Parse("MYN ") } }, // Mayan
@@ -759,6 +776,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "mnh", new[] { Tag.Parse("BAD0") } }, // Banda
             { "mni", new[] { Tag.Parse("MNI ") } }, // Manipuri
             { "mnk", new[] { Tag.Parse("MND "), Tag.Parse("MNK ") } }, // Mandinka; Maninka
+            { "mnp", new[] { Tag.Parse("ZHS ") } }, // Chinese, Simplified
             { "mns", new[] { Tag.Parse("MAN ") } }, // Mansi
             { "mnw", new[] { Tag.Parse("MON "), Tag.Parse("MONT") } }, // Mon; Thailand Mon
             { "mo", new[] { Tag.Parse("ROM ") } }, // Romanian
@@ -799,11 +817,12 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "mzb", new[] { Tag.Parse("BBR ") } }, // Berber
             { "mzn", new[] { Tag.Parse("MZN ") } }, // Mazanderani
             { "mzs", new[] { Tag.Parse("CPP ") } }, // Creoles
-            { "nag", new[] { Tag.Parse("CPP "), Tag.Parse("NAG ") } }, // Creoles; Naga-Assamese
+            { "nag", new[] { Tag.Parse("NAG "), Tag.Parse("CPP ") } }, // Naga-Assamese; Creoles
             { "nah", new[] { Tag.Parse("NAH ") } }, // Nahuatl
+            { "nan", new[] { Tag.Parse("ZHS ") } }, // Chinese, Simplified
             { "nap", new[] { Tag.Parse("NAP ") } }, // Neapolitan
             { "nau", new[] { Tag.Parse("NAU ") } }, // Nauruan
-            { "nav", new[] { Tag.Parse("ATH "), Tag.Parse("NAV ") } }, // Athapaskan languages; Navajo
+            { "nav", new[] { Tag.Parse("NAV "), Tag.Parse("ATH ") } }, // Navajo; Athapaskan languages
             { "naz", new[] { Tag.Parse("NAH ") } }, // Nahuatl
             { "nbl", new[] { Tag.Parse("NDB ") } }, // Ndebele
             { "nch", new[] { Tag.Parse("NAH ") } }, // Nahuatl
@@ -848,6 +867,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "nla", new[] { Tag.Parse("BML ") } }, // Bamileke
             { "nld", new[] { Tag.Parse("NLD ") } }, // Dutch
             { "nle", new[] { Tag.Parse("LUH ") } }, // Luyia
+            { "nln", new[] { Tag.Parse("NAH ") } }, // Nahuatl
             { "nlv", new[] { Tag.Parse("NAH ") } }, // Nahuatl
             { "nnh", new[] { Tag.Parse("BML ") } }, // Bamileke
             { "nno", new[] { Tag.Parse("NYN ") } }, // Norwegian Nynorsk (Nynorsk, Norwegian)
@@ -902,7 +922,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "pag", new[] { Tag.Parse("PAG ") } }, // Pangasinan
             { "pam", new[] { Tag.Parse("PAM ") } }, // Pampangan
             { "pan", new[] { Tag.Parse("PAN ") } }, // Punjabi
-            { "pap", new[] { Tag.Parse("CPP "), Tag.Parse("PAP0") } }, // Creoles; Papiamentu
+            { "pap", new[] { Tag.Parse("PAP0"), Tag.Parse("CPP ") } }, // Papiamentu; Creoles
             { "pau", new[] { Tag.Parse("PAU ") } }, // Palauan
             { "pbt", new[] { Tag.Parse("PAS ") } }, // Pashto
             { "pbu", new[] { Tag.Parse("PAS ") } }, // Pashto
@@ -919,7 +939,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "pey", new[] { Tag.Parse("CPP ") } }, // Creoles
             { "pga", new[] { Tag.Parse("CPP ") } }, // Creoles
             { "phk", new[] { Tag.Parse("PHK ") } }, // Phake
-            { "pih", new[] { Tag.Parse("CPP "), Tag.Parse("PIH ") } }, // Creoles; Norfolk
+            { "pih", new[] { Tag.Parse("PIH "), Tag.Parse("CPP ") } }, // Norfolk; Creoles
             { "pis", new[] { Tag.Parse("CPP ") } }, // Creoles
             { "pkh", new[] { Tag.Parse("QIN ") } }, // Chin
             { "pko", new[] { Tag.Parse("KAL ") } }, // Kalenjin
@@ -934,7 +954,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "pmy", new[] { Tag.Parse("CPP ") } }, // Creoles
             { "pnb", new[] { Tag.Parse("PNB ") } }, // Western Panjabi
             { "poc", new[] { Tag.Parse("MYN ") } }, // Mayan
-            { "poh", new[] { Tag.Parse("MYN "), Tag.Parse("POH ") } }, // Mayan; Pocomchi
+            { "poh", new[] { Tag.Parse("POH "), Tag.Parse("MYN ") } }, // Pocomchi; Mayan
             { "pol", new[] { Tag.Parse("PLK ") } }, // Polish
             { "pon", new[] { Tag.Parse("PON ") } }, // Pohnpeian
             { "por", new[] { Tag.Parse("PTG ") } }, // Portuguese
@@ -949,16 +969,26 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "pub", new[] { Tag.Parse("QIN ") } }, // Chin
             { "pus", new[] { Tag.Parse("PAS ") } }, // Pashto
             { "puz", new[] { Tag.Parse("QIN ") } }, // Chin
-            { "pwo", new[] { Tag.Parse("KRN "), Tag.Parse("PWO ") } }, // Karen; Western Pwo Karen
+            { "pwo", new[] { Tag.Parse("PWO "), Tag.Parse("KRN ") } }, // Western Pwo Karen; Karen
             { "pww", new[] { Tag.Parse("KRN ") } }, // Karen
-            { "quc", new[] { Tag.Parse("MYN "), Tag.Parse("QUC ") } }, // Mayan; K’iche’
+            { "quc", new[] { Tag.Parse("QUC "), Tag.Parse("MYN ") } }, // K’iche’; Mayan
+            { "que", new[] { Tag.Parse("QUZ ") } }, // Quechua
+            { "quf", new[] { Tag.Parse("QUZ ") } }, // Quechua
             { "quh", new[] { Tag.Parse("QUH ") } }, // Quechua (Bolivia)
+            { "quk", new[] { Tag.Parse("QUZ ") } }, // Quechua
             { "qum", new[] { Tag.Parse("MYN ") } }, // Mayan
             { "quv", new[] { Tag.Parse("MYN ") } }, // Mayan
+            { "quy", new[] { Tag.Parse("QUZ ") } }, // Quechua
             { "quz", new[] { Tag.Parse("QUZ ") } }, // Quechua
+            { "qvc", new[] { Tag.Parse("QUZ ") } }, // Quechua
+            { "qve", new[] { Tag.Parse("QUZ ") } }, // Quechua
             { "qvi", new[] { Tag.Parse("QVI ") } }, // Quechua (Ecuador)
+            { "qvs", new[] { Tag.Parse("QUZ ") } }, // Quechua
+            { "qwc", new[] { Tag.Parse("QUZ ") } }, // Quechua
             { "qwh", new[] { Tag.Parse("QWH ") } }, // Quechua (Peru)
             { "qwt", new[] { Tag.Parse("ATH ") } }, // Athapaskan languages
+            { "qxp", new[] { Tag.Parse("QUZ ") } }, // Quechua
+            { "qxu", new[] { Tag.Parse("QUZ ") } }, // Quechua
             { "rag", new[] { Tag.Parse("LUH ") } }, // Luyia
             { "raj", new[] { Tag.Parse("RAJ ") } }, // Rajasthani
             { "ral", new[] { Tag.Parse("QIN ") } }, // Chin
@@ -969,7 +999,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "rej", new[] { Tag.Parse("REJ ") } }, // Rejang
             { "rhg", new[] { Tag.Parse("RHG ") } }, // Rohingya
             { "ria", new[] { Tag.Parse("RIA ") } }, // Riang
-            { "rif", new[] { Tag.Parse("BBR "), Tag.Parse("RIF ") } }, // Berber; Tarifit
+            { "rif", new[] { Tag.Parse("RIF "), Tag.Parse("BBR ") } }, // Tarifit; Berber
             { "rit", new[] { Tag.Parse("RIT ") } }, // Ritarungo
             { "rki", new[] { Tag.Parse("ARK ") } }, // Rakhine
             { "rkw", new[] { Tag.Parse("RKW ") } }, // Arakwal
@@ -1004,7 +1034,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "sck", new[] { Tag.Parse("SAD ") } }, // Sadri
             { "scn", new[] { Tag.Parse("SCN ") } }, // Sicilian
             { "sco", new[] { Tag.Parse("SCO ") } }, // Scots
-            { "scs", new[] { Tag.Parse("ATH "), Tag.Parse("SCS "), Tag.Parse("SLA ") } }, // Athapaskan languages; North Slavey; Slavey
+            { "scs", new[] { Tag.Parse("SCS "), Tag.Parse("SLA "), Tag.Parse("ATH ") } }, // North Slavey; Slavey; Athapaskan languages
             { "sdc", new[] { Tag.Parse("SRD ") } }, // Sardinian
             { "sdh", new[] { Tag.Parse("KUR ") } }, // Kurdish
             { "sdn", new[] { Tag.Parse("SRD ") } }, // Sardinian
@@ -1019,7 +1049,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "sgc", new[] { Tag.Parse("KAL ") } }, // Kalenjin
             { "sgs", new[] { Tag.Parse("SGS ") } }, // Samogitian
             { "sgw", new[] { Tag.Parse("CHG ") } }, // Chaha Gurage
-            { "shi", new[] { Tag.Parse("BBR "), Tag.Parse("SHI ") } }, // Berber; Tachelhit
+            { "shi", new[] { Tag.Parse("SHI "), Tag.Parse("BBR ") } }, // Tachelhit; Berber
             { "shl", new[] { Tag.Parse("QIN ") } }, // Chin
             { "shn", new[] { Tag.Parse("SHN ") } }, // Shan
             { "shu", new[] { Tag.Parse("ARA ") } }, // Arabic
@@ -1028,6 +1058,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "sin", new[] { Tag.Parse("SNH ") } }, // Sinhala (Sinhalese)
             { "siz", new[] { Tag.Parse("BBR ") } }, // Berber
             { "sja", new[] { Tag.Parse("SJA ") } }, // Epena
+            { "sjc", new[] { Tag.Parse("ZHS ") } }, // Chinese, Simplified
             { "sjd", new[] { Tag.Parse("KSM ") } }, // Kildin Sami
             { "sje", new[] { Tag.Parse("SJE ") } }, // Pite Sami
             { "sjo", new[] { Tag.Parse("SIB ") } }, // Sibe
@@ -1085,15 +1116,15 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "swn", new[] { Tag.Parse("BBR ") } }, // Berber
             { "swv", new[] { Tag.Parse("MAW ") } }, // Marwari
             { "sxu", new[] { Tag.Parse("SXU ") } }, // Upper Saxon
-            { "syc", new[] { Tag.Parse("SYR "), Tag.Parse("SYRE"), Tag.Parse("SYRJ"), Tag.Parse("SYRN") } }, // Syriac; Syriac, Estrangela script-variant (equivalent to ISO 15924 'Syre'); Syriac, Western script-variant (equivalent to ISO 15924 'Syrj'); Syriac, Eastern script-variant (equivalent to ISO 15924 'Syrn')
+            { "syc", new[] { Tag.Parse("SYR ") } }, // Syriac
             { "syl", new[] { Tag.Parse("SYL ") } }, // Sylheti
-            { "syr", new[] { Tag.Parse("SYR "), Tag.Parse("SYRE"), Tag.Parse("SYRJ"), Tag.Parse("SYRN") } }, // Syriac; Syriac, Estrangela script-variant (equivalent to ISO 15924 'Syre'); Syriac, Western script-variant (equivalent to ISO 15924 'Syrj'); Syriac, Eastern script-variant (equivalent to ISO 15924 'Syrn')
+            { "syr", new[] { Tag.Parse("SYR ") } }, // Syriac
             { "szl", new[] { Tag.Parse("SZL ") } }, // Silesian
             { "taa", new[] { Tag.Parse("ATH ") } }, // Athapaskan languages
             { "tab", new[] { Tag.Parse("TAB ") } }, // Tabasaran
             { "tah", new[] { Tag.Parse("THT ") } }, // Tahitian
             { "tam", new[] { Tag.Parse("TAM ") } }, // Tamil
-            { "taq", new[] { Tag.Parse("BBR "), Tag.Parse("TAQ "), Tag.Parse("TMH ") } }, // Berber; Tamasheq; Tamashek
+            { "taq", new[] { Tag.Parse("TAQ "), Tag.Parse("TMH "), Tag.Parse("BBR ") } }, // Tamasheq; Tamashek; Berber
             { "tas", new[] { Tag.Parse("CPP ") } }, // Creoles
             { "tat", new[] { Tag.Parse("TAT ") } }, // Tatar
             { "tau", new[] { Tag.Parse("ATH ") } }, // Athapaskan languages
@@ -1122,8 +1153,8 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "tha", new[] { Tag.Parse("THA ") } }, // Thai
             { "thp", new[] { Tag.Parse("THP ") } }, // Thompson
             { "tht", new[] { Tag.Parse("ATH ") } }, // Athapaskan languages
-            { "thv", new[] { Tag.Parse("BBR "), Tag.Parse("THV "), Tag.Parse("TMH ") } }, // Berber; Tahaggart Tamahaq; Tamashek
-            { "thz", new[] { Tag.Parse("BBR "), Tag.Parse("THZ "), Tag.Parse("TMH ") } }, // Berber; Tayart Tamajeq; Tamashek
+            { "thv", new[] { Tag.Parse("THV "), Tag.Parse("TMH "), Tag.Parse("BBR ") } }, // Tahaggart Tamahaq; Tamashek; Berber
+            { "thz", new[] { Tag.Parse("THZ "), Tag.Parse("TMH "), Tag.Parse("BBR ") } }, // Tayart Tamajeq; Tamashek; Berber
             { "tia", new[] { Tag.Parse("BBR ") } }, // Berber
             { "tig", new[] { Tag.Parse("TGR ") } }, // Tigre
             { "tir", new[] { Tag.Parse("TGY ") } }, // Tigrinya
@@ -1134,7 +1165,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "tli", new[] { Tag.Parse("TLI ") } }, // Tlingit
             { "tly", new[] { Tag.Parse("TLY ") } }, // Talysh
             { "tmg", new[] { Tag.Parse("CPP ") } }, // Creoles
-            { "tmh", new[] { Tag.Parse("BBR "), Tag.Parse("TMH ") } }, // Berber; Tamashek
+            { "tmh", new[] { Tag.Parse("TMH "), Tag.Parse("BBR ") } }, // Tamashek; Berber
             { "tmw", new[] { Tag.Parse("MLY ") } }, // Malay
             { "tnf", new[] { Tag.Parse("DRI ") } }, // Dari
             { "tod", new[] { Tag.Parse("TOD0") } }, // Toma
@@ -1143,15 +1174,15 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "tol", new[] { Tag.Parse("ATH ") } }, // Athapaskan languages
             { "ton", new[] { Tag.Parse("TGN ") } }, // Tongan
             { "tor", new[] { Tag.Parse("BAD0") } }, // Banda
-            { "tpi", new[] { Tag.Parse("CPP "), Tag.Parse("TPI ") } }, // Creoles; Tok Pisin
+            { "tpi", new[] { Tag.Parse("TPI "), Tag.Parse("CPP ") } }, // Tok Pisin; Creoles
             { "trf", new[] { Tag.Parse("CPP ") } }, // Creoles
-            { "tru", new[] { Tag.Parse("SYR "), Tag.Parse("TUA ") } }, // Syriac; Turoyo Aramaic
+            { "tru", new[] { Tag.Parse("TUA "), Tag.Parse("SYR ") } }, // Turoyo Aramaic; Syriac
             { "tsj", new[] { Tag.Parse("TSJ ") } }, // Tshangla
             { "tsn", new[] { Tag.Parse("TNA ") } }, // Tswana
             { "tso", new[] { Tag.Parse("TSG ") } }, // Tsonga
             { "ttc", new[] { Tag.Parse("MYN ") } }, // Mayan
             { "ttm", new[] { Tag.Parse("ATH ") } }, // Athapaskan languages
-            { "ttq", new[] { Tag.Parse("BBR "), Tag.Parse("TMH "), Tag.Parse("TTQ ") } }, // Berber; Tamashek; Tawallammat Tamajaq
+            { "ttq", new[] { Tag.Parse("TTQ "), Tag.Parse("TMH "), Tag.Parse("BBR ") } }, // Tawallammat Tamajaq; Tamashek; Berber
             { "tuk", new[] { Tag.Parse("TKM ") } }, // Turkmen
             { "tum", new[] { Tag.Parse("TUM ") } }, // Tumbuka
             { "tur", new[] { Tag.Parse("TRK ") } }, // Turkish
@@ -1161,19 +1192,20 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "tvl", new[] { Tag.Parse("TVL ") } }, // Tuvalu
             { "tvy", new[] { Tag.Parse("CPP ") } }, // Creoles
             { "tw", new[] { Tag.Parse("AKA ") } }, // Akan
-            { "twi", new[] { Tag.Parse("AKA "), Tag.Parse("TWI ") } }, // Akan; Twi
+            { "twi", new[] { Tag.Parse("TWI "), Tag.Parse("AKA ") } }, // Twi; Akan
             { "txc", new[] { Tag.Parse("ATH ") } }, // Athapaskan languages
             { "txy", new[] { Tag.Parse("MLG ") } }, // Malagasy
             { "tyv", new[] { Tag.Parse("TUV ") } }, // Tuvin
             { "tyz", new[] { Tag.Parse("TYZ ") } }, // Tày
             { "tzh", new[] { Tag.Parse("MYN ") } }, // Mayan
             { "tzj", new[] { Tag.Parse("MYN ") } }, // Mayan
-            { "tzm", new[] { Tag.Parse("BBR "), Tag.Parse("TZM ") } }, // Berber; Tamazight
-            { "tzo", new[] { Tag.Parse("MYN "), Tag.Parse("TZO ") } }, // Mayan; Tzotzil
+            { "tzm", new[] { Tag.Parse("TZM "), Tag.Parse("BBR ") } }, // Tamazight; Berber
+            { "tzo", new[] { Tag.Parse("TZO "), Tag.Parse("MYN ") } }, // Tzotzil; Mayan
             { "ubl", new[] { Tag.Parse("BIK ") } }, // Bikol
             { "udi", new[] { Tag.Parse("UDI ") } }, // Udi
             { "udm", new[] { Tag.Parse("UDM ") } }, // Udmurt
             { "uig", new[] { Tag.Parse("UYG ") } }, // Uyghur
+            { "uki", new[] { Tag.Parse("KUI ") } }, // Kui
             { "ukr", new[] { Tag.Parse("UKR ") } }, // Ukrainian
             { "uln", new[] { Tag.Parse("CPP ") } }, // Creoles
             { "umb", new[] { Tag.Parse("UMB ") } }, // Umbundu
@@ -1215,6 +1247,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "wry", new[] { Tag.Parse("MAW ") } }, // Marwari
             { "wsg", new[] { Tag.Parse("GON ") } }, // Gondi
             { "wtm", new[] { Tag.Parse("WTM ") } }, // Mewati
+            { "wuu", new[] { Tag.Parse("ZHS ") } }, // Chinese, Simplified
             { "wyn", new[] { Tag.Parse("WYN ") } }, // Wyandot
             { "xal", new[] { Tag.Parse("KLM "), Tag.Parse("TOD ") } }, // Kalmyk; Todo
             { "xan", new[] { Tag.Parse("SEK ") } }, // Sekota
@@ -1230,11 +1263,12 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "xnr", new[] { Tag.Parse("DGR ") } }, // Dogri (macrolanguage)
             { "xog", new[] { Tag.Parse("XOG ") } }, // Soga
             { "xpe", new[] { Tag.Parse("XPE ") } }, // Kpelle (Liberia)
-            { "xsl", new[] { Tag.Parse("ATH "), Tag.Parse("SLA "), Tag.Parse("SSL ") } }, // Athapaskan languages; Slavey; South Slavey
+            { "xsl", new[] { Tag.Parse("SSL "), Tag.Parse("SLA "), Tag.Parse("ATH ") } }, // South Slavey; Slavey; Athapaskan languages
             { "xst", new[] { Tag.Parse("SIG ") } }, // Silte Gurage
             { "xub", new[] { Tag.Parse("XUB ") } }, // Bette Kuruma
             { "xuj", new[] { Tag.Parse("XUJ ") } }, // Jennu Kuruma
             { "xup", new[] { Tag.Parse("ATH ") } }, // Athapaskan languages
+            { "xwo", new[] { Tag.Parse("TOD ") } }, // Todo
             { "yaj", new[] { Tag.Parse("BAD0") } }, // Banda
             { "yao", new[] { Tag.Parse("YAO ") } }, // Yao
             { "yap", new[] { Tag.Parse("YAP ") } }, // Yapese
@@ -1257,7 +1291,7 @@ internal sealed partial class OpenTypeLanguageTagMap
             { "zeh", new[] { Tag.Parse("ZHA ") } }, // Zhuang
             { "zen", new[] { Tag.Parse("BBR ") } }, // Berber
             { "zgb", new[] { Tag.Parse("ZHA ") } }, // Zhuang
-            { "zgh", new[] { Tag.Parse("BBR "), Tag.Parse("ZGH ") } }, // Berber; Standard Moroccan Tamazight
+            { "zgh", new[] { Tag.Parse("ZGH "), Tag.Parse("BBR ") } }, // Standard Moroccan Tamazight; Berber
             { "zgm", new[] { Tag.Parse("ZHA ") } }, // Zhuang
             { "zgn", new[] { Tag.Parse("ZHA ") } }, // Zhuang
             { "zha", new[] { Tag.Parse("ZHA ") } }, // Zhuang

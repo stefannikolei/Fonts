@@ -187,13 +187,16 @@ internal static class AdvancedTypographicUtils
     /// <param name="matches">A span to store matched glyph indices, or default if not needed.</param>
     /// <returns><see langword="true"/> if the entire sequence was matched; otherwise, <see langword="false"/>.</returns>
     public static bool MatchInputSequence(SkippingGlyphIterator iterator, Tag feature, ushort increment, ushort[] sequence, Span<int> matches)
-        => Match(
+    {
+        ulong featureMask = iterator.Collection.FeatureMap.GetMask(feature);
+
+        return Match(
             increment,
             sequence,
             iterator,
             (component, data) =>
             {
-                if (!ContainsFeatureTag(data.Features, feature))
+                if ((data.FeatureMask & featureMask) == 0)
                 {
                     return false;
                 }
@@ -201,24 +204,6 @@ internal static class AdvancedTypographicUtils
                 return component == data.GlyphId;
             },
             matches);
-
-    /// <summary>
-    /// Determines whether the feature list contains the specified feature tag in an enabled state.
-    /// </summary>
-    /// <param name="featureList">The list of tag entries to search.</param>
-    /// <param name="feature">The feature tag to find.</param>
-    /// <returns><see langword="true"/> if the feature is present and enabled; otherwise, <see langword="false"/>.</returns>
-    private static bool ContainsFeatureTag(List<TagEntry> featureList, Tag feature)
-    {
-        foreach (TagEntry tagEntry in featureList)
-        {
-            if (tagEntry.Tag == feature && tagEntry.Enabled)
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /// <summary>
@@ -470,7 +455,7 @@ internal static class AdvancedTypographicUtils
         markData.Bounds.X = baseXY.XCoordinate - markXY.XCoordinate;
         markData.Bounds.Y = baseXY.YCoordinate - markXY.YCoordinate;
         markData.MarkAttachment = baseGlyphIndex;
-        markData.AppliedFeatures.Add(feature);
+        markData.AppliedFeatureMask |= collection.FeatureMap.GetOrAddMask(feature);
     }
 
     /// <summary>
@@ -503,7 +488,7 @@ internal static class AdvancedTypographicUtils
             current.Bounds.Height += (short)MathF.Round(fontMetrics.GetGDefVariationDelta(record.YAdvanceVariation));
         }
 
-        current.AppliedFeatures.Add(feature);
+        current.AppliedFeatureMask |= collection.FeatureMap.GetOrAddMask(feature);
     }
 
     /// <summary>

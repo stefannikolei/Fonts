@@ -19,6 +19,12 @@ public static class TestFonts
     // retaining the BASE table on both axes plus the vertical metrics and layout features.
     public static string NotoSansSCBaselineSubsetFile => GetFullPath("Noto_Sans_SC/NotoSansSC-BaselineSubset.ttf");
 
+    // Language system selection fixture from the HarfBuzz test suite (MIT licensed,
+    // test/shape/data/in-house/fonts/6991b13ce889466be6de3f66e891de2bc0f117ee.ttf,
+    // exercised by language-tags.tests): 'J' shapes to a different glyph per selected
+    // KOR/ZHS/ZHT/ZHH language system, and the font declares no default language system.
+    public static string LanguageTagsFile => GetFullPath("HarfBuzz-LanguageTags.ttf");
+
     public static string WendyOneFile => GetFullPath("Wendy_One/WendyOne-Regular.ttf");
 
     // Font from: https://google-webfonts-helper.herokuapp.com/fonts/open-sans?subsets=cyrillic,cyrillic-ext,greek,greek-ext,hebrew,latin,latin-ext,vietnamese

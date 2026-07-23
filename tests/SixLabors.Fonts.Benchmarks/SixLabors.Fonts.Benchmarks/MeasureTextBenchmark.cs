@@ -69,6 +69,7 @@ public class MeasureTextBenchmark : IDisposable
         this.arialTypeface.Dispose();
         this.font.Dispose();
         this.paint.Dispose();
+        GC.SuppressFinalize(this);
     }
 
     [Params("a", "Hello world", "The quick brown fox jumps over the lazy dog", LoremIpsum)]

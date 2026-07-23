@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using SixLabors.Fonts.Tables.AdvancedTypographic;
 using SixLabors.Fonts.Unicode;
@@ -18,12 +19,24 @@ internal sealed class GlyphSubstitutionCollection : IGlyphShapingCollection
     /// Contains a map the index of a map within the collection, non-sequential codepoint offsets, and their glyph ids.
     /// </summary>
     private readonly List<OffsetGlyphDataPair> glyphs = [];
+    private GlyphSetDigest glyphDigest;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GlyphSubstitutionCollection"/> class.
     /// </summary>
     /// <param name="textOptions">The text options.</param>
-    public GlyphSubstitutionCollection(TextOptions textOptions) => this.TextOptions = textOptions;
+    /// <param name="featureMap">The feature bit assignment shared by the shaping pass.</param>
+    public GlyphSubstitutionCollection(TextOptions textOptions, ShapingFeatureMap featureMap)
+    {
+        this.TextOptions = textOptions;
+        this.FeatureMap = featureMap;
+
+        // A null culture takes the ambient current culture, mirroring the reference
+        // shaping engine model where an unset buffer language is guessed from the
+        // locale. CultureInfo.InvariantCulture expresses no language preference.
+        CultureInfo culture = textOptions.Culture ?? CultureInfo.CurrentCulture;
+        this.LanguageTags = OpenTypeLanguageTagMap.TryGetTags(culture, out Tag[] tags) ? tags : [];
+    }
 
     /// <summary>
     /// Gets the number of glyphs ids contained in the collection.
@@ -33,6 +46,15 @@ internal sealed class GlyphSubstitutionCollection : IGlyphShapingCollection
 
     /// <inheritdoc />
     public TextOptions TextOptions { get; }
+
+    /// <inheritdoc />
+    public Tag[] LanguageTags { get; }
+
+    /// <inheritdoc />
+    public GlyphSetDigest GlyphDigest => this.glyphDigest;
+
+    /// <inheritdoc />
+    public ShapingFeatureMap FeatureMap { get; }
 
     /// <summary>
     /// Gets or sets the running id of any ligature glyphs contained withing this collection are a member of.
@@ -62,48 +84,33 @@ internal sealed class GlyphSubstitutionCollection : IGlyphShapingCollection
     /// <inheritdoc />
     public void AddShapingFeature(int index, TagEntry feature)
     {
+        // Registration only ever accumulates: adding a disabled entry for an already
+        // enabled feature must not clear the enabled bit, matching the list model this
+        // replaced where a disabled duplicate left earlier enabled entries in force.
         GlyphShapingData data = this.glyphs[index].Data;
-        data.Features.Add(feature);
+        ulong mask = this.FeatureMap.GetOrAddMask(feature.Tag);
+        data.RegisteredFeatureMask |= mask;
         if (feature.Enabled)
         {
-            data.EnabledFeatureTags.Add(feature.Tag);
+            data.FeatureMask |= mask;
         }
     }
 
     /// <inheritdoc />
     public void EnableShapingFeature(int index, Tag feature)
     {
+        // Intersecting with the registered mask preserves the contract that enabling a
+        // feature a shaper never added for this glyph is a no-op.
         GlyphShapingData data = this.glyphs[index].Data;
-        List<TagEntry> features = data.Features;
-        for (int i = 0; i < features.Count; i++)
-        {
-            TagEntry tagEntry = features[i];
-            if (tagEntry.Tag == feature)
-            {
-                tagEntry.Enabled = true;
-                features[i] = tagEntry;
-                data.EnabledFeatureTags.Add(feature);
-                break;
-            }
-        }
+        data.FeatureMask |= data.RegisteredFeatureMask & this.FeatureMap.GetMask(feature);
     }
 
     /// <inheritdoc />
     public void DisableShapingFeature(int index, Tag feature)
     {
+        // An unregistered tag yields a zero mask whose complement clears nothing.
         GlyphShapingData data = this.glyphs[index].Data;
-        List<TagEntry> features = data.Features;
-        for (int i = 0; i < features.Count; i++)
-        {
-            TagEntry tagEntry = features[i];
-            if (tagEntry.Tag == feature)
-            {
-                tagEntry.Enabled = false;
-                features[i] = tagEntry;
-                data.EnabledFeatureTags.Remove(feature);
-                break;
-            }
-        }
+        data.FeatureMask &= ~this.FeatureMap.GetMask(feature);
     }
 
     /// <summary>
@@ -112,7 +119,10 @@ internal sealed class GlyphSubstitutionCollection : IGlyphShapingCollection
     /// <param name="data">The data.</param>
     /// <param name="offset">The zero-based index within the input codepoint collection.</param>
     public void AddGlyph(GlyphShapingData data, int offset)
-        => this.glyphs.Add(new(offset, new(data, false)));
+    {
+        this.glyphDigest.Add(data.GlyphId);
+        this.glyphs.Add(new(offset, new(data, false)));
+    }
 
     /// <summary>
     /// Adds the glyph id and the codepoint it represents to the collection.
@@ -123,12 +133,15 @@ internal sealed class GlyphSubstitutionCollection : IGlyphShapingCollection
     /// <param name="textRun">The text run this glyph belongs to.</param>
     /// <param name="offset">The zero-based index within the input codepoint collection.</param>
     public void AddGlyph(ushort glyphId, CodePoint codePoint, TextDirection direction, TextRun textRun, int offset)
-        => this.glyphs.Add(new(offset, new(textRun)
+    {
+        this.glyphDigest.Add(glyphId);
+        this.glyphs.Add(new(offset, new(textRun)
         {
             CodePoint = codePoint,
             Direction = direction,
             GlyphId = glyphId,
         }));
+    }
 
     /// <summary>
     /// Adds an atomic inline placeholder to the collection.
@@ -241,6 +254,13 @@ internal sealed class GlyphSubstitutionCollection : IGlyphShapingCollection
         }
     }
 
+    /// <inheritdoc />
+    public void SetGlyphId(int index, ushort glyphId)
+    {
+        this.glyphDigest.Add(glyphId);
+        this.glyphs[index].Data.GlyphId = glyphId;
+    }
+
     /// <summary>
     /// Removes all elements from the collection.
     /// </summary>
@@ -292,13 +312,14 @@ internal sealed class GlyphSubstitutionCollection : IGlyphShapingCollection
     public void Replace(int index, ushort glyphId, Tag feature)
     {
         GlyphShapingData current = this.glyphs[index].Data;
+        this.glyphDigest.Add(glyphId);
         current.GlyphId = glyphId;
         current.LigatureId = 0;
         current.LigatureComponent = -1;
         current.MarkAttachment = -1;
         current.CursiveAttachment = -1;
         current.IsSubstituted = true;
-        current.AppliedFeatures.Add(feature);
+        current.AppliedFeatureMask |= this.FeatureMap.GetOrAddMask(feature);
     }
 
     /// <summary>
@@ -338,6 +359,7 @@ internal sealed class GlyphSubstitutionCollection : IGlyphShapingCollection
         }
 
         current.CodePointCount += codePointCount;
+        this.glyphDigest.Add(glyphId);
         current.GlyphId = glyphId;
         current.LigatureId = ligatureId;
         current.IsLigated = true;
@@ -345,7 +367,7 @@ internal sealed class GlyphSubstitutionCollection : IGlyphShapingCollection
         current.MarkAttachment = -1;
         current.CursiveAttachment = -1;
         current.IsSubstituted = true;
-        current.AppliedFeatures.Add(feature);
+        current.AppliedFeatureMask |= this.FeatureMap.GetOrAddMask(feature);
     }
 
     /// <summary>
@@ -384,13 +406,14 @@ internal sealed class GlyphSubstitutionCollection : IGlyphShapingCollection
         }
 
         current.CodePointCount += codePointCount;
+        this.glyphDigest.Add(glyphId);
         current.GlyphId = glyphId;
         current.LigatureId = 0;
         current.LigatureComponent = -1;
         current.MarkAttachment = -1;
         current.CursiveAttachment = -1;
         current.IsSubstituted = true;
-        current.AppliedFeatures.Add(feature);
+        current.AppliedFeatureMask |= this.FeatureMap.GetOrAddMask(feature);
     }
 
     /// <summary>
@@ -405,6 +428,7 @@ internal sealed class GlyphSubstitutionCollection : IGlyphShapingCollection
         {
             OffsetGlyphDataPair pair = this.glyphs[index];
             GlyphShapingData current = pair.Data;
+            this.glyphDigest.Add(glyphIds[0]);
             current.GlyphId = glyphIds[0];
             current.LigatureComponent = 0;
             current.MarkAttachment = -1;
@@ -424,7 +448,9 @@ internal sealed class GlyphSubstitutionCollection : IGlyphShapingCollection
                         LigatureComponent = i + 1
                     };
 
-                    data.AppliedFeatures.Add(feature);
+                    this.glyphDigest.Add(glyphIds[i]);
+
+                    data.AppliedFeatureMask |= this.FeatureMap.GetOrAddMask(feature);
 
                     this.glyphs.Insert(++index, new(pair.Offset, data));
                 }

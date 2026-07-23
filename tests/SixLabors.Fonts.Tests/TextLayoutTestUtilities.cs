@@ -166,6 +166,7 @@ internal static class TextLayoutTestUtilities
             Tracking = options.Tracking,
             ColorFontSupport = options.ColorFontSupport,
             FeatureTags = new List<Tag>(options.FeatureTags),
+            Culture = options.Culture,
         };
 
         if (options.TextRuns.Count > 0)

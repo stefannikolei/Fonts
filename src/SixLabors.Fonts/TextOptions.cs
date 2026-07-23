@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
+using System.Globalization;
 using System.Numerics;
 using SixLabors.Fonts.Tables.AdvancedTypographic;
 using SixLabors.Fonts.Unicode;
@@ -59,6 +60,7 @@ public class TextOptions
         this.Tracking = options.Tracking;
         this.ColorFontSupport = options.ColorFontSupport;
         this.FeatureTags = new List<Tag>(options.FeatureTags);
+        this.Culture = options.Culture;
         this.TextRuns = new List<TextRun>(options.TextRuns);
         this.DecorationPositioningMode = options.DecorationPositioningMode;
         this.TextDecorationSkipInk = options.TextDecorationSkipInk;
@@ -293,6 +295,21 @@ public class TextOptions
     /// Gets or sets the collection of additional feature tags to apply during glyph shaping.
     /// </summary>
     public IReadOnlyList<Tag> FeatureTags { get; set; } = Array.Empty<Tag>();
+
+    /// <summary>
+    /// Gets or sets the culture used to select language specific glyph shaping.
+    /// </summary>
+    /// <remarks>
+    /// Fonts can substitute and position glyphs differently per language, for example the
+    /// Turkish dotless i or Serbian italic letterforms. When set, shaping selects the
+    /// matching language system within each script's OpenType feature tables, falling back
+    /// to the font's default language system when the font does not distinguish the
+    /// language. When <see langword="null"/> the current culture applies, matching the
+    /// ambient language model of the reference shaping engines; use
+    /// <see cref="CultureInfo.InvariantCulture"/> to express no language preference and
+    /// always shape with the font's default language system.
+    /// </remarks>
+    public CultureInfo? Culture { get; set; }
 
     /// <summary>
     /// Gets or sets an optional collection of text runs to apply to the body of text.

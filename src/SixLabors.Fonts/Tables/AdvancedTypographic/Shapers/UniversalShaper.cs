@@ -264,10 +264,11 @@ internal sealed class UniversalShaper : DefaultShaper
         }
 
         int end = index + count;
+        ulong rphfMask = substitutionCollection.FeatureMap.GetMask(RphfTag);
         for (int i = index; i < end; i++)
         {
             GlyphShapingData data = substitutionCollection[i];
-            if (data.IsSubstituted && data.Features.Any(x => x.Tag == RphfTag))
+            if (data.IsSubstituted && (data.RegisteredFeatureMask & rphfMask) != 0)
             {
                 // Mark a substituted repha.
                 if (data.UniversalShapingEngineInfo != null)

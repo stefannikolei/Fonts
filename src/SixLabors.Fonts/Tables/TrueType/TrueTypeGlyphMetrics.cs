@@ -16,7 +16,13 @@ public partial class TrueTypeGlyphMetrics : FontGlyphMetrics
 {
     private static readonly Vector2 YInverter = new(1, -1);
     private readonly GlyphVector vector;
-    private readonly ConcurrentDictionary<float, GlyphVector> scaledVectorCache = new();
+
+    /// <summary>
+    /// Scaled, hinted outline copies keyed by ppem. Allocated on first render: shaping
+    /// and measurement clone metrics without ever rendering them, so an eager cache
+    /// would cost a dictionary per glyph per shaping pass.
+    /// </summary>
+    private ConcurrentDictionary<float, GlyphVector>? scaledVectorCache;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TrueTypeGlyphMetrics"/> class.
@@ -114,7 +120,7 @@ public partial class TrueTypeGlyphMetrics : FontGlyphMetrics
             this.FontMetrics,
             this.GlyphId,
             this.CodePoint,
-            GlyphVector.DeepClone(this.vector),
+            this.vector,
             this.AdvanceWidth,
             this.AdvanceHeight,
             this.LeftSideBearing,
@@ -140,7 +146,9 @@ public partial class TrueTypeGlyphMetrics : FontGlyphMetrics
         HintingMode hintingMode)
     {
         Matrix3x2 transform = this.GetOutlineTransform(mode);
-        GlyphVector scaledVector = this.scaledVectorCache.GetOrAdd(scaledPPEM, _ =>
+        ConcurrentDictionary<float, GlyphVector> cache =
+            LazyInitializer.EnsureInitialized(ref this.scaledVectorCache, static () => new());
+        GlyphVector scaledVector = cache.GetOrAdd(scaledPPEM, _ =>
         {
             // Create a scaled deep copy of the vector so that we do not alter
             // the globally cached instance.

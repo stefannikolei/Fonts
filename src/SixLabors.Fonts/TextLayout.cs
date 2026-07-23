@@ -127,8 +127,15 @@ internal static partial class TextLayout
             : [];
 
         LayoutMode layoutMode = options.LayoutMode;
-        GlyphSubstitutionCollection substitutions = new(options);
-        GlyphPositioningCollection positionings = new(options);
+
+        // One feature bit assignment for the whole pass: applied feature bits written
+        // while substituting are read after the glyph data is copied into the
+        // positioning collection, so both collections must agree on bit meaning.
+        ShapingFeatureMap featureMap = new();
+        GlyphSubstitutionCollection substitutions = new(options, featureMap);
+        GlyphPositioningCollection positionings = new(options, featureMap);
+
+        var probe = ShapingProbe.Enter();
 
         // Analyse the text for bidi directional runs.
         BidiAlgorithm bidi = BidiAlgorithm.Instance.Value!;
@@ -169,9 +176,13 @@ internal static partial class TextLayout
         // Get the list of directional runs
         BidiRun[] bidiRuns = [.. BidiRun.CoalesceLevels(bidi.ResolvedLevels)];
         Dictionary<int, int> bidiMap = [];
+        ShapingProbe.Exit(ShapingProbe.Bidi, probe);
+
+        probe = ShapingProbe.Enter();
 
         // Incrementally build out collection of glyphs.
         IReadOnlyList<TextRun> textRuns = BuildTextRuns(text, options);
+        ShapingProbe.Exit(ShapingProbe.BuildTextRuns, probe);
 
         // First do multiple font runs using the individual text runs.
         bool complete = true;
@@ -258,6 +269,7 @@ internal static partial class TextLayout
         // Update the positions of the glyphs in the completed collection.
         // Each set of metrics is associated with single font and will only be updated
         // by that font so it's safe to use a single collection.
+        probe = ShapingProbe.Enter();
         Font? lastFont = null;
         for (int i = 0; i < textRuns.Count; i++)
         {
@@ -277,6 +289,8 @@ internal static partial class TextLayout
         {
             font.FontMetrics.UpdatePositions(positionings);
         }
+
+        ShapingProbe.Exit(ShapingProbe.Positioning, probe);
 
         return new ShapedText(positionings, bidiRuns, bidiMap, layoutMode);
     }
@@ -1607,6 +1621,8 @@ internal static partial class TextLayout
         // overwriting the glyph ids.
         substitutions.Clear();
 
+        var probe = ShapingProbe.Enter();
+
         // Enumerate through each grapheme in the text.
         int graphemeIndex = start;
         SpanGraphemeEnumerator graphemeEnumerator = new(text);
@@ -1675,14 +1691,24 @@ internal static partial class TextLayout
             graphemeIndex++;
         }
 
+        ShapingProbe.Exit(ShapingProbe.Populate, probe);
+
         // Apply the simple and complex substitutions.
         // TODO: Investigate HarfBuzz normalizer.
+        probe = ShapingProbe.Enter();
         SubstituteBidiMirrors(font.FontMetrics, substitutions);
-        font.FontMetrics.ApplySubstitution(substitutions);
+        ShapingProbe.Exit(ShapingProbe.Mirrors, probe);
 
-        return !isFallbackRun
+        probe = ShapingProbe.Enter();
+        font.FontMetrics.ApplySubstitution(substitutions);
+        ShapingProbe.Exit(ShapingProbe.Substitution, probe);
+
+        probe = ShapingProbe.Enter();
+        bool result = !isFallbackRun
             ? positionings.TryAdd(font, substitutions)
             : positionings.TryUpdate(font, substitutions);
+        ShapingProbe.Exit(ShapingProbe.MetricsAdd, probe);
+        return result;
     }
 
     /// <summary>

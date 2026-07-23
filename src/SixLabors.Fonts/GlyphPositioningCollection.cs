@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using SixLabors.Fonts.Tables.AdvancedTypographic;
 using SixLabors.Fonts.Unicode;
@@ -18,18 +19,39 @@ internal sealed class GlyphPositioningCollection : IGlyphShapingCollection
     /// Contains a map the index of a map within the collection, non-sequential codepoint offsets, and their glyph ids, point size, and mtrics.
     /// </summary>
     private readonly List<GlyphPositioningData> glyphs = [];
+    private GlyphSetDigest glyphDigest;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GlyphPositioningCollection"/> class.
     /// </summary>
     /// <param name="textOptions">The text options.</param>
-    public GlyphPositioningCollection(TextOptions textOptions) => this.TextOptions = textOptions;
+    /// <param name="featureMap">The feature bit assignment shared by the shaping pass.</param>
+    public GlyphPositioningCollection(TextOptions textOptions, ShapingFeatureMap featureMap)
+    {
+        this.TextOptions = textOptions;
+        this.FeatureMap = featureMap;
+
+        // A null culture takes the ambient current culture, mirroring the reference
+        // shaping engine model where an unset buffer language is guessed from the
+        // locale. CultureInfo.InvariantCulture expresses no language preference.
+        CultureInfo culture = textOptions.Culture ?? CultureInfo.CurrentCulture;
+        this.LanguageTags = OpenTypeLanguageTagMap.TryGetTags(culture, out Tag[] tags) ? tags : [];
+    }
 
     /// <inheritdoc />
     public int Count => this.glyphs.Count;
 
     /// <inheritdoc />
     public TextOptions TextOptions { get; }
+
+    /// <inheritdoc />
+    public Tag[] LanguageTags { get; }
+
+    /// <inheritdoc />
+    public GlyphSetDigest GlyphDigest => this.glyphDigest;
+
+    /// <inheritdoc />
+    public ShapingFeatureMap FeatureMap { get; }
 
     /// <inheritdoc />
     public GlyphShapingData this[int index]
@@ -39,51 +61,50 @@ internal sealed class GlyphPositioningCollection : IGlyphShapingCollection
     }
 
     /// <inheritdoc />
+    public void SetGlyphId(int index, ushort glyphId)
+    {
+        this.glyphDigest.Add(glyphId);
+        this.glyphs[index].Data.GlyphId = glyphId;
+    }
+
+    /// <inheritdoc />
     public void AddShapingFeature(int index, TagEntry feature)
     {
+        // Registration only ever accumulates: adding a disabled entry for an already
+        // enabled feature must not clear the enabled bit, matching the list model this
+        // replaced where a disabled duplicate left earlier enabled entries in force.
         GlyphShapingData data = this.glyphs[index].Data;
-        data.Features.Add(feature);
+        ulong mask = this.FeatureMap.GetOrAddMask(feature.Tag);
+        data.RegisteredFeatureMask |= mask;
         if (feature.Enabled)
         {
-            data.EnabledFeatureTags.Add(feature.Tag);
+            data.FeatureMask |= mask;
         }
     }
 
     /// <inheritdoc />
     public void EnableShapingFeature(int index, Tag feature)
     {
+        // Intersecting with the registered mask preserves the contract that enabling a
+        // feature a shaper never added for this glyph is a no-op.
         GlyphShapingData data = this.glyphs[index].Data;
-        List<TagEntry> features = data.Features;
-        for (int i = 0; i < features.Count; i++)
-        {
-            TagEntry tagEntry = features[i];
-            if (tagEntry.Tag == feature)
-            {
-                tagEntry.Enabled = true;
-                features[i] = tagEntry;
-                data.EnabledFeatureTags.Add(feature);
-                break;
-            }
-        }
+        data.FeatureMask |= data.RegisteredFeatureMask & this.FeatureMap.GetMask(feature);
     }
 
     /// <inheritdoc />
     public void DisableShapingFeature(int index, Tag feature)
     {
+        // An unregistered tag yields a zero mask whose complement clears nothing.
         GlyphShapingData data = this.glyphs[index].Data;
-        List<TagEntry> features = data.Features;
-        for (int i = 0; i < features.Count; i++)
-        {
-            TagEntry tagEntry = features[i];
-            if (tagEntry.Tag == feature)
-            {
-                tagEntry.Enabled = false;
-                features[i] = tagEntry;
-                data.EnabledFeatureTags.Remove(feature);
-                break;
-            }
-        }
+        data.FeatureMask &= ~this.FeatureMap.GetMask(feature);
     }
+
+    /// <summary>
+    /// Gets the full positioning data at the given index.
+    /// </summary>
+    /// <param name="index">The zero-based index of the element.</param>
+    /// <returns>The positioning data.</returns>
+    public GlyphPositioningData GetPositioningData(int index) => this.glyphs[index];
 
     /// <summary>
     /// Gets the glyph metrics at the given codepoint offset.
@@ -118,9 +139,7 @@ internal sealed class GlyphPositioningCollection : IGlyphShapingCollection
         isVerticalSubstitution = false;
         isDecomposed = false;
 
-        Tag vert = KnownFeatureTags.VerticalAlternates;
-        Tag vrt2 = KnownFeatureTags.VerticalAlternatesAndRotation;
-        Tag vrtr = KnownFeatureTags.VerticalAlternatesForRotation;
+        ulong verticalMask = this.GetVerticalFeatureMask();
 
         for (int i = startIndex; i < this.glyphs.Count; i++)
         {
@@ -136,14 +155,7 @@ internal sealed class GlyphPositioningCollection : IGlyphShapingCollection
                 {
                     isSubstituted = glyph.Data.IsSubstituted;
                     isDecomposed = glyph.Data.IsDecomposed;
-
-                    foreach (Tag feature in glyph.Data.AppliedFeatures)
-                    {
-                        isVerticalSubstitution |= feature == vert;
-                        isVerticalSubstitution |= feature == vrt2;
-                        isVerticalSubstitution |= feature == vrtr;
-                    }
-
+                    isVerticalSubstitution |= (glyph.Data.AppliedFeatureMask & verticalMask) != 0;
                     pointSize = glyph.PointSize;
                 }
 
@@ -175,9 +187,7 @@ internal sealed class GlyphPositioningCollection : IGlyphShapingCollection
         bool hasFallBacks = false;
         List<int> orphans = [];
 
-        Tag vert = KnownFeatureTags.VerticalAlternates;
-        Tag vrt2 = KnownFeatureTags.VerticalAlternatesAndRotation;
-        Tag vrtr = KnownFeatureTags.VerticalAlternatesForRotation;
+        ulong verticalMask = this.GetVerticalFeatureMask();
 
         for (int i = 0; i < this.glyphs.Count; i++)
         {
@@ -204,13 +214,8 @@ internal sealed class GlyphPositioningCollection : IGlyphShapingCollection
                     TextAttributes textAttributes = shape.TextRun.TextAttributes;
                     TextDecorations textDecorations = shape.TextRun.TextDecorations;
 
-                    bool isVertical = AdvancedTypographicUtils.IsVerticalGlyph(codePoint, layoutMode);
-                    foreach (Tag feature in shape.AppliedFeatures)
-                    {
-                        isVertical |= feature == vert;
-                        isVertical |= feature == vrt2;
-                        isVertical |= feature == vrtr;
-                    }
+                    bool isVertical = AdvancedTypographicUtils.IsVerticalGlyph(codePoint, layoutMode)
+                        || (shape.AppliedFeatureMask & verticalMask) != 0;
 
                     FontGlyphMetrics metrics = fontMetrics.GetGlyphMetrics(codePoint, id, textAttributes, textDecorations, layoutMode, colorFontSupport);
                     {
@@ -236,6 +241,7 @@ internal sealed class GlyphPositioningCollection : IGlyphShapingCollection
                             : new(0, 0, metrics.AdvanceWidth, 0);
 
                         // Track the number of inserted glyphs at the offset so we can correctly increment our position.
+                        this.glyphDigest.Add(metrics.GlyphId);
                         this.glyphs.Insert(i += replacementCount, new(offset, new(shape, true) { Bounds = bounds }, font, pointSize, metrics.CloneForRendering(shape.TextRun)));
                         replacementCount++;
                     }
@@ -272,9 +278,7 @@ internal sealed class GlyphPositioningCollection : IGlyphShapingCollection
         LayoutMode layoutMode = this.TextOptions.LayoutMode;
         ColorFontSupport colorFontSupport = this.TextOptions.ColorFontSupport;
 
-        Tag vert = KnownFeatureTags.VerticalAlternates;
-        Tag vrt2 = KnownFeatureTags.VerticalAlternatesAndRotation;
-        Tag vrtr = KnownFeatureTags.VerticalAlternatesForRotation;
+        ulong verticalMask = this.GetVerticalFeatureMask();
 
         for (int i = 0; i < collection.Count; i++)
         {
@@ -307,6 +311,7 @@ internal sealed class GlyphPositioningCollection : IGlyphShapingCollection
                     IsPositioned = true
                 };
 
+                this.glyphDigest.Add(placeholderMetrics.GlyphId);
                 this.glyphs.Add(new(offset, placeholderData, font, font.Size, placeholderMetrics));
                 continue;
             }
@@ -316,13 +321,8 @@ internal sealed class GlyphPositioningCollection : IGlyphShapingCollection
             TextAttributes textAttributes = data.TextRun.TextAttributes;
             TextDecorations textDecorations = data.TextRun.TextDecorations;
 
-            bool isVertical = AdvancedTypographicUtils.IsVerticalGlyph(codePoint, layoutMode);
-            foreach (Tag feature in data.AppliedFeatures)
-            {
-                isVertical |= feature == vert;
-                isVertical |= feature == vrt2;
-                isVertical |= feature == vrtr;
-            }
+            bool isVertical = AdvancedTypographicUtils.IsVerticalGlyph(codePoint, layoutMode)
+                || (data.AppliedFeatureMask & verticalMask) != 0;
 
             FontGlyphMetrics metrics = fontMetrics.GetGlyphMetrics(codePoint, id, textAttributes, textDecorations, layoutMode, colorFontSupport);
 
@@ -336,6 +336,7 @@ internal sealed class GlyphPositioningCollection : IGlyphShapingCollection
                 ? new(0, 0, 0, metrics.AdvanceHeight)
                 : new(0, 0, metrics.AdvanceWidth, 0);
 
+            this.glyphDigest.Add(metrics.GlyphId);
             this.glyphs.Add(new(offset, new(data, true) { Bounds = bounds }, font, font.Size, metrics.CloneForRendering(data.TextRun)));
         }
 
@@ -391,23 +392,13 @@ internal sealed class GlyphPositioningCollection : IGlyphShapingCollection
     public void Advance(FontMetrics fontMetrics, int index, ushort glyphId, short dx, short dy)
     {
         LayoutMode layoutMode = this.TextOptions.LayoutMode;
-        Tag vert = KnownFeatureTags.VerticalAlternates;
-        Tag vrt2 = KnownFeatureTags.VerticalAlternatesAndRotation;
-        Tag vrtr = KnownFeatureTags.VerticalAlternatesForRotation;
-
         GlyphPositioningData glyph = this.glyphs[index];
         FontGlyphMetrics m = glyph.Metrics;
 
         if (m.GlyphId == glyphId && fontMetrics == m.FontMetrics)
         {
-            bool isVertical = AdvancedTypographicUtils.IsVerticalGlyph(m.CodePoint, layoutMode);
-
-            foreach (Tag feature in glyph.Data.AppliedFeatures)
-            {
-                isVertical |= feature == vert;
-                isVertical |= feature == vrt2;
-                isVertical |= feature == vrtr;
-            }
+            bool isVertical = AdvancedTypographicUtils.IsVerticalGlyph(m.CodePoint, layoutMode)
+                || (glyph.Data.AppliedFeatureMask & this.GetVerticalFeatureMask()) != 0;
 
             m.ApplyAdvance(dx, isVertical ? dy : (short)0);
         }
@@ -429,6 +420,17 @@ internal sealed class GlyphPositioningCollection : IGlyphShapingCollection
 
         return data.Metrics.FontMetrics == fontMetrics;
     }
+
+    /// <summary>
+    /// Gets the combined mask of the three vertical alternate features. Computed from
+    /// the shared feature map so it stays valid for applied bits written during
+    /// substitution and read here after the copy into this collection.
+    /// </summary>
+    /// <returns>The combined mask, or zero when no vertical feature was registered.</returns>
+    private ulong GetVerticalFeatureMask()
+        => this.FeatureMap.GetMask(KnownFeatureTags.VerticalAlternates)
+        | this.FeatureMap.GetMask(KnownFeatureTags.VerticalAlternatesAndRotation)
+        | this.FeatureMap.GetMask(KnownFeatureTags.VerticalAlternatesForRotation);
 
     [DebuggerDisplay("{DebuggerDisplay,nq}")]
     public class GlyphPositioningData

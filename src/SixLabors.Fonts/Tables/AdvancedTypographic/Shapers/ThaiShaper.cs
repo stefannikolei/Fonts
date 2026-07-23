@@ -309,7 +309,7 @@ internal class ThaiShaper : DefaultShaper
                 if (puaCp != baseCp && fontMetrics.TryGetGlyphId(new CodePoint(puaCp), out ushort puaId))
                 {
                     collection[baseIndex].CodePoint = new CodePoint(puaCp);
-                    collection[baseIndex].GlyphId = puaId;
+                    collection.SetGlyphId(baseIndex, puaId);
                 }
             }
             else if (action != PuaAction.NOP)
@@ -318,7 +318,7 @@ internal class ThaiShaper : DefaultShaper
                 if (puaCp != codepoint && fontMetrics.TryGetGlyphId(new CodePoint(puaCp), out ushort puaId))
                 {
                     collection[i].CodePoint = new CodePoint(puaCp);
-                    collection[i].GlyphId = puaId;
+                    collection.SetGlyphId(i, puaId);
                 }
             }
         }

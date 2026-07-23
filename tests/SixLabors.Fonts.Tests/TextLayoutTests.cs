@@ -308,7 +308,12 @@ public class TextLayoutTests
             TextOptions options = new(font)
             {
                 WrappingLength = 350,
-                LayoutMode = LayoutMode.HorizontalTopBottom
+                LayoutMode = LayoutMode.HorizontalTopBottom,
+
+                // SimSun declares no default language system: every feature, including
+                // the vertical alternates, lives under its Chinese language systems, so
+                // the culture is pinned to keep the measurements machine independent.
+                Culture = new CultureInfo("zh-CN")
             };
 
             TextLayoutTestUtilities.TestLayout(text, options, properties: new { height, width });
@@ -334,7 +339,12 @@ public class TextLayoutTests
             TextOptions options = new(font)
             {
                 WrappingLength = 350,
-                LayoutMode = LayoutMode.HorizontalBottomTop
+                LayoutMode = LayoutMode.HorizontalBottomTop,
+
+                // SimSun declares no default language system: every feature, including
+                // the vertical alternates, lives under its Chinese language systems, so
+                // the culture is pinned to keep the measurements machine independent.
+                Culture = new CultureInfo("zh-CN")
             };
 
             TextLayoutTestUtilities.TestLayout(text, options, properties: new { height, width });
@@ -357,7 +367,12 @@ public class TextLayoutTests
             TextOptions options = new(font)
             {
                 WrappingLength = 350,
-                LayoutMode = LayoutMode.VerticalLeftRight
+                LayoutMode = LayoutMode.VerticalLeftRight,
+
+                // SimSun declares no default language system: every feature, including
+                // the vertical alternates, lives under its Chinese language systems, so
+                // the culture is pinned to keep the measurements machine independent.
+                Culture = new CultureInfo("zh-CN")
             };
 
             TextLayoutTestUtilities.TestLayout(text, options, properties: new { height, width });
@@ -380,7 +395,12 @@ public class TextLayoutTests
             TextOptions options = new(font)
             {
                 WrappingLength = 350,
-                LayoutMode = LayoutMode.VerticalRightLeft
+                LayoutMode = LayoutMode.VerticalRightLeft,
+
+                // SimSun declares no default language system: every feature, including
+                // the vertical alternates, lives under its Chinese language systems, so
+                // the culture is pinned to keep the measurements machine independent.
+                Culture = new CultureInfo("zh-CN")
             };
 
             TextLayoutTestUtilities.TestLayout(text, options, properties: new { height, width });
@@ -403,7 +423,12 @@ public class TextLayoutTests
             TextOptions options = new(font)
             {
                 WrappingLength = 350,
-                LayoutMode = LayoutMode.VerticalMixedLeftRight
+                LayoutMode = LayoutMode.VerticalMixedLeftRight,
+
+                // SimSun declares no default language system: every feature, including
+                // the vertical alternates, lives under its Chinese language systems, so
+                // the culture is pinned to keep the measurements machine independent.
+                Culture = new CultureInfo("zh-CN")
             };
 
             TextLayoutTestUtilities.TestLayout(text, options, properties: new { height, width });

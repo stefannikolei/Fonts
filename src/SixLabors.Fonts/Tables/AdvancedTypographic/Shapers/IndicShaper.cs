@@ -318,8 +318,11 @@ internal sealed class IndicShaper : DefaultShaper
         }
 
         // Create a reusable temporary substitution collection and buffer to allow checking whether
-        // certain combinations will be substituted.
-        GlyphSubstitutionCollection tempCollection = new(this.textOptions);
+        // certain combinations will be substituted. The probe collection MUST share the
+        // pass's feature map: the probed glyphs are copies of real glyphs whose feature
+        // masks were assigned by it, and a private map would resolve the probed feature
+        // to a different bit, turning the enable into a no-op.
+        GlyphSubstitutionCollection tempCollection = new(this.textOptions, substitutionCollection.FeatureMap);
         Span<GlyphShapingData> tempBuffer = new GlyphShapingData[3];
 
         ShapingConfiguration indicConfiguration = this.indicConfiguration;
@@ -434,7 +437,7 @@ internal sealed class IndicShaper : DefaultShaper
             // base consonants.
             if (start + 3 <= end &&
                 indicConfiguration.RephPosition != Positions.Ra_To_Become_Reph &&
-                gSubTable?.TryGetFeatureLookups(fontMetrics, in RphfTag, this.ScriptClass, out _) == true &&
+                gSubTable?.TryGetFeatureLookups(fontMetrics, in RphfTag, this.ScriptClass, substitutionCollection.LanguageTags, out _) == true &&
                 ((indicConfiguration.RephMode == RephMode.Implicit && !IsJoiner(substitutionCollection[start + 2])) ||
                  (indicConfiguration.RephMode == RephMode.Explicit && substitutionCollection[start + 2].IndicShapingEngineInfo?.Category == Categories.ZWJ)))
             {
@@ -832,7 +835,7 @@ internal sealed class IndicShaper : DefaultShaper
 
             const int prefLen = 2;
             if (basePosition + prefLen < end &&
-                gSubTable?.TryGetFeatureLookups(fontMetrics, in PrefTag, this.ScriptClass, out _) == true)
+                gSubTable?.TryGetFeatureLookups(fontMetrics, in PrefTag, this.ScriptClass, substitutionCollection.LanguageTags, out _) == true)
             {
                 // Find a Halant,Ra sequence and mark it for pre-base reordering processing.
                 for (int i = basePosition + 1; i + prefLen - 1 < end; i++)
@@ -851,7 +854,7 @@ internal sealed class IndicShaper : DefaultShaper
                         // This allows distinguishing the following cases with MS Khmer fonts:
                         // U+1784,U+17D2,U+179A,U+17D2,U+1782
                         // U+1784,U+17D2,U+1782,U+17D2,U+179A
-                        if (gSubTable.TryGetFeatureLookups(fontMetrics, in CfarTag, this.ScriptClass, out _))
+                        if (gSubTable.TryGetFeatureLookups(fontMetrics, in CfarTag, this.ScriptClass, substitutionCollection.LanguageTags, out _))
                         {
                             while (i < end)
                             {
@@ -1056,7 +1059,7 @@ internal sealed class IndicShaper : DefaultShaper
             // applied (see below), the shaping engine performs some final glyph
             // reordering before applying all the remaining font features to the entire
             // cluster.
-            bool tryPref = gSubTable?.TryGetFeatureLookups(fontMetrics, in PrefTag, this.ScriptClass, out _) == true;
+            bool tryPref = gSubTable?.TryGetFeatureLookups(fontMetrics, in PrefTag, this.ScriptClass, substitutionCollection.LanguageTags, out _) == true;
 
             // Find base consonant again.
             int basePosition = start;
@@ -1069,7 +1072,7 @@ internal sealed class IndicShaper : DefaultShaper
                         for (int i = basePosition + 1; i < end; i++)
                         {
                             GlyphShapingData current = substitutionCollection[i];
-                            if (current.Features.FindIndex(x => x.Tag == PrefTag && x.Enabled) >= 0)
+                            if ((current.FeatureMask & substitutionCollection.FeatureMap.GetMask(PrefTag)) != 0)
                             {
                                 if (!current.IsSubstituted && current.IsLigated && !current.IsDecomposed)
                                 {
@@ -1378,7 +1381,7 @@ internal sealed class IndicShaper : DefaultShaper
                 for (int i = basePosition + 1; i < end; i++)
                 {
                     GlyphShapingData current = substitutionCollection[i];
-                    if (current.Features.FindIndex(x => x.Tag == PrefTag && x.Enabled) >= 0)
+                    if ((current.FeatureMask & substitutionCollection.FeatureMap.GetMask(PrefTag)) != 0)
                     {
                         // 1. Only reorder a glyph produced by substitution during application
                         //    of the <pref> feature. (Note that a font may shape a Ra consonant with

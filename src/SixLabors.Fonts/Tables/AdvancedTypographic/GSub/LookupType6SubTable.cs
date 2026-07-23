@@ -82,7 +82,10 @@ internal sealed class LookupType6Format1SubTable : LookupSubTable
         return new LookupType6Format1SubTable(coverageTable, seqRuleSets, lookupFlags, markFilteringSet);
     }
 
-    /// <inheritdoc />
+    /// <inheritdoc/>
+    public override void CollectDigest(ref GlyphSetDigest digest) => this.coverageTable.CollectDigest(ref digest);
+
+    /// <inheritdoc/>
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,
@@ -226,7 +229,10 @@ internal sealed class LookupType6Format2SubTable : LookupSubTable
             markFilteringSet);
     }
 
-    /// <inheritdoc />
+    /// <inheritdoc/>
+    public override void CollectDigest(ref GlyphSetDigest digest) => this.coverageTable.CollectDigest(ref digest);
+
+    /// <inheritdoc/>
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,
@@ -362,7 +368,21 @@ internal sealed class LookupType6Format3SubTable : LookupSubTable
             markFilteringSet);
     }
 
-    /// <inheritdoc />
+    /// <inheritdoc/>
+    public override void CollectDigest(ref GlyphSetDigest digest)
+    {
+        if (this.inputCoverageTables.Length == 0)
+        {
+            // Degenerate table data: without a first position coverage the gate
+            // cannot be known, so the lookup is always attempted.
+            digest.AddAll();
+            return;
+        }
+
+        this.inputCoverageTables[0].CollectDigest(ref digest);
+    }
+
+    /// <inheritdoc/>
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,

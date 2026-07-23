@@ -231,8 +231,12 @@ public abstract class FontGlyphMetrics
     public TextDecorations TextDecorations { get; }
 
     /// <summary>
-    /// Performs a semi-deep clone (FontMetrics are not cloned) for rendering
-    /// This allows caching the original in the font metrics.
+    /// Performs a shallow positioning clone: the returned instance carries its own
+    /// mutable scalar state (advances, offset, text run) so glyph positioning can write
+    /// to it, while immutable loaded data (font metrics, outline or charstring data) is
+    /// shared with the cached original. Implementations must not copy outline data: the
+    /// raw outline is immutable after load and every consumer that transforms it clones
+    /// it first.
     /// </summary>
     /// <param name="textRun">The current text run this glyph belongs to.</param>
     /// <returns>The new <see cref="FontGlyphMetrics"/>.</returns>

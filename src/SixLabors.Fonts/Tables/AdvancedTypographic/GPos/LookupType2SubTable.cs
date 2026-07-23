@@ -114,6 +114,9 @@ internal static class LookupType2SubTable
         }
 
         /// <inheritdoc/>
+        public override void CollectDigest(ref GlyphSetDigest digest) => this.coverageTable.CollectDigest(ref digest);
+
+        /// <inheritdoc/>
         public override bool TryUpdatePosition(
             FontMetrics fontMetrics,
             GPosTable table,
@@ -335,6 +338,9 @@ internal static class LookupType2SubTable
 
             return new LookupType2Format2SubTable(coverageTable, class1Records, classDefTable1, classDefTable2, lookupFlags, markFilteringSet);
         }
+
+        /// <inheritdoc/>
+        public override void CollectDigest(ref GlyphSetDigest digest) => this.coverageTable.CollectDigest(ref digest);
 
         /// <inheritdoc/>
         public override bool TryUpdatePosition(

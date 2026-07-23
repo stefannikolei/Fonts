@@ -65,17 +65,11 @@ internal class GlyphShapingData
 
         if (!clearFeatures)
         {
-            this.Features.AddRange(data.Features);
-            foreach (Tag tag in data.EnabledFeatureTags)
-            {
-                this.EnabledFeatureTags.Add(tag);
-            }
+            this.RegisteredFeatureMask = data.RegisteredFeatureMask;
+            this.FeatureMask = data.FeatureMask;
         }
 
-        foreach (Tag feature in data.AppliedFeatures)
-        {
-            this.AppliedFeatures.Add(feature);
-        }
+        this.AppliedFeatureMask = data.AppliedFeatureMask;
 
         this.Bounds = data.Bounds;
         this.CachedShapingClass = data.CachedShapingClass;
@@ -155,20 +149,28 @@ internal class GlyphShapingData
     public int CursiveAttachment { get; set; } = -1;
 
     /// <summary>
-    /// Gets or sets the collection of features.
+    /// Gets or sets the mask of features a shaper has registered for this glyph, enabled
+    /// or not. Bits are assigned by the shaping pass's <see cref="ShapingFeatureMap"/>.
+    /// Enabling a feature only ever reveals a registered bit; a feature that was never
+    /// registered for the glyph cannot be enabled.
     /// </summary>
-    public List<TagEntry> Features { get; set; } = [];
+    public ulong RegisteredFeatureMask { get; set; }
 
     /// <summary>
-    /// Gets the set of feature tags that are currently enabled, maintained
-    /// in sync with <see cref="Features"/> for O(1) lookup.
+    /// Gets or sets the mask of features currently enabled for this glyph: the subset of
+    /// <see cref="RegisteredFeatureMask"/> a lookup application gate tests with a single
+    /// bitwise AND.
     /// </summary>
-    internal HashSet<Tag> EnabledFeatureTags { get; } = [];
+    public ulong FeatureMask { get; set; }
 
     /// <summary>
-    /// Gets or sets the collection of applied features.
+    /// Gets or sets the mask of features whose lookups actually changed this glyph.
+    /// Read after shaping, for example to detect that a vertical alternate was
+    /// substituted. Survives the copy into the positioning collection, which is why the
+    /// substitution and positioning collections must share one
+    /// <see cref="ShapingFeatureMap"/>.
     /// </summary>
-    public HashSet<Tag> AppliedFeatures { get; set; } = [];
+    public ulong AppliedFeatureMask { get; set; }
 
     /// <summary>
     /// Gets or sets the shaping bounds.

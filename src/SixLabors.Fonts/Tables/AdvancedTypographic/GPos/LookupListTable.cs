@@ -92,6 +92,17 @@ internal sealed class LookupTable
         this.LookupFlags = lookupFlags;
         this.MarkFilteringSet = markFilteringSet;
         this.LookupSubTables = lookupSubTables;
+
+        // The union of every subtable's gating coverage: a glyph outside the digest
+        // cannot be affected by any subtable of this lookup, so application skips it
+        // without touching the subtables. See GlyphSetDigest for the accuracy contract.
+        GlyphSetDigest digest = default;
+        for (int i = 0; i < lookupSubTables.Length; i++)
+        {
+            lookupSubTables[i].CollectDigest(ref digest);
+        }
+
+        this.Digest = digest;
     }
 
     /// <summary>
@@ -113,6 +124,11 @@ internal sealed class LookupTable
     /// Gets the array of lookup subtables.
     /// </summary>
     public LookupSubTable[] LookupSubTables { get; }
+
+    /// <summary>
+    /// Gets the approximate membership filter for the glyphs this lookup can affect.
+    /// </summary>
+    public GlyphSetDigest Digest { get; }
 
     /// <summary>
     /// Loads the <see cref="LookupTable"/> from the specified reader at the given offset.
@@ -244,6 +260,14 @@ internal abstract class LookupSubTable
     /// Gets the mark filtering set index.
     /// </summary>
     public ushort MarkFilteringSet { get; }
+
+    /// <summary>
+    /// Adds the coverage that gates this subtable's applicability to the digest.
+    /// The default adds every glyph so the lookup is always attempted, the correct
+    /// conservative behavior for subtables whose gating coverage is unknown.
+    /// </summary>
+    /// <param name="digest">The digest to add to.</param>
+    public virtual void CollectDigest(ref GlyphSetDigest digest) => digest.AddAll();
 
     /// <summary>
     /// Attempts to update the position of glyphs in the collection at the specified index.

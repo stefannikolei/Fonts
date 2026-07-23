@@ -124,7 +124,7 @@ internal sealed class HangulShaper : DefaultShaper
         => this.fontMetrics = fontMetrics;
 
     /// <inheritdoc/>
-    protected override void PlanFeatures(IGlyphShapingCollection collection, int index, int count)
+    protected override void PlanFeatures(GlyphShapingCollection collection, int index, int count)
     {
         this.AddFeature(collection, index, count, LjmoTag, false);
         this.AddFeature(collection, index, count, VjmoTag, false);
@@ -132,7 +132,7 @@ internal sealed class HangulShaper : DefaultShaper
     }
 
     /// <inheritdoc/>
-    protected override void AssignFeatures(IGlyphShapingCollection collection, int index, int count)
+    protected override void AssignFeatures(GlyphShapingCollection collection, int index, int count)
     {
         for (int i = index; i < count; i++)
         {

@@ -100,7 +100,7 @@ internal sealed class ArabicShaper : DefaultShaper
     }
 
     /// <inheritdoc/>
-    protected override void PlanFeatures(IGlyphShapingCollection collection, int index, int count)
+    protected override void PlanFeatures(GlyphShapingCollection collection, int index, int count)
     {
         this.AddFeature(collection, index, count, CcmpTag);
         this.AddFeature(collection, index, count, LoclTag);
@@ -127,7 +127,7 @@ internal sealed class ArabicShaper : DefaultShaper
     }
 
     /// <inheritdoc/>
-    protected override void AssignFeatures(IGlyphShapingCollection collection, int index, int count)
+    protected override void AssignFeatures(GlyphShapingCollection collection, int index, int count)
     {
         base.AssignFeatures(collection, index, count);
 

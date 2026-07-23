@@ -114,12 +114,12 @@ internal class DefaultShaper : BaseShaper
     }
 
     /// <inheritdoc />
-    protected override void PlanFeatures(IGlyphShapingCollection collection, int index, int count)
+    protected override void PlanFeatures(GlyphShapingCollection collection, int index, int count)
     {
     }
 
     /// <inheritdoc />
-    protected override void PlanPreprocessingFeatures(IGlyphShapingCollection collection, int index, int count)
+    protected override void PlanPreprocessingFeatures(GlyphShapingCollection collection, int index, int count)
     {
         // Add variation Features.
         this.AddFeature(collection, index, count, RvnrTag);
@@ -146,7 +146,7 @@ internal class DefaultShaper : BaseShaper
     }
 
     /// <inheritdoc />
-    protected override void PlanPostprocessingFeatures(IGlyphShapingCollection collection, int index, int count)
+    protected override void PlanPostprocessingFeatures(GlyphShapingCollection collection, int index, int count)
     {
         // Add common features.
         this.AddFeature(collection, index, count, CcmpTag);
@@ -199,7 +199,7 @@ internal class DefaultShaper : BaseShaper
     }
 
     /// <inheritdoc />
-    protected override void AssignFeatures(IGlyphShapingCollection collection, int index, int count)
+    protected override void AssignFeatures(GlyphShapingCollection collection, int index, int count)
     {
         // TODO: We shouldn't be relying on the feature list
         // User defined fractional features require special treatment.
@@ -221,13 +221,13 @@ internal class DefaultShaper : BaseShaper
     /// <param name="preAction">An optional action to invoke before the feature is applied.</param>
     /// <param name="postAction">An optional action to invoke after the feature is applied.</param>
     protected void AddFeature(
-        IGlyphShapingCollection collection,
+        GlyphShapingCollection collection,
         int index,
         int count,
         Tag feature,
         bool enabled = true,
-        Action<IGlyphShapingCollection, int, int>? preAction = null,
-        Action<IGlyphShapingCollection, int, int>? postAction = null)
+        Action<GlyphShapingCollection, int, int>? preAction = null,
+        Action<GlyphShapingCollection, int, int>? postAction = null)
     {
         if (this.kerningMode == KerningMode.None)
         {
@@ -237,11 +237,7 @@ internal class DefaultShaper : BaseShaper
             }
         }
 
-        int end = index + count;
-        for (int i = index; i < end; i++)
-        {
-            collection.AddShapingFeature(i, new TagEntry(feature, enabled));
-        }
+        collection.AddShapingFeatureRange(index, count, new TagEntry(feature, enabled));
 
         this.shapingStages.Add(new ShapingStage(feature, preAction, postAction));
     }
@@ -255,7 +251,7 @@ internal class DefaultShaper : BaseShaper
     /// <param name="collection">The glyph shaping collection.</param>
     /// <param name="index">The zero-based index of the first element.</param>
     /// <param name="count">The number of elements.</param>
-    private void AssignFractionalFeatures(IGlyphShapingCollection collection, int index, int count)
+    private void AssignFractionalFeatures(GlyphShapingCollection collection, int index, int count)
     {
         // Enable contextual fractions.
         for (int i = index; i < index + count; i++)

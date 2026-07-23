@@ -6,7 +6,7 @@ using System.Diagnostics;
 
 namespace SixLabors.Fonts;
 
-#pragma warning disable CS1591, SA1600
+#pragma warning disable CS1591, SA1600, SA1401, CA2211, SA1201
 
 public static class ShapingProbe
 {
@@ -37,6 +37,23 @@ public static class ShapingProbe
     private static readonly long[] Bytes = new long[Names.Length];
 
     public static bool Enabled { get; set; }
+
+    public static long StageFeatureCalls;
+    public static long LookupsConsidered;
+    public static long LookupsSkippedByDigest;
+    public static long GlyphGateChecks;
+    public static long SubstitutionAttempts;
+
+    public static void PrintCounters(int iterations)
+        => Console.WriteLine(
+            $"stages/op={StageFeatureCalls / (double)iterations:F1} " +
+            $"lookups/op={LookupsConsidered / (double)iterations:F1} " +
+            $"digestSkipped/op={LookupsSkippedByDigest / (double)iterations:F1} " +
+            $"glyphGates/op={GlyphGateChecks / (double)iterations:F1} " +
+            $"substAttempts/op={SubstitutionAttempts / (double)iterations:F1}");
+
+    public static void ResetCounters()
+        => StageFeatureCalls = LookupsConsidered = LookupsSkippedByDigest = GlyphGateChecks = SubstitutionAttempts = 0;
 
     public static (long Ticks, long Bytes) Enter()
         => Enabled ? (Stopwatch.GetTimestamp(), GC.GetAllocatedBytesForCurrentThread()) : default;

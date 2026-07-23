@@ -172,7 +172,7 @@ internal class ThaiShaper : DefaultShaper
     }
 
     /// <inheritdoc/>
-    protected override void AssignFeatures(IGlyphShapingCollection collection, int index, int count)
+    protected override void AssignFeatures(GlyphShapingCollection collection, int index, int count)
     {
         base.AssignFeatures(collection, index, count);
 

@@ -92,7 +92,7 @@ internal sealed class UniversalShaper : DefaultShaper
         => this.fontMetrics = fontMetrics;
 
     /// <inheritdoc/>
-    protected override void PlanFeatures(IGlyphShapingCollection collection, int index, int count)
+    protected override void PlanFeatures(GlyphShapingCollection collection, int index, int count)
     {
         // Default glyph pre-processing group
         this.AddFeature(collection, index, count, LoclTag, preAction: this.SetupSyllables);
@@ -124,7 +124,7 @@ internal sealed class UniversalShaper : DefaultShaper
     }
 
     /// <inheritdoc/>
-    protected override void AssignFeatures(IGlyphShapingCollection collection, int index, int count)
+    protected override void AssignFeatures(GlyphShapingCollection collection, int index, int count)
         => this.DecomposeSplitVowels(collection, index, count);
 
     /// <summary>
@@ -133,7 +133,7 @@ internal sealed class UniversalShaper : DefaultShaper
     /// <param name="collection">The glyph shaping collection.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private void DecomposeSplitVowels(IGlyphShapingCollection collection, int index, int count)
+    private void DecomposeSplitVowels(GlyphShapingCollection collection, int index, int count)
     {
         if (collection is not GlyphSubstitutionCollection substitutionCollection)
         {
@@ -179,7 +179,7 @@ internal sealed class UniversalShaper : DefaultShaper
     /// <param name="collection">The glyph shaping collection.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private void SetupSyllables(IGlyphShapingCollection collection, int index, int count)
+    private void SetupSyllables(GlyphShapingCollection collection, int index, int count)
     {
         if (collection is not GlyphSubstitutionCollection substitutionCollection)
         {
@@ -235,7 +235,7 @@ internal sealed class UniversalShaper : DefaultShaper
     /// <param name="collection">The glyph shaping collection.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private static void ClearSubstitutionFlags(IGlyphShapingCollection collection, int index, int count)
+    private static void ClearSubstitutionFlags(GlyphShapingCollection collection, int index, int count)
     {
         if (collection is not GlyphSubstitutionCollection substitutionCollection)
         {
@@ -256,7 +256,7 @@ internal sealed class UniversalShaper : DefaultShaper
     /// <param name="collection">The glyph shaping collection.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private static void RecordRhpf(IGlyphShapingCollection collection, int index, int count)
+    private static void RecordRhpf(GlyphShapingCollection collection, int index, int count)
     {
         if (collection is not GlyphSubstitutionCollection substitutionCollection)
         {
@@ -285,7 +285,7 @@ internal sealed class UniversalShaper : DefaultShaper
     /// <param name="collection">The glyph shaping collection.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private static void RecordPref(IGlyphShapingCollection collection, int index, int count)
+    private static void RecordPref(GlyphShapingCollection collection, int index, int count)
     {
         if (collection is not GlyphSubstitutionCollection substitutionCollection)
         {
@@ -314,7 +314,7 @@ internal sealed class UniversalShaper : DefaultShaper
     /// <param name="collection">The glyph shaping collection.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private void Reorder(IGlyphShapingCollection collection, int index, int count)
+    private void Reorder(GlyphShapingCollection collection, int index, int count)
     {
         if (collection is not GlyphSubstitutionCollection substitutionCollection)
         {

@@ -10,9 +10,12 @@ namespace SixLabors.Fonts.Tables.AdvancedTypographic;
 internal struct SkippingGlyphIterator
 {
     private readonly FontMetrics fontMetrics;
-    private bool ignoreMarks;
-    private bool ignoreBaseGlyphs;
-    private bool ignoreLigatures;
+
+    /// <summary>
+    /// The three ignore lookup flags collapsed into a mask over the packed glyph class
+    /// bits, so the common skip decision is a single bitwise test.
+    /// </summary>
+    private ushort ignoreClassMask;
     private ushort markAttachmentType;
     private bool useMarkFilteringSet;
     private ushort markFilteringSet;
@@ -27,7 +30,7 @@ internal struct SkippingGlyphIterator
     /// <param name="markFilteringSet">The mark filtering set index, used when <see cref="LookupFlags.UseMarkFilteringSet"/> is set.</param>
     public SkippingGlyphIterator(
         FontMetrics fontMetrics,
-        IGlyphShapingCollection collection,
+        GlyphShapingCollection collection,
         int index,
         LookupFlags lookupFlags,
         ushort markFilteringSet)
@@ -35,9 +38,9 @@ internal struct SkippingGlyphIterator
         this.fontMetrics = fontMetrics;
         this.Collection = collection;
         this.Index = index;
-        this.ignoreMarks = (lookupFlags & LookupFlags.IgnoreMarks) != 0;
-        this.ignoreBaseGlyphs = (lookupFlags & LookupFlags.IgnoreBaseGlyphs) != 0;
-        this.ignoreLigatures = (lookupFlags & LookupFlags.IgnoreLigatures) != 0;
+        this.ignoreClassMask = (ushort)(((lookupFlags & LookupFlags.IgnoreBaseGlyphs) != 0 ? GlyphShapingClass.BaseProp : 0)
+            | ((lookupFlags & LookupFlags.IgnoreLigatures) != 0 ? GlyphShapingClass.LigatureProp : 0)
+            | ((lookupFlags & LookupFlags.IgnoreMarks) != 0 ? GlyphShapingClass.MarkProp : 0));
         this.markAttachmentType = (ushort)((int)(lookupFlags & LookupFlags.MarkAttachmentTypeMask) >> 8);
         this.useMarkFilteringSet = (lookupFlags & LookupFlags.UseMarkFilteringSet) != 0;
         this.markFilteringSet = markFilteringSet;
@@ -46,7 +49,7 @@ internal struct SkippingGlyphIterator
     /// <summary>
     /// Gets the glyph shaping collection being iterated.
     /// </summary>
-    public IGlyphShapingCollection Collection { get; }
+    public GlyphShapingCollection Collection { get; }
 
     /// <summary>
     /// Gets or sets the current index in the collection.
@@ -99,9 +102,9 @@ internal struct SkippingGlyphIterator
     public void Reset(int index, LookupFlags lookupFlags, ushort markFilteringSet)
     {
         this.Index = index;
-        this.ignoreMarks = (lookupFlags & LookupFlags.IgnoreMarks) != 0;
-        this.ignoreBaseGlyphs = (lookupFlags & LookupFlags.IgnoreBaseGlyphs) != 0;
-        this.ignoreLigatures = (lookupFlags & LookupFlags.IgnoreLigatures) != 0;
+        this.ignoreClassMask = (ushort)(((lookupFlags & LookupFlags.IgnoreBaseGlyphs) != 0 ? GlyphShapingClass.BaseProp : 0)
+            | ((lookupFlags & LookupFlags.IgnoreLigatures) != 0 ? GlyphShapingClass.LigatureProp : 0)
+            | ((lookupFlags & LookupFlags.IgnoreMarks) != 0 ? GlyphShapingClass.MarkProp : 0));
         this.markAttachmentType = (ushort)((int)(lookupFlags & LookupFlags.MarkAttachmentTypeMask) >> 8);
         this.useMarkFilteringSet = (lookupFlags & LookupFlags.UseMarkFilteringSet) != 0;
         this.markFilteringSet = markFilteringSet;
@@ -133,21 +136,30 @@ internal struct SkippingGlyphIterator
     private readonly bool ShouldIgnore(int index)
     {
         GlyphShapingData data = this.Collection[index];
-        GlyphShapingClass shapingClass = AdvancedTypographicUtils.GetGlyphShapingClass(this.fontMetrics, data.GlyphId, data);
+        ushort props = AdvancedTypographicUtils.GetGlyphShapingClass(this.fontMetrics, data.GlyphId, data).Props;
 
-        if (this.useMarkFilteringSet && shapingClass.IsMark)
+        if ((props & this.ignoreClassMask) != 0)
+        {
+            return true;
+        }
+
+        if ((props & GlyphShapingClass.MarkProp) != 0)
         {
             // Skip marks not in the lookup's MarkFilteringSet.
             // This requires GDEF MarkGlyphSetsDef support.
-            if (!AdvancedTypographicUtils.IsInMarkFilteringSet(this.fontMetrics, this.markFilteringSet, data.GlyphId))
+            if (this.useMarkFilteringSet && !AdvancedTypographicUtils.IsInMarkFilteringSet(this.fontMetrics, this.markFilteringSet, data.GlyphId))
+            {
+                return true;
+            }
+
+            // The high byte carries the mark attachment class; a lookup restricted to
+            // one attachment class skips marks of any other.
+            if (this.markAttachmentType > 0 && (props >> 8) != this.markAttachmentType)
             {
                 return true;
             }
         }
 
-        return (this.ignoreMarks && shapingClass.IsMark) ||
-            (this.ignoreBaseGlyphs && shapingClass.IsBase) ||
-            (this.ignoreLigatures && shapingClass.IsLigature) ||
-            (this.markAttachmentType > 0 && shapingClass.IsMark && shapingClass.MarkAttachmentType != this.markAttachmentType);
+        return false;
     }
 }

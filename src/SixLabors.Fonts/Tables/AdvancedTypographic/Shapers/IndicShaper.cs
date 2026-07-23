@@ -128,7 +128,7 @@ internal sealed class IndicShaper : DefaultShaper
     }
 
     /// <inheritdoc />
-    protected override void PlanFeatures(IGlyphShapingCollection collection, int index, int count)
+    protected override void PlanFeatures(GlyphShapingCollection collection, int index, int count)
     {
         this.AddFeature(collection, index, count, LoclTag, preAction: this.SetupSyllables);
         this.AddFeature(collection, index, count, CcmpTag);
@@ -159,7 +159,7 @@ internal sealed class IndicShaper : DefaultShaper
     }
 
     /// <inheritdoc />
-    protected override void AssignFeatures(IGlyphShapingCollection collection, int index, int count)
+    protected override void AssignFeatures(GlyphShapingCollection collection, int index, int count)
     {
         if (collection is not GlyphSubstitutionCollection substitutionCollection)
         {
@@ -209,7 +209,7 @@ internal sealed class IndicShaper : DefaultShaper
     /// <param name="collection">The glyph shaping collection.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private void SetupSyllables(IGlyphShapingCollection collection, int index, int count)
+    private void SetupSyllables(GlyphShapingCollection collection, int index, int count)
     {
         if (collection is not GlyphSubstitutionCollection substitutionCollection)
         {
@@ -310,7 +310,7 @@ internal sealed class IndicShaper : DefaultShaper
     /// <param name="collection">The glyph shaping collection.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private void InitialReorder(IGlyphShapingCollection collection, int index, int count)
+    private void InitialReorder(GlyphShapingCollection collection, int index, int count)
     {
         if (collection is not GlyphSubstitutionCollection substitutionCollection)
         {
@@ -1039,7 +1039,7 @@ internal sealed class IndicShaper : DefaultShaper
     /// <param name="collection">The glyph shaping collection.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private void FinalReorder(IGlyphShapingCollection collection, int index, int count)
+    private void FinalReorder(GlyphShapingCollection collection, int index, int count)
     {
         if (collection is not GlyphSubstitutionCollection substitutionCollection)
         {

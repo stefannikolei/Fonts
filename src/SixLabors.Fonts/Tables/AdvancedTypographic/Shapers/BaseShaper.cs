@@ -27,7 +27,7 @@ internal abstract class BaseShaper
     /// <param name="collection">The glyph shaping collection.</param>
     /// <param name="index">The zero-based index of the elements to assign.</param>
     /// <param name="count">The number of elements to assign.</param>
-    public void Plan(IGlyphShapingCollection collection, int index, int count)
+    public void Plan(GlyphShapingCollection collection, int index, int count)
     {
         int collectionCount = collection.Count;
 
@@ -52,7 +52,7 @@ internal abstract class BaseShaper
     /// <param name="collection">The glyph shaping collection.</param>
     /// <param name="index">The zero-based index of the elements to assign.</param>
     /// <param name="count">The number of elements to assign.</param>
-    protected abstract void PlanFeatures(IGlyphShapingCollection collection, int index, int count);
+    protected abstract void PlanFeatures(GlyphShapingCollection collection, int index, int count);
 
     /// <summary>
     /// Assigns the preprocessing features to each glyph within the collection.
@@ -60,7 +60,7 @@ internal abstract class BaseShaper
     /// <param name="collection">The glyph shaping collection.</param>
     /// <param name="index">The zero-based index of the elements to assign.</param>
     /// <param name="count">The number of elements to assign.</param>
-    protected abstract void PlanPreprocessingFeatures(IGlyphShapingCollection collection, int index, int count);
+    protected abstract void PlanPreprocessingFeatures(GlyphShapingCollection collection, int index, int count);
 
     /// <summary>
     /// Assigns the postprocessing features to each glyph within the collection.
@@ -68,7 +68,7 @@ internal abstract class BaseShaper
     /// <param name="collection">The glyph shaping collection.</param>
     /// <param name="index">The zero-based index of the elements to assign.</param>
     /// <param name="count">The number of elements to assign.</param>
-    protected abstract void PlanPostprocessingFeatures(IGlyphShapingCollection collection, int index, int count);
+    protected abstract void PlanPostprocessingFeatures(GlyphShapingCollection collection, int index, int count);
 
     /// <summary>
     /// Assigns the shaper specific substitution features to each glyph within the collection.
@@ -76,7 +76,7 @@ internal abstract class BaseShaper
     /// <param name="collection">The glyph shaping collection.</param>
     /// <param name="index">The zero-based index of the elements to assign.</param>
     /// <param name="count">The number of elements to assign.</param>
-    protected abstract void AssignFeatures(IGlyphShapingCollection collection, int index, int count);
+    protected abstract void AssignFeatures(GlyphShapingCollection collection, int index, int count);
 
     /// <summary>
     /// Gets the ordered collection of shaping stages for this shaper.
@@ -90,7 +90,7 @@ internal abstract class BaseShaper
     /// <param name="collection">The glyph shaping collection.</param>
     /// <param name="oldCount">The previous collection count, updated to the current count.</param>
     /// <param name="count">The element count, adjusted by the size delta.</param>
-    private static void RecalculateCount(IGlyphShapingCollection collection, ref int oldCount, ref int count)
+    private static void RecalculateCount(GlyphShapingCollection collection, ref int oldCount, ref int count)
     {
         // If the collection has changed size we need to recalculate the count.
         int delta = collection.Count - oldCount;

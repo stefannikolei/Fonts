@@ -13,13 +13,12 @@ namespace SixLabors.Fonts;
 /// <summary>
 /// Represents a collection of glyph metrics that are mapped to input codepoints.
 /// </summary>
-internal sealed class GlyphPositioningCollection : IGlyphShapingCollection
+internal sealed class GlyphPositioningCollection : GlyphShapingCollection
 {
     /// <summary>
     /// Contains a map the index of a map within the collection, non-sequential codepoint offsets, and their glyph ids, point size, and mtrics.
     /// </summary>
     private readonly List<GlyphPositioningData> glyphs = [];
-    private GlyphSetDigest glyphDigest;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GlyphPositioningCollection"/> class.
@@ -27,76 +26,18 @@ internal sealed class GlyphPositioningCollection : IGlyphShapingCollection
     /// <param name="textOptions">The text options.</param>
     /// <param name="featureMap">The feature bit assignment shared by the shaping pass.</param>
     public GlyphPositioningCollection(TextOptions textOptions, ShapingFeatureMap featureMap)
+        : base(textOptions, featureMap)
     {
-        this.TextOptions = textOptions;
-        this.FeatureMap = featureMap;
-
-        // A null culture takes the ambient current culture, mirroring the reference
-        // shaping engine model where an unset buffer language is guessed from the
-        // locale. CultureInfo.InvariantCulture expresses no language preference.
-        CultureInfo culture = textOptions.Culture ?? CultureInfo.CurrentCulture;
-        this.LanguageTags = OpenTypeLanguageTagMap.TryGetTags(culture, out Tag[] tags) ? tags : [];
     }
 
     /// <inheritdoc />
-    public int Count => this.glyphs.Count;
+    public override int Count => this.glyphs.Count;
 
     /// <inheritdoc />
-    public TextOptions TextOptions { get; }
-
-    /// <inheritdoc />
-    public Tag[] LanguageTags { get; }
-
-    /// <inheritdoc />
-    public GlyphSetDigest GlyphDigest => this.glyphDigest;
-
-    /// <inheritdoc />
-    public ShapingFeatureMap FeatureMap { get; }
-
-    /// <inheritdoc />
-    public GlyphShapingData this[int index]
+    public override GlyphShapingData this[int index]
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get => this.glyphs[index].Data;
-    }
-
-    /// <inheritdoc />
-    public void SetGlyphId(int index, ushort glyphId)
-    {
-        this.glyphDigest.Add(glyphId);
-        this.glyphs[index].Data.GlyphId = glyphId;
-    }
-
-    /// <inheritdoc />
-    public void AddShapingFeature(int index, TagEntry feature)
-    {
-        // Registration only ever accumulates: adding a disabled entry for an already
-        // enabled feature must not clear the enabled bit, matching the list model this
-        // replaced where a disabled duplicate left earlier enabled entries in force.
-        GlyphShapingData data = this.glyphs[index].Data;
-        ulong mask = this.FeatureMap.GetOrAddMask(feature.Tag);
-        data.RegisteredFeatureMask |= mask;
-        if (feature.Enabled)
-        {
-            data.FeatureMask |= mask;
-        }
-    }
-
-    /// <inheritdoc />
-    public void EnableShapingFeature(int index, Tag feature)
-    {
-        // Intersecting with the registered mask preserves the contract that enabling a
-        // feature a shaper never added for this glyph is a no-op.
-        GlyphShapingData data = this.glyphs[index].Data;
-        data.FeatureMask |= data.RegisteredFeatureMask & this.FeatureMap.GetMask(feature);
-    }
-
-    /// <inheritdoc />
-    public void DisableShapingFeature(int index, Tag feature)
-    {
-        // An unregistered tag yields a zero mask whose complement clears nothing.
-        GlyphShapingData data = this.glyphs[index].Data;
-        data.FeatureMask &= ~this.FeatureMap.GetMask(feature);
     }
 
     /// <summary>
@@ -236,13 +177,23 @@ internal sealed class GlyphPositioningCollection : IGlyphShapingCollection
                         }
 
                         // We only want a single dimensional advance for positioning.
-                        GlyphShapingBounds bounds = isVertical
-                            ? new(0, 0, 0, metrics.AdvanceHeight)
-                            : new(0, 0, metrics.AdvanceWidth, 0);
 
                         // Track the number of inserted glyphs at the offset so we can correctly increment our position.
-                        this.glyphDigest.Add(metrics.GlyphId);
-                        this.glyphs.Insert(i += replacementCount, new(offset, new(shape, true) { Bounds = bounds }, font, pointSize, metrics.CloneForRendering(shape.TextRun)));
+                        // The substituted data is reused rather than copied: the
+                        // substitution collection releases its instances at the end of
+                        // each run, so positioning takes ownership.
+                        shape.ClearFeatures();
+                        if (isVertical)
+                        {
+                            shape.Bounds = new(0, 0, 0, metrics.AdvanceHeight);
+                        }
+                        else
+                        {
+                            shape.Bounds = new(0, 0, metrics.AdvanceWidth, 0);
+                        }
+
+                        this.RecordGlyphId(metrics.GlyphId);
+                        this.glyphs.Insert(i += replacementCount, new(offset, shape, font, pointSize, metrics.CloneForRendering(shape.TextRun)));
                         replacementCount++;
                     }
                 }
@@ -301,17 +252,20 @@ internal sealed class GlyphPositioningCollection : IGlyphShapingCollection
                     this.TextOptions.Dpi,
                     data.TextRun);
 
-                GlyphShapingBounds placeholderBounds = layoutMode.IsVertical()
-                    ? new(0, 0, 0, placeholderMetrics.AdvanceHeight)
-                    : new(0, 0, placeholderMetrics.AdvanceWidth, 0);
-
-                GlyphShapingData placeholderData = new(data, true)
+                GlyphShapingData placeholderData = data;
+                placeholderData.ClearFeatures();
+                if (layoutMode.IsVertical())
                 {
-                    Bounds = placeholderBounds,
-                    IsPositioned = true
-                };
+                    placeholderData.Bounds = new(0, 0, 0, placeholderMetrics.AdvanceHeight);
+                }
+                else
+                {
+                    placeholderData.Bounds = new(0, 0, placeholderMetrics.AdvanceWidth, 0);
+                }
 
-                this.glyphDigest.Add(placeholderMetrics.GlyphId);
+                placeholderData.IsPositioned = true;
+
+                this.RecordGlyphId(placeholderMetrics.GlyphId);
                 this.glyphs.Add(new(offset, placeholderData, font, font.Size, placeholderMetrics));
                 continue;
             }
@@ -331,13 +285,23 @@ internal sealed class GlyphPositioningCollection : IGlyphShapingCollection
                 hasFallBacks = true;
             }
 
-            // We only want a single dimensional advance for positioning.
-            GlyphShapingBounds bounds = isVertical
-                ? new(0, 0, 0, metrics.AdvanceHeight)
-                : new(0, 0, metrics.AdvanceWidth, 0);
+            // We only want a single dimensional advance for positioning; assigning a
+            // fresh bounds value starts dirty tracking clean for GPOS.
+            // The substituted data is reused rather than copied: the substitution
+            // collection releases its instances at the end of each run, so positioning
+            // takes ownership.
+            data.ClearFeatures();
+            if (isVertical)
+            {
+                data.Bounds = new(0, 0, 0, metrics.AdvanceHeight);
+            }
+            else
+            {
+                data.Bounds = new(0, 0, metrics.AdvanceWidth, 0);
+            }
 
-            this.glyphDigest.Add(metrics.GlyphId);
-            this.glyphs.Add(new(offset, new(data, true) { Bounds = bounds }, font, font.Size, metrics.CloneForRendering(data.TextRun)));
+            this.RecordGlyphId(metrics.GlyphId);
+            this.glyphs.Add(new(offset, data, font, font.Size, metrics.CloneForRendering(data.TextRun)));
         }
 
         return !hasFallBacks;

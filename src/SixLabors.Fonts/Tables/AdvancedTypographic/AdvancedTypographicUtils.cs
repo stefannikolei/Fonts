@@ -369,7 +369,7 @@ internal static class AdvancedTypographicUtils
         FontMetrics fontMetrics,
         LookupFlags lookupFlags,
         ushort markFilteringSet,
-        IGlyphShapingCollection collection,
+        GlyphShapingCollection collection,
         int index,
         int count,
         CoverageTable[] input,
@@ -589,7 +589,7 @@ internal static class AdvancedTypographicUtils
     {
         int position = iterator.Index;
         int offset = iterator.Increment(increment);
-        IGlyphShapingCollection collection = iterator.Collection;
+        GlyphShapingCollection collection = iterator.Collection;
 
         if (offset < 0)
         {
@@ -646,7 +646,7 @@ internal static class AdvancedTypographicUtils
         int saved = iterator.Index;
         iterator.Index = startIndex;
 
-        IGlyphShapingCollection collection = iterator.Collection;
+        GlyphShapingCollection collection = iterator.Collection;
         int limit = Math.Min(endExclusive, collection.Count);
 
         for (int i = 0; i < sequence.Length && i < MaxContextLength; i++)

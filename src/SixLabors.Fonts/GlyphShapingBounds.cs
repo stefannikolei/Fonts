@@ -6,11 +6,13 @@ using System.Diagnostics;
 namespace SixLabors.Fonts;
 
 /// <summary>
-/// Represents the shaped bounds of a glyph.
-/// Uses a class over a struct for ease of use.
+/// Represents the shaped bounds of a glyph. A mutable struct embedded in
+/// <see cref="GlyphShapingData"/> and accessed by reference through
+/// <see cref="GlyphShapingData.Bounds"/>: positioning lookups accumulate deltas into
+/// the fields in place, and re-seeding is plain value assignment with no allocation.
 /// </summary>
 [DebuggerDisplay("{DebuggerDisplay,nq}")]
-internal class GlyphShapingBounds
+internal struct GlyphShapingBounds
 {
     private int x;
     private int y;

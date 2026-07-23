@@ -17,6 +17,11 @@ internal class GlyphShapingData
     private ushort glyphId;
 
     /// <summary>
+    /// The shaping bounds. Backing storage for <see cref="Bounds"/>.
+    /// </summary>
+    private GlyphShapingBounds bounds;
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="GlyphShapingData"/> class.
     /// </summary>
     /// <param name="textRun">The text run.</param>
@@ -71,7 +76,7 @@ internal class GlyphShapingData
 
         this.AppliedFeatureMask = data.AppliedFeatureMask;
 
-        this.Bounds = data.Bounds;
+        this.bounds = data.bounds;
         this.CachedShapingClass = data.CachedShapingClass;
         this.ShapingClassCacheKey = data.ShapingClassCacheKey;
     }
@@ -173,9 +178,10 @@ internal class GlyphShapingData
     public ulong AppliedFeatureMask { get; set; }
 
     /// <summary>
-    /// Gets or sets the shaping bounds.
+    /// Gets a reference to the shaping bounds, so positioning lookups mutate the
+    /// embedded value in place and re-seeding is plain value assignment.
     /// </summary>
-    public GlyphShapingBounds Bounds { get; set; } = new(0, 0, 0, 0);
+    public ref GlyphShapingBounds Bounds => ref this.bounds;
 
     /// <summary>
     /// Gets or sets a value indicating whether this glyph is the result of a substitution.
@@ -220,6 +226,19 @@ internal class GlyphShapingData
     private string DebuggerDisplay
         => FormattableString
         .Invariant($" {this.GlyphId} : {this.CodePoint.ToDebuggerDisplay()} : {CodePoint.GetScriptClass(this.CodePoint)} : {this.Direction} : {this.TextRun.TextAttributes} : {this.LigatureId} : {this.LigatureComponent} : {this.IsDecomposed}");
+
+    /// <summary>
+    /// Clears the registered and enabled feature masks while preserving the applied
+    /// mask, matching the semantics of copying with cleared features. Positioning
+    /// reuses the substituted glyph data and re-plans its own features, but the applied
+    /// record of what substitution did must survive for consumers such as vertical
+    /// alternate detection.
+    /// </summary>
+    public void ClearFeatures()
+    {
+        this.RegisteredFeatureMask = 0;
+        this.FeatureMask = 0;
+    }
 
     internal string ToDebuggerDisplay() => this.DebuggerDisplay;
 }

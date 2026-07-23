@@ -1,6 +1,7 @@
 // Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
+using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using SixLabors.Fonts.Tables.AdvancedTypographic.GPos;
 using SixLabors.Fonts.Tables.AdvancedTypographic.Shapers;
@@ -15,6 +16,13 @@ namespace SixLabors.Fonts.Tables.AdvancedTypographic;
 /// </summary>
 internal class GPosTable : Table
 {
+    /// <summary>
+    /// Caches resolved feature lookups per stage feature, script, and language
+    /// candidates. See <see cref="TryGetFeatureLookups"/> for the variable-font bypass
+    /// and the read-only contract on cached lists.
+    /// </summary>
+    private readonly ConcurrentDictionary<FeatureLookupsKey, List<(Tag Feature, ushort Index, LookupTable LookupTable)>> featureLookupsCache = new();
+
     /// <summary>
     /// The tag for the horizontal kerning feature ('kern').
     /// </summary>
@@ -260,7 +268,11 @@ internal class GPosTable : Table
                                 goto EndLookups;
                             }
 
-                            if ((collection[iterator.Index].FeatureMask & featureMask) == 0)
+                            // The digest cheaply rejects glyphs no subtable of this
+                            // lookup can affect; a maybe falls through to the exact
+                            // coverage test inside.
+                            GlyphShapingData glyphData = collection[iterator.Index];
+                            if ((glyphData.FeatureMask & featureMask) == 0 || !featureLookupTable.Digest.MightContain(glyphData.GlyphId))
                             {
                                 iterator.Next();
                                 continue;
@@ -321,6 +333,43 @@ internal class GPosTable : Table
             return false;
         }
 
+        // Feature variations resolve against the font's live variation coordinates, so
+        // caching would mix results across differently configured variable fonts.
+        if (this.FeatureVariations is not null)
+        {
+            value = this.ResolveFeatureLookups(fontMetrics, stageFeature, script, languageTags);
+            return value.Count > 0;
+        }
+
+        // Resolution depends only on this table's data for a given feature, script,
+        // and language candidates, so results, including empty ones, are cached for
+        // the table's lifetime. The cached list is shared: consumers must not mutate
+        // it. A concurrent first-resolution race only duplicates deterministic work.
+        FeatureLookupsKey key = new(stageFeature, script, languageTags);
+        if (!this.featureLookupsCache.TryGetValue(key, out value))
+        {
+            value = this.ResolveFeatureLookups(fontMetrics, stageFeature, script, languageTags);
+            this.featureLookupsCache.TryAdd(key, value);
+        }
+
+        return value.Count > 0;
+    }
+
+    /// <summary>
+    /// Resolves the feature lookups for the given stage feature, script, and language
+    /// through the selection ladder documented inline.
+    /// </summary>
+    /// <param name="fontMetrics">The font metrics.</param>
+    /// <param name="stageFeature">The feature tag for the current shaping stage.</param>
+    /// <param name="script">The script class.</param>
+    /// <param name="languageTags">The candidate OpenType language system tags, most specific first.</param>
+    /// <returns>The resolved lookups; empty when the feature yields none.</returns>
+    private List<(Tag Feature, ushort Index, LookupTable LookupTable)> ResolveFeatureLookups(
+        FontMetrics fontMetrics,
+        Tag stageFeature,
+        ScriptClass script,
+        Tag[] languageTags)
+    {
         // Resolve feature substitutions from FeatureVariations (variable fonts).
         FeatureTableSubstitutionRecord[]? substitutions = this.FeatureVariations
             ?.FindMatchingSubstitutions(fontMetrics.GetNormalizedCoordinates());
@@ -328,7 +377,8 @@ internal class GPosTable : Table
         // Step 1: script selection. Map the Unicode script class onto the font's
         // script table, falling back to the font's first script when the font does not
         // declare the script.
-        ScriptListTable scriptListTable = this.ScriptList.Default();
+        // The caching entry point rejects a null script list before dispatching here.
+        ScriptListTable scriptListTable = this.ScriptList!.Default();
         Tag[] tags = UnicodeScriptTagMap.Instance[script];
         for (int i = 0; i < tags.Length; i++)
         {
@@ -355,8 +405,7 @@ internal class GPosTable : Table
             {
                 if (langSysTables[j].LangSysTag == language)
                 {
-                    value = this.GetFeatureLookups(stageFeature, substitutions, langSysTables[j]);
-                    return value.Count > 0;
+                    return this.GetFeatureLookups(stageFeature, substitutions, langSysTables[j]);
                 }
             }
         }
@@ -370,16 +419,14 @@ internal class GPosTable : Table
         {
             if (langSysRecords[i].LangSysTag == DefaultLangSysTag.Value)
             {
-                value = this.GetFeatureLookups(stageFeature, substitutions, langSysRecords[i]);
-                return value.Count > 0;
+                return this.GetFeatureLookups(stageFeature, substitutions, langSysRecords[i]);
             }
         }
 
         LangSysTable? defaultLangSysTable = scriptListTable.DefaultLangSysTable;
         if (defaultLangSysTable != null)
         {
-            value = this.GetFeatureLookups(stageFeature, substitutions, defaultLangSysTable);
-            return value.Count > 0;
+            return this.GetFeatureLookups(stageFeature, substitutions, defaultLangSysTable);
         }
 
         // Step 4: no default language system either. Nothing applies: the font scoped
@@ -387,8 +434,7 @@ internal class GPosTable : Table
         // language system means no lookups. Features such as SimSun's vertical
         // alternates, which live only under its Chinese language systems, are reached by
         // setting TextOptions.Culture to a Chinese culture.
-        value = null;
-        return false;
+        return [];
     }
 
     /// <summary>

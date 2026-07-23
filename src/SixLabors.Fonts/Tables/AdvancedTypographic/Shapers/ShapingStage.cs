@@ -13,10 +13,10 @@ namespace SixLabors.Fonts.Tables.AdvancedTypographic.Shapers;
 internal readonly struct ShapingStage : IEquatable<ShapingStage>
 {
     /// <summary>The optional action to invoke before the feature is applied.</summary>
-    private readonly Action<IGlyphShapingCollection, int, int>? preAction;
+    private readonly Action<GlyphShapingCollection, int, int>? preAction;
 
     /// <summary>The optional action to invoke after the feature is applied.</summary>
-    private readonly Action<IGlyphShapingCollection, int, int>? postAction;
+    private readonly Action<GlyphShapingCollection, int, int>? postAction;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ShapingStage"/> struct.
@@ -24,7 +24,7 @@ internal readonly struct ShapingStage : IEquatable<ShapingStage>
     /// <param name="featureTag">The OpenType feature tag for this stage.</param>
     /// <param name="preAction">An optional action to invoke before the feature is applied.</param>
     /// <param name="postAction">An optional action to invoke after the feature is applied.</param>
-    public ShapingStage(Tag featureTag, Action<IGlyphShapingCollection, int, int>? preAction, Action<IGlyphShapingCollection, int, int>? postAction)
+    public ShapingStage(Tag featureTag, Action<GlyphShapingCollection, int, int>? preAction, Action<GlyphShapingCollection, int, int>? postAction)
     {
         this.FeatureTag = featureTag;
         this.preAction = preAction;
@@ -42,7 +42,7 @@ internal readonly struct ShapingStage : IEquatable<ShapingStage>
     /// <param name="collection">The glyph shaping collection.</param>
     /// <param name="index">The zero-based index of the first element.</param>
     /// <param name="count">The number of elements.</param>
-    public void PreProcessFeature(IGlyphShapingCollection collection, int index, int count)
+    public void PreProcessFeature(GlyphShapingCollection collection, int index, int count)
         => this.preAction?.Invoke(collection, index, count);
 
     /// <summary>
@@ -51,7 +51,7 @@ internal readonly struct ShapingStage : IEquatable<ShapingStage>
     /// <param name="collection">The glyph shaping collection.</param>
     /// <param name="index">The zero-based index of the first element.</param>
     /// <param name="count">The number of elements.</param>
-    public void PostProcessFeature(IGlyphShapingCollection collection, int index, int count)
+    public void PostProcessFeature(GlyphShapingCollection collection, int index, int count)
         => this.postAction?.Invoke(collection, index, count);
 
     /// <inheritdoc />

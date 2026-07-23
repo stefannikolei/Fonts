@@ -76,7 +76,7 @@ internal static partial class TextLayout
                         continue;
                     }
 
-                    List<FontGlyphMetrics> metrics = [];
+                    List<PositionedGlyphMetrics> metrics = [];
                     for (int i = 0; i < glyphData.Count; i++)
                     {
                         GlyphPositioningCollection.GlyphPositioningData data = glyphData[i];
@@ -93,7 +93,9 @@ internal static partial class TextLayout
                             continue;
                         }
 
-                        metrics.Add(data.Metrics);
+                        // Positions are read from the baked metrics for now; the flip to
+                        // shared metrics sources these from the shaping bounds instead.
+                        metrics.Add(new(data.Metrics, data.Metrics.AdvanceWidth, data.Metrics.AdvanceHeight, data.Metrics.Offset));
                     }
 
                     if (metrics.Count == 0)
@@ -105,7 +107,7 @@ internal static partial class TextLayout
                         continue;
                     }
 
-                    FontGlyphMetrics glyph = metrics[0];
+                    FontGlyphMetrics glyph = metrics[0].Metrics;
 
                     // Retrieve the current codepoint from the enumerator.
                     // If the glyph represents a substituted codepoint and the substitution is a single codepoint substitution,
@@ -154,11 +156,11 @@ internal static partial class TextLayout
                     float glyphAdvance;
                     if (isHorizontalLayout || shouldRotate)
                     {
-                        glyphAdvance = glyph.AdvanceWidth;
+                        glyphAdvance = metrics[0].AdvanceWidth;
                     }
                     else
                     {
-                        glyphAdvance = glyph.AdvanceHeight;
+                        glyphAdvance = metrics[0].AdvanceHeight;
                     }
 
                     decomposedAdvances[0] = glyphAdvance;
@@ -196,6 +198,9 @@ internal static partial class TextLayout
                                     glyphAdvance = spaceMetrics.AdvanceHeight * options.TabWidth;
                                     glyph.SetAdvanceHeight((ushort)glyphAdvance);
                                 }
+
+                                // Keep the positioned snapshot in step with the tab-adjusted metric.
+                                metrics[0] = new(glyph, glyph.AdvanceWidth, glyph.AdvanceHeight, glyph.Offset);
                             }
                         }
                     }
@@ -371,7 +376,7 @@ internal static partial class TextLayout
 
                         // Add our metrics to the line.
                         textLine.Add(
-                            isDecomposed ? new FontGlyphMetrics[] { metric } : metrics,
+                            isDecomposed ? [new PositionedGlyphMetrics(metric, metric.AdvanceWidth, metric.AdvanceHeight, metric.Offset)] : metrics,
                             positionedGlyph.Font,
                             pointSize,
                             decomposedAdvance,
@@ -637,7 +642,7 @@ internal static partial class TextLayout
             : markerMetric.GetBoundingBox(markerMode, Vector2.Zero, pointSize);
 
         return new GlyphLayoutData(
-            new FontGlyphMetrics[] { markerMetric },
+            new PositionedGlyphMetrics[] { new(markerMetric, markerMetric.AdvanceWidth, markerMetric.AdvanceHeight, markerMetric.Offset) },
             font,
             pointSize,
             markerAdvance,

@@ -39,7 +39,7 @@ internal struct GlyphLayoutData
     /// <param name="stringIndex">The UTF-16 character index in the source string.</param>
     /// <param name="hyphenationMarkerIndex">The marker index to use if this entry becomes a selected soft-hyphen break.</param>
     public GlyphLayoutData(
-        IReadOnlyList<FontGlyphMetrics> metrics,
+        IReadOnlyList<PositionedGlyphMetrics> metrics,
         Font font,
         float pointSize,
         float scaledAdvance,
@@ -79,10 +79,10 @@ internal struct GlyphLayoutData
     }
 
     /// <summary>Gets the source codepoint for this entry.</summary>
-    public readonly CodePoint CodePoint => this.Metrics[0].CodePoint;
+    public readonly CodePoint CodePoint => this.Metrics[0].Metrics.CodePoint;
 
     /// <summary>Gets the shaped glyph metrics produced for this codepoint (one codepoint may map to several glyphs).</summary>
-    public IReadOnlyList<FontGlyphMetrics> Metrics { get; }
+    public IReadOnlyList<PositionedGlyphMetrics> Metrics { get; }
 
     /// <summary>Gets the font used to shape and render this entry.</summary>
     public Font Font { get; }

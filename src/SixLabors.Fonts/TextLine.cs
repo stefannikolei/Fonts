@@ -161,7 +161,7 @@ internal sealed class TextLine
     /// <param name="lineSpacing">The line-spacing factor to apply to <paramref name="scaledLineHeight"/>.</param>
     /// <param name="hyphenationMarkerIndex">The marker index to use if this entry becomes a selected soft-hyphen break.</param>
     public void Add(
-        IReadOnlyList<FontGlyphMetrics> metrics,
+        IReadOnlyList<PositionedGlyphMetrics> metrics,
         Font font,
         float pointSize,
         float scaledAdvance,
@@ -203,7 +203,7 @@ internal sealed class TextLine
         float scaledMinY = 0;
         for (int i = 0; i < metrics.Count; i++)
         {
-            FontGlyphMetrics metric = metrics[i];
+            FontGlyphMetrics metric = metrics[i].Metrics;
             if (FontGlyphMetrics.ShouldSkipGlyphRendering(metric.CodePoint))
             {
                 continue;
@@ -302,7 +302,7 @@ internal sealed class TextLine
         // Placeholders share the source codepoint offset at their insertion point,
         // but they do not consume source grapheme, codepoint, or UTF-16 indexes.
         this.Add(
-            new FontGlyphMetrics[] { placeholderGlyph },
+            new PositionedGlyphMetrics[] { new(placeholderGlyph, placeholderGlyph.AdvanceWidth, placeholderGlyph.AdvanceHeight, placeholderGlyph.Offset) },
             placeholder.Font,
             placeholder.PointSize,
             placeholderAdvance,
@@ -413,7 +413,7 @@ internal sealed class TextLine
 
         GlyphLayoutData anchor = this.data[^1];
         GlyphLayoutData marker = TextLayout.CreateGeneratedMarker(
-            anchor.Metrics[0],
+            anchor.Metrics[0].Metrics,
             anchor.PointSize,
             anchor.BidiRun,
             anchor.GraphemeIndex,

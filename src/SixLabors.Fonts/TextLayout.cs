@@ -849,7 +849,7 @@ internal static partial class TextLayout
 
             if (data.IsNewLine)
             {
-                FontGlyphMetrics metric = data.Metrics[0];
+                FontGlyphMetrics metric = data.Metrics[0].Metrics;
 
                 // Hard breaks bypass the normal glyph loop, but still need the
                 // current pen position plus the same baseline origin used by glyphs.
@@ -881,10 +881,10 @@ internal static partial class TextLayout
 
             // Index rather than enumerate: the interface-typed metrics list would allocate a
             // heap enumerator per glyph on this per-glyph hot path.
-            IReadOnlyList<FontGlyphMetrics> metrics = data.Metrics;
+            IReadOnlyList<PositionedGlyphMetrics> metrics = data.Metrics;
             for (int j = 0; j < metrics.Count; j++)
             {
-                FontGlyphMetrics metric = metrics[j];
+                FontGlyphMetrics metric = metrics[j].Metrics;
                 Vector2 glyphOrigin = penLocation + new Vector2(0, textLine.ScaledMaxAscender);
 
                 visitor.Visit(
@@ -1085,7 +1085,7 @@ internal static partial class TextLayout
 
             if (data.IsNewLine)
             {
-                FontGlyphMetrics metric = data.Metrics[0];
+                FontGlyphMetrics metric = data.Metrics[0].Metrics;
                 Vector2 scale = new Vector2(data.PointSize) / metric.ScaleFactor;
 
                 // Hard breaks bypass the normal glyph loop, but still need the
@@ -1173,10 +1173,10 @@ internal static partial class TextLayout
                         }
 
                         // Index rather than enumerate to avoid a heap enumerator per grapheme.
-                        IReadOnlyList<FontGlyphMetrics> inkMetrics = g.Metrics;
+                        IReadOnlyList<PositionedGlyphMetrics> inkMetrics = g.Metrics;
                         for (int m = 0; m < inkMetrics.Count; m++)
                         {
-                            FontGlyphMetrics inkMetric = inkMetrics[m];
+                            FontGlyphMetrics inkMetric = inkMetrics[m].Metrics;
                             Vector2 s = new Vector2(g.PointSize) / inkMetric.ScaleFactor;
 
                             float glyphMinX = inkMetric.Bounds.Min.X * s.X;
@@ -1216,10 +1216,10 @@ internal static partial class TextLayout
                 // they participate in a vertical flow. `AdvanceWidth` gives us the horizontal pen advance we must
                 // apply between entries inside the transformed grapheme.
                 // Index rather than enumerate to avoid a heap enumerator per glyph.
-                IReadOnlyList<FontGlyphMetrics> transformedMetrics = data.Metrics;
+                IReadOnlyList<PositionedGlyphMetrics> transformedMetrics = data.Metrics;
                 for (int m = 0; m < transformedMetrics.Count; m++)
                 {
-                    FontGlyphMetrics transformedMetric = transformedMetrics[m];
+                    FontGlyphMetrics transformedMetric = transformedMetrics[m].Metrics;
                     Vector2 s = new Vector2(data.PointSize) / transformedMetric.ScaleFactor;
                     entryScaledAdvanceWidth += transformedMetric.AdvanceWidth * s.X;
                 }
@@ -1227,10 +1227,10 @@ internal static partial class TextLayout
 
             // Index rather than enumerate: the interface-typed metrics list would allocate a
             // heap enumerator per glyph on this per-glyph hot path.
-            IReadOnlyList<FontGlyphMetrics> metrics = data.Metrics;
+            IReadOnlyList<PositionedGlyphMetrics> metrics = data.Metrics;
             for (int metricIndex = 0; metricIndex < metrics.Count; metricIndex++)
             {
-                FontGlyphMetrics metric = metrics[metricIndex];
+                FontGlyphMetrics metric = metrics[metricIndex].Metrics;
 
                 // Align the glyph horizontally and vertically centering vertically around the baseline.
                 Vector2 scale = new Vector2(data.PointSize) / metric.ScaleFactor;
@@ -1460,7 +1460,7 @@ internal static partial class TextLayout
 
             if (data.IsNewLine)
             {
-                FontGlyphMetrics metric = data.Metrics[0];
+                FontGlyphMetrics metric = data.Metrics[0].Metrics;
                 Vector2 scale = new Vector2(data.PointSize) / metric.ScaleFactor;
 
                 // Hard breaks bypass the normal glyph loop, but still need the
@@ -1496,10 +1496,10 @@ internal static partial class TextLayout
             {
                 // Index rather than enumerate: the interface-typed metrics list would allocate a
                 // heap enumerator per glyph on this per-glyph hot path.
-                IReadOnlyList<FontGlyphMetrics> metrics = data.Metrics;
+                IReadOnlyList<PositionedGlyphMetrics> metrics = data.Metrics;
                 for (int j = 0; j < metrics.Count; j++)
                 {
-                    FontGlyphMetrics metric = metrics[j];
+                    FontGlyphMetrics metric = metrics[j].Metrics;
 
                     // The glyph will be rotated 90 degrees for vertical mixed layout.
                     // We still advance along Y, but the glyphs are laid out sideways in X.
@@ -1536,10 +1536,10 @@ internal static partial class TextLayout
             else
             {
                 // Index rather than enumerate to avoid a heap enumerator per glyph.
-                IReadOnlyList<FontGlyphMetrics> metrics = data.Metrics;
+                IReadOnlyList<PositionedGlyphMetrics> metrics = data.Metrics;
                 for (int j = 0; j < metrics.Count; j++)
                 {
-                    FontGlyphMetrics metric = metrics[j];
+                    FontGlyphMetrics metric = metrics[j].Metrics;
 
                     // Align the glyph horizontally and vertically centering vertically around the baseline.
                     Vector2 scale = new Vector2(data.PointSize) / metric.ScaleFactor;

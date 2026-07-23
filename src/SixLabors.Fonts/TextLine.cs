@@ -209,7 +209,7 @@ internal sealed class TextLine
                 continue;
             }
 
-            FontRectangle bbox = metric.GetBoundingBox(layoutMode, Vector2.Zero, pointSize);
+            FontRectangle bbox = metric.GetBoundingBox(layoutMode, Vector2.Zero, pointSize, metrics[i].TextRun, metrics[i].Offset);
             scaledMinY = MathF.Min(scaledMinY, bbox.Y);
         }
 
@@ -278,7 +278,7 @@ internal sealed class TextLine
             ? GlyphLayoutMode.Horizontal
             : GlyphLayoutMode.Vertical;
 
-        FontRectangle placeholderBox = placeholderGlyph.GetBoundingBox(placeholderMode, Vector2.Zero, placeholder.PointSize);
+        FontRectangle placeholderBox = placeholderGlyph.GetBoundingBox(placeholderMode, Vector2.Zero, placeholder.PointSize, placeholder.Data.TextRun, Vector2.Zero);
 
         IMetricsHeader metricsHeader = isPlaceholderHorizontal
             ? placeholderGlyph.FontMetrics.HorizontalMetrics
@@ -302,7 +302,7 @@ internal sealed class TextLine
         // Placeholders share the source codepoint offset at their insertion point,
         // but they do not consume source grapheme, codepoint, or UTF-16 indexes.
         this.Add(
-            new PositionedGlyphMetrics[] { new(placeholderGlyph, placeholderGlyph.AdvanceWidth, placeholderGlyph.AdvanceHeight, placeholderGlyph.Offset) },
+            [new(placeholderGlyph, placeholderGlyph.AdvanceWidth, placeholderGlyph.AdvanceHeight, Vector2.Zero, placeholder.Data.TextRun)],
             placeholder.Font,
             placeholder.PointSize,
             placeholderAdvance,
@@ -413,7 +413,7 @@ internal sealed class TextLine
 
         GlyphLayoutData anchor = this.data[^1];
         GlyphLayoutData marker = TextLayout.CreateGeneratedMarker(
-            anchor.Metrics[0].Metrics,
+            anchor.Metrics[0],
             anchor.PointSize,
             anchor.BidiRun,
             anchor.GraphemeIndex,

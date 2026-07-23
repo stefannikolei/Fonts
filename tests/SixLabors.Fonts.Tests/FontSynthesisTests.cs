@@ -153,10 +153,10 @@ public class FontSynthesisTests
     }
 
     [Fact]
-    public void GetObliqueSkew_ReturnsZero_WhenGlyphHasNoTextRun()
+    public void GetObliqueSkew_ReturnsZero_WhenTextRunIsNull()
     {
-        // The metrics returned directly from the font (i.e. not cloned for a specific run)
-        // carry no text run, so synthesis cannot be determined and must be disabled.
+        // Synthesis is driven by the text run; without one it cannot be determined
+        // and must be disabled.
         Font italic = new(RegularOnlyFamily(TestFonts.OpenSansFile), 24, FontStyle.Italic);
 
         Assert.True(italic.FontMetrics.TryGetGlyphMetrics(
@@ -167,7 +167,7 @@ public class FontSynthesisTests
             ColorFontSupport.None,
             out FontGlyphMetrics metrics));
 
-        Assert.Equal(0F, metrics.GetObliqueSkew());
+        Assert.Equal(0F, metrics.GetObliqueSkew(null));
     }
 
     private static void AssertObliqueSkew(string file)
@@ -181,8 +181,11 @@ public class FontSynthesisTests
         Assert.True(regular.TryGetGlyphs(codePoint, out Glyph? regularGlyph));
         Assert.True(italic.TryGetGlyphs(codePoint, out Glyph? italicGlyph));
 
-        Assert.Equal(0F, regularGlyph.Value.GlyphMetrics.GetObliqueSkew());
-        Assert.Equal(ExpectedSkew, italicGlyph.Value.GlyphMetrics.GetObliqueSkew(), SkewComparer);
+        TextRun regularRun = new() { Start = 0, End = 1, Font = regular };
+        TextRun italicRun = new() { Start = 0, End = 1, Font = italic };
+
+        Assert.Equal(0F, regularGlyph.Value.GlyphMetrics.GetObliqueSkew(regularRun));
+        Assert.Equal(ExpectedSkew, italicGlyph.Value.GlyphMetrics.GetObliqueSkew(italicRun), SkewComparer);
     }
 
     private static void AssertSyntheticItalicShear(string file, string text, ColorFontSupport colorFontSupport)
@@ -257,7 +260,8 @@ public class FontSynthesisTests
 
         // GetSyntheticBoldStrength receives point size multiplied by DPI. At the default 72 DPI,
         // the scale factors cancel to leave the browser-matched emboldening fraction times point size.
-        float strength = glyph.Value.GlyphMetrics.GetSyntheticBoldStrength(pointSize * 72F);
+        TextRun textRun = new() { Start = 0, End = 1, Font = bold };
+        float strength = glyph.Value.GlyphMetrics.GetSyntheticBoldStrength(pointSize * 72F, textRun);
         Assert.Equal(pointSize * ExpectedBoldEmScale, strength, SkewComparer);
     }
 
@@ -330,8 +334,10 @@ public class FontSynthesisTests
 
         // Both syntheses are driven independently, so requesting bold italic on a regular-only
         // family must enable both the shear and the outline dilation.
-        Assert.Equal(ExpectedSkew, glyph.Value.GlyphMetrics.GetObliqueSkew(), SkewComparer);
-        Assert.True(glyph.Value.GlyphMetrics.ShouldSynthesizeBold());
+        TextRun textRun = new() { Start = 0, End = 1, Font = boldItalic };
+        FontGlyphMetrics metrics = glyph.Value.GlyphMetrics;
+        Assert.Equal(ExpectedSkew, metrics.GetObliqueSkew(textRun), SkewComparer);
+        Assert.True(metrics.ShouldSynthesizeBold(textRun));
     }
 
     [Fact]
@@ -343,8 +349,11 @@ public class FontSynthesisTests
         CodePoint codePoint = new(0x1F600);
 
         Assert.True(bold.TryGetGlyphs(codePoint, ColorFontSupport.ColrV0, out Glyph? glyph));
-        Assert.Equal(GlyphType.Painted, glyph.Value.GlyphMetrics.GlyphType);
-        Assert.False(glyph.Value.GlyphMetrics.ShouldSynthesizeBold());
+
+        TextRun textRun = new() { Start = 0, End = 1, Font = bold };
+        FontGlyphMetrics metrics = glyph.Value.GlyphMetrics;
+        Assert.Equal(GlyphType.Painted, metrics.GlyphType);
+        Assert.False(metrics.ShouldSynthesizeBold(textRun));
 
         TextOptions regularOptions = new(regular)
         {
@@ -379,10 +388,10 @@ public class FontSynthesisTests
     }
 
     [Fact]
-    public void ShouldSynthesizeBold_ReturnsFalse_WhenGlyphHasNoTextRun()
+    public void ShouldSynthesizeBold_ReturnsFalse_WhenTextRunIsNull()
     {
-        // The metrics returned directly from the font (i.e. not cloned for a specific run)
-        // carry no text run, so synthesis cannot be determined and must be disabled.
+        // Synthesis is driven by the text run; without one it cannot be determined
+        // and must be disabled.
         Font bold = new(RegularOnlyFamily(TestFonts.OpenSansFile), 24, FontStyle.Bold);
 
         Assert.True(bold.FontMetrics.TryGetGlyphMetrics(
@@ -393,7 +402,7 @@ public class FontSynthesisTests
             ColorFontSupport.None,
             out FontGlyphMetrics metrics));
 
-        Assert.False(metrics.ShouldSynthesizeBold());
+        Assert.False(metrics.ShouldSynthesizeBold(null));
     }
 
     private static void AssertShouldSynthesizeBold(string file)
@@ -407,8 +416,11 @@ public class FontSynthesisTests
         Assert.True(regular.TryGetGlyphs(codePoint, out Glyph? regularGlyph));
         Assert.True(bold.TryGetGlyphs(codePoint, out Glyph? boldGlyph));
 
-        Assert.False(regularGlyph.Value.GlyphMetrics.ShouldSynthesizeBold());
-        Assert.True(boldGlyph.Value.GlyphMetrics.ShouldSynthesizeBold());
+        TextRun regularRun = new() { Start = 0, End = 1, Font = regular };
+        TextRun boldRun = new() { Start = 0, End = 1, Font = bold };
+
+        Assert.False(regularGlyph.Value.GlyphMetrics.ShouldSynthesizeBold(regularRun));
+        Assert.True(boldGlyph.Value.GlyphMetrics.ShouldSynthesizeBold(boldRun));
     }
 
     private static void AssertSyntheticBoldGrows(string file, string text)

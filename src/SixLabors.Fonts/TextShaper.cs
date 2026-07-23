@@ -80,9 +80,9 @@ public static class TextShaper
                 data.Data.CodePoint,
                 data.Offset,
                 data.Data.CodePointCount,
-                metrics.AdvanceWidth,
-                metrics.AdvanceHeight,
-                metrics.Offset));
+                data.AdvanceWidth,
+                data.AdvanceHeight,
+                metrics.Offset + data.PositionOffset));
         }
 
         ShapingProbe.Exit(ShapingProbe.Projection, probe);

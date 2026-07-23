@@ -93,9 +93,9 @@ internal static partial class TextLayout
                             continue;
                         }
 
-                        // Positions are read from the baked metrics for now; the flip to
-                        // shared metrics sources these from the shaping bounds instead.
-                        metrics.Add(new(data.Metrics, data.Metrics.AdvanceWidth, data.Metrics.AdvanceHeight, data.Metrics.Offset));
+                        // Post-GPOS positions live in the shaping bounds; the shared
+                        // metrics instance is never mutated by positioning.
+                        metrics.Add(new(data.Metrics, data.AdvanceWidth, data.AdvanceHeight, data.PositionOffset, data.Data.TextRun));
                     }
 
                     if (metrics.Count == 0)
@@ -188,19 +188,18 @@ internal static partial class TextLayout
                                       shapedText.LayoutMode,
                                       options.ColorFontSupport);
 
+                                // The tab advance lives only in the positioned snapshot;
+                                // the metrics instance is shared and must not be mutated.
                                 if (isHorizontalLayout || shouldRotate)
                                 {
                                     glyphAdvance = spaceMetrics.AdvanceWidth * options.TabWidth;
-                                    glyph.SetAdvanceWidth((ushort)glyphAdvance);
+                                    metrics[0] = new(glyph, (ushort)glyphAdvance, metrics[0].AdvanceHeight, metrics[0].Offset, metrics[0].TextRun);
                                 }
                                 else
                                 {
                                     glyphAdvance = spaceMetrics.AdvanceHeight * options.TabWidth;
-                                    glyph.SetAdvanceHeight((ushort)glyphAdvance);
+                                    metrics[0] = new(glyph, metrics[0].AdvanceWidth, (ushort)glyphAdvance, metrics[0].Offset, metrics[0].TextRun);
                                 }
-
-                                // Keep the positioned snapshot in step with the tab-adjusted metric.
-                                metrics[0] = new(glyph, glyph.AdvanceWidth, glyph.AdvanceHeight, glyph.Offset);
                             }
                         }
                     }
@@ -360,7 +359,7 @@ internal static partial class TextLayout
                             // then account for its advance without rescanning or reshaping the line.
                             hyphenationMarkerIndex = hyphenationMarkers.Count;
                             hyphenationMarkers.Add(CreateGeneratedMarker(
-                                glyph,
+                                metrics[0],
                                 pointSize,
                                 shapedText.BidiRuns[shapedText.BidiMap[codePointIndex]],
                                 graphemeIndex,
@@ -376,7 +375,7 @@ internal static partial class TextLayout
 
                         // Add our metrics to the line.
                         textLine.Add(
-                            isDecomposed ? [new PositionedGlyphMetrics(metric, metric.AdvanceWidth, metric.AdvanceHeight, metric.Offset)] : metrics,
+                            isDecomposed ? [new PositionedGlyphMetrics(metric, positionedGlyph.AdvanceWidth, positionedGlyph.AdvanceHeight, positionedGlyph.PositionOffset, positionedGlyph.Data.TextRun)] : metrics,
                             positionedGlyph.Font,
                             pointSize,
                             decomposedAdvance,
@@ -555,7 +554,7 @@ internal static partial class TextLayout
     /// <summary>
     /// Creates a visible generated marker that matches the layout style of the anchor entry.
     /// </summary>
-    /// <param name="anchorMetric">The glyph metric that supplies font, run, attributes, and decorations.</param>
+    /// <param name="anchor">The positioned anchor glyph that supplies font, run, attributes, and decorations.</param>
     /// <param name="pointSize">The point size at which the marker is rendered.</param>
     /// <param name="bidiRun">The bidi run that the marker belongs to.</param>
     /// <param name="graphemeIndex">The source grapheme index to map the marker to.</param>
@@ -569,7 +568,7 @@ internal static partial class TextLayout
     /// <param name="options">The text options used for layout.</param>
     /// <returns>The generated marker entry.</returns>
     internal static GlyphLayoutData CreateGeneratedMarker(
-        FontGlyphMetrics anchorMetric,
+        PositionedGlyphMetrics anchor,
         float pointSize,
         BidiRun bidiRun,
         int graphemeIndex,
@@ -582,6 +581,7 @@ internal static partial class TextLayout
         Font font,
         TextOptions options)
     {
+        FontGlyphMetrics anchorMetric = anchor.Metrics;
         anchorMetric.FontMetrics.TryGetGlyphId(markerCodePoint, out ushort markerGlyphId);
 
         FontGlyphMetrics markerMetric = anchorMetric.FontMetrics.GetGlyphMetrics(
@@ -591,8 +591,6 @@ internal static partial class TextLayout
             anchorMetric.TextDecorations,
             layoutMode,
             options.ColorFontSupport);
-
-        markerMetric = markerMetric.CloneForRendering(anchorMetric.TextRun);
 
         bool isHorizontalLayout = layoutMode.IsHorizontal();
         bool isVerticalLayout = layoutMode.IsVertical();
@@ -639,10 +637,10 @@ internal static partial class TextLayout
 
         FontRectangle markerBox = FontGlyphMetrics.ShouldSkipGlyphRendering(markerMetric.CodePoint)
             ? FontRectangle.Empty
-            : markerMetric.GetBoundingBox(markerMode, Vector2.Zero, pointSize);
+            : markerMetric.GetBoundingBox(markerMode, Vector2.Zero, pointSize, anchor.TextRun, Vector2.Zero);
 
         return new GlyphLayoutData(
-            new PositionedGlyphMetrics[] { new(markerMetric, markerMetric.AdvanceWidth, markerMetric.AdvanceHeight, markerMetric.Offset) },
+            [new(markerMetric, markerMetric.AdvanceWidth, markerMetric.AdvanceHeight, Vector2.Zero, anchor.TextRun)],
             font,
             pointSize,
             markerAdvance,

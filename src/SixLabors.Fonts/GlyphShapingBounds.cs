@@ -14,42 +14,21 @@ namespace SixLabors.Fonts;
 [DebuggerDisplay("{DebuggerDisplay,nq}")]
 internal struct GlyphShapingBounds
 {
-    private int x;
-    private int y;
     private int width;
     private int height;
 
     public GlyphShapingBounds(int x, int y, int width, int height)
     {
-        this.x = x;
-        this.y = y;
+        this.X = x;
+        this.Y = y;
         this.width = width;
         this.height = height;
-        this.IsDirtyXY = false;
         this.IsDirtyWH = false;
     }
 
-    public int X
-    {
-        get => this.x;
+    public int X { get; set; }
 
-        set
-        {
-            this.x = value;
-            this.IsDirtyXY = true;
-        }
-    }
-
-    public int Y
-    {
-        get => this.y;
-
-        set
-        {
-            this.y = value;
-            this.IsDirtyXY = true;
-        }
-    }
+    public int Y { get; set; }
 
     public int Width
     {
@@ -73,10 +52,13 @@ internal struct GlyphShapingBounds
         }
     }
 
-    public bool IsDirtyXY { get; private set; }
-
+    /// <summary>
+    /// Gets a value indicating whether positioning has written either advance dimension.
+    /// Consumers use this to choose between the positioned advances and the metrics
+    /// advances.
+    /// </summary>
     public bool IsDirtyWH { get; private set; }
 
     private string DebuggerDisplay
-        => FormattableString.Invariant($"{this.X} : {this.Y} : {this.Width} : {this.Height} : {this.IsDirtyXY} : {this.IsDirtyWH}");
+        => FormattableString.Invariant($"{this.X} : {this.Y} : {this.Width} : {this.Height} : {this.IsDirtyWH}");
 }

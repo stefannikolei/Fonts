@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using SixLabors.Fonts.Tables.AdvancedTypographic;
 using SixLabors.Fonts.Unicode;
@@ -150,8 +151,6 @@ internal sealed class GlyphPositioningCollection : GlyphShapingCollection
                     ushort id = shape.GlyphId;
                     CodePoint codePoint = shape.CodePoint;
 
-                    // Perform a semi-deep clone (FontMetrics is not cloned) so we can continue to
-                    // cache the original in the font metrics and only update our collection.
                     TextAttributes textAttributes = shape.TextRun.TextAttributes;
                     TextDecorations textDecorations = shape.TextRun.TextDecorations;
 
@@ -193,7 +192,7 @@ internal sealed class GlyphPositioningCollection : GlyphShapingCollection
                         }
 
                         this.RecordGlyphId(metrics.GlyphId);
-                        this.glyphs.Insert(i += replacementCount, new(offset, shape, font, pointSize, metrics.CloneForRendering(shape.TextRun)));
+                        this.glyphs.Insert(i += replacementCount, new(offset, shape, font, pointSize, metrics));
                         replacementCount++;
                     }
                 }
@@ -270,8 +269,6 @@ internal sealed class GlyphPositioningCollection : GlyphShapingCollection
                 continue;
             }
 
-            // Perform a semi-deep clone (FontMetrics is not cloned) so we can continue to
-            // cache the original in the font metrics and only update our collection.
             TextAttributes textAttributes = data.TextRun.TextAttributes;
             TextDecorations textDecorations = data.TextRun.TextDecorations;
 
@@ -301,52 +298,24 @@ internal sealed class GlyphPositioningCollection : GlyphShapingCollection
             }
 
             this.RecordGlyphId(metrics.GlyphId);
-            this.glyphs.Add(new(offset, data, font, font.Size, metrics.CloneForRendering(data.TextRun)));
+            this.glyphs.Add(new(offset, data, font, font.Size, metrics));
         }
 
         return !hasFallBacks;
     }
 
     /// <summary>
-    /// Updates the position of the glyph at the specified index.
+    /// Marks the glyph at the specified index as positioned. Positions accumulate in the
+    /// glyph's shaping bounds and are read from there by consumers, so the shared metrics
+    /// instance is never mutated.
     /// </summary>
-    /// <param name="fontMetrics">The font metrics.</param>
     /// <param name="index">The zero-based index of the element.</param>
-    public void UpdatePosition(FontMetrics fontMetrics, int index)
-    {
-        GlyphShapingData data = this[index];
-        bool isDirtyXY = data.Bounds.IsDirtyXY;
-        bool isDirtyWH = data.Bounds.IsDirtyWH;
-        if (!isDirtyXY && !isDirtyWH)
-        {
-            // No change required but the glyph has been processed.
-            data.IsPositioned = true;
-            return;
-        }
-
-        ushort glyphId = data.GlyphId;
-        FontGlyphMetrics m = this.glyphs[index].Metrics;
-
-        if (m.GlyphId == glyphId && fontMetrics == m.FontMetrics)
-        {
-            if (isDirtyXY)
-            {
-                m.ApplyOffset((short)data.Bounds.X, (short)data.Bounds.Y);
-                data.IsPositioned = true;
-            }
-
-            if (isDirtyWH)
-            {
-                m.SetAdvanceWidth((ushort)data.Bounds.Width);
-                m.SetAdvanceHeight((ushort)data.Bounds.Height);
-                data.IsPositioned = true;
-            }
-        }
-    }
+    public void UpdatePosition(int index) => this[index].IsPositioned = true;
 
     /// <summary>
-    /// Updates the advanced metrics of the glyphs at the given index and id,
-    /// adding dx and dy to the current advance.
+    /// Adds dx and dy to the positioned advance of the glyph at the given index and id.
+    /// Advances accumulate in the glyph's shaping bounds so the shared metrics instance
+    /// is never mutated.
     /// </summary>
     /// <param name="fontMetrics">The font face with metrics.</param>
     /// <param name="index">The zero-based index of the element.</param>
@@ -364,7 +333,12 @@ internal sealed class GlyphPositioningCollection : GlyphShapingCollection
             bool isVertical = AdvancedTypographicUtils.IsVerticalGlyph(m.CodePoint, layoutMode)
                 || (glyph.Data.AppliedFeatureMask & this.GetVerticalFeatureMask()) != 0;
 
-            m.ApplyAdvance(dx, isVertical ? dy : (short)0);
+            // Advance heights grow downward but font-space grows upward, hence the negation.
+            glyph.Data.Bounds.Width += dx;
+            if (isVertical)
+            {
+                glyph.Data.Bounds.Height -= dy;
+            }
         }
     }
 
@@ -417,6 +391,24 @@ internal sealed class GlyphPositioningCollection : GlyphShapingCollection
         public float PointSize { get; set; }
 
         public FontGlyphMetrics Metrics { get; set; }
+
+        /// <summary>
+        /// Gets the positioned horizontal advance in font design units: the shaping bounds
+        /// value once positioning has written one, otherwise the metrics advance.
+        /// </summary>
+        public ushort AdvanceWidth => this.Data.Bounds.IsDirtyWH ? (ushort)this.Data.Bounds.Width : this.Metrics.AdvanceWidth;
+
+        /// <summary>
+        /// Gets the positioned vertical advance in font design units: the shaping bounds
+        /// value once positioning has written one, otherwise the metrics advance.
+        /// </summary>
+        public ushort AdvanceHeight => this.Data.Bounds.IsDirtyWH ? (ushort)this.Data.Bounds.Height : this.Metrics.AdvanceHeight;
+
+        /// <summary>
+        /// Gets the placement offset written by positioning, in font design units. Geometry
+        /// consumers compose it with the metrics offset.
+        /// </summary>
+        public Vector2 PositionOffset => new(this.Data.Bounds.X, this.Data.Bounds.Y);
 
         private string DebuggerDisplay => FormattableString.Invariant($"Offset: {this.Offset}, Data: {this.Data.ToDebuggerDisplay()}");
     }

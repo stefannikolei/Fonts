@@ -297,7 +297,7 @@ internal class GPosTable : Table
 
             FixCursiveAttachment(collection, index, count);
             FixMarkAttachment(collection, index, count);
-            UpdatePositions(fontMetrics, collection, index, count);
+            UpdatePositions(collection, index, count);
 
             if (i >= maxCount || maxOperationsReached)
             {
@@ -659,16 +659,14 @@ internal class GPosTable : Table
     /// <summary>
     /// Updates glyph positions in the collection for the specified range.
     /// </summary>
-    /// <param name="fontMetrics">The font metrics.</param>
     /// <param name="collection">The glyph positioning collection.</param>
     /// <param name="index">The starting index.</param>
     /// <param name="count">The number of glyphs to process.</param>
-    private static void UpdatePositions(FontMetrics fontMetrics, GlyphPositioningCollection collection, int index, int count)
+    private static void UpdatePositions(GlyphPositioningCollection collection, int index, int count)
     {
         for (int i = 0; i < count; i++)
         {
-            int currentIndex = i + index;
-            collection.UpdatePosition(fontMetrics, currentIndex);
+            collection.UpdatePosition(i + index);
         }
     }
 }

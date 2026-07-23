@@ -857,7 +857,7 @@ internal static partial class TextLayout
 
                 visitor.Visit(
                     new GlyphLayout(
-                    new Glyph(metric, data.PointSize),
+                    new Glyph(metric, data.PointSize, data.Metrics[0].TextRun, data.Metrics[0].Offset),
                     data.Font,
                     boundsLocation,
                     hardBreakGlyphOrigin,
@@ -889,7 +889,7 @@ internal static partial class TextLayout
 
                 visitor.Visit(
                     new GlyphLayout(
-                    new Glyph(metric, data.PointSize),
+                    new Glyph(metric, data.PointSize, metrics[j].TextRun, metrics[j].Offset),
                     data.Font,
                     boundsLocation,
                     glyphOrigin,
@@ -1095,7 +1095,7 @@ internal static partial class TextLayout
 
                 visitor.Visit(
                     new GlyphLayout(
-                    new Glyph(metric, data.PointSize),
+                    new Glyph(metric, data.PointSize, data.Metrics[0].TextRun, data.Metrics[0].Offset),
                     data.Font,
                     boundsLocation,
                     hardBreakGlyphOrigin,
@@ -1221,7 +1221,7 @@ internal static partial class TextLayout
                 {
                     FontGlyphMetrics transformedMetric = transformedMetrics[m].Metrics;
                     Vector2 s = new Vector2(data.PointSize) / transformedMetric.ScaleFactor;
-                    entryScaledAdvanceWidth += transformedMetric.AdvanceWidth * s.X;
+                    entryScaledAdvanceWidth += transformedMetrics[m].AdvanceWidth * s.X;
                 }
             }
 
@@ -1241,7 +1241,7 @@ internal static partial class TextLayout
                     // Vertical origin fallback places the vertical origin at half the
                     // horizontal advance. The decoration origin has already centered this
                     // entry's line box in the column, so center the glyph advance inside it.
-                    glyphAlignX = (scaledLineHeight - (metric.AdvanceWidth * scale.X)) * .5F;
+                    glyphAlignX = (scaledLineHeight - (metrics[metricIndex].AdvanceWidth * scale.X)) * .5F;
                 }
 
                 // Move the glyph origin without changing the advance or decoration origin.
@@ -1256,12 +1256,12 @@ internal static partial class TextLayout
                     // For transformed glyphs after the first in the grapheme we advance
                     // horizontally using the horizontal advance not the line height.
                     // This gives us the correct total advance across the grapheme.
-                    advanceW = scale.X * metric.AdvanceWidth;
+                    advanceW = scale.X * metrics[metricIndex].AdvanceWidth;
                 }
 
                 visitor.Visit(
                     new GlyphLayout(
-                    new Glyph(metric, data.PointSize),
+                    new Glyph(metric, data.PointSize, metrics[metricIndex].TextRun, metrics[metricIndex].Offset),
                     data.Font,
                     boundsLocation,
                     glyphOrigin,
@@ -1470,7 +1470,7 @@ internal static partial class TextLayout
 
                 visitor.Visit(
                     new GlyphLayout(
-                    new Glyph(metric, data.PointSize),
+                    new Glyph(metric, data.PointSize, data.Metrics[0].TextRun, data.Metrics[0].Offset),
                     data.Font,
                     boundsLocation,
                     hardBreakGlyphOrigin,
@@ -1519,7 +1519,7 @@ internal static partial class TextLayout
 
                     visitor.Visit(
                         new GlyphLayout(
-                        new Glyph(metric, data.PointSize),
+                        new Glyph(metric, data.PointSize, metrics[j].TextRun, metrics[j].Offset),
                         data.Font,
                         boundsLocation,
                         glyphOrigin,
@@ -1547,14 +1547,14 @@ internal static partial class TextLayout
                     // Vertical origin fallback places the vertical origin at half the
                     // horizontal advance. The decoration origin has already centered this
                     // entry's line box in the column, so center the glyph advance inside it.
-                    float glyphAlignX = (scaledLineHeight - (metric.AdvanceWidth * scale.X)) * .5F;
+                    float glyphAlignX = (scaledLineHeight - (metrics[j].AdvanceWidth * scale.X)) * .5F;
                     Vector2 glyphOffset = new(glyphAlignX, (metric.Bounds.Max.Y + metric.TopSideBearing) * scale.Y);
                     Vector2 decorationOrigin = penLocation + new Vector2((unscaledLineHeight - scaledLineHeight) * .5F, 0);
                     Vector2 glyphOrigin = decorationOrigin + glyphOffset;
 
                     visitor.Visit(
                         new GlyphLayout(
-                        new Glyph(metric, data.PointSize),
+                        new Glyph(metric, data.PointSize, metrics[j].TextRun, metrics[j].Offset),
                         data.Font,
                         boundsLocation,
                         glyphOrigin,

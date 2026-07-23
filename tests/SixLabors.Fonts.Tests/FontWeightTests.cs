@@ -108,8 +108,7 @@ public class FontWeightTests
             ColorFontSupport.None,
             out FontGlyphMetrics metrics));
 
-        FontGlyphMetrics renderMetrics = metrics.CloneForRendering(textRun);
-        float strength = renderMetrics.GetSyntheticBoldStrength(pointSize * 72F);
+        float strength = metrics.GetSyntheticBoldStrength(pointSize * 72F, textRun);
 
         Assert.Equal((pointSize / 31F) * expectedFactor, strength, new ApproximateFloatComparer(.0001F));
     }
@@ -150,10 +149,8 @@ public class FontWeightTests
             ColorFontSupport.ColrV0,
             out FontGlyphMetrics metrics));
 
-        FontGlyphMetrics renderMetrics = metrics.CloneForRendering(textRun);
-
-        Assert.Equal(GlyphType.Painted, renderMetrics.GlyphType);
-        Assert.False(renderMetrics.ShouldSynthesizeBold());
+        Assert.Equal(GlyphType.Painted, metrics.GlyphType);
+        Assert.False(metrics.ShouldSynthesizeBold(textRun));
     }
 
     [Theory]
@@ -183,7 +180,7 @@ public class FontWeightTests
             ColorFontSupport.None,
             out FontGlyphMetrics metrics));
 
-        Assert.False(metrics.CloneForRendering(textRun).ShouldSynthesizeBold());
+        Assert.False(metrics.ShouldSynthesizeBold(textRun));
     }
 
     [Theory]
@@ -221,7 +218,7 @@ public class FontWeightTests
             ColorFontSupport.None,
             out FontGlyphMetrics metrics));
 
-        Assert.False(metrics.CloneForRendering(textRun).ShouldSynthesizeBold());
+        Assert.False(metrics.ShouldSynthesizeBold(textRun));
     }
 
     [Theory]

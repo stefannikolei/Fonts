@@ -130,8 +130,8 @@ public class TextRenderer
             // divided by DPI), so the ink box computed against it compares directly with the
             // scaled region. Inflating by the scaled line height for the glyph's orientation
             // gives em-box anchored decorations the same tolerance culled text receives, and
-            // rejecting here also skips the per-glyph metrics clone below.
-            FontRectangle box = metrics.GetBoundingBox(glyphLayoutMode, origin, options.Font.Size);
+            // rejecting here also skips creating the per-glyph text run below.
+            FontRectangle box = metrics.GetBoundingBox(glyphLayoutMode, origin, options.Font.Size, null, Vector2.Zero);
             IMetricsHeader metricsHeader = glyphLayoutMode == GlyphLayoutMode.Vertical
                 ? fontMetrics.VerticalMetrics
                 : fontMetrics.HorizontalMetrics;
@@ -148,9 +148,8 @@ public class TextRenderer
         }
 
         TextRun textRun = options.CreateTextRun();
-        FontGlyphMetrics renderMetrics = metrics.CloneForRendering(textRun);
 
-        renderMetrics.RenderTo(
+        metrics.RenderTo(
             this.renderer,
             options.GraphemeIndex,
             origin,
@@ -158,6 +157,7 @@ public class TextRenderer
             NoLayoutAdvance,
             glyphLayoutMode,
             textRun,
+            Vector2.Zero,
             options.Font.Size,
             options.Dpi,
             options.HintingMode,

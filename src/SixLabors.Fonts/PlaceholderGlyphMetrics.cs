@@ -42,22 +42,14 @@ internal sealed class PlaceholderGlyphMetrics : FontGlyphMetrics
             font.UnitsPerEm,
             Vector2.Zero,
             new Vector2(font.ScaleFactor),
-            textRun,
+            textRun.TextAttributes,
+            textRun.TextDecorations,
             GlyphType.Placeholder)
     {
         this.placeholder = placeholder;
         this.pointSize = pointSize;
         this.dpi = dpi;
     }
-
-    /// <inheritdoc/>
-    internal override FontGlyphMetrics CloneForRendering(TextRun textRun)
-        => new PlaceholderGlyphMetrics(
-            this.FontMetrics,
-            this.placeholder,
-            this.pointSize,
-            this.dpi,
-            textRun);
 
     /// <inheritdoc/>
     internal override void RenderTo(
@@ -68,6 +60,7 @@ internal sealed class PlaceholderGlyphMetrics : FontGlyphMetrics
         Vector2 layoutAdvance,
         GlyphLayoutMode mode,
         TextRun textRun,
+        Vector2 positionOffset,
         float pointSize,
         float dpi,
         HintingMode hintingMode,

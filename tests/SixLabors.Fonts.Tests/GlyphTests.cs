@@ -45,7 +45,7 @@ public class GlyphTests
             textRun.TextDecorations,
             GlyphType.Standard);
 
-        Glyph glyph = new(glyphMetrics.CloneForRendering(textRun), font.Size);
+        Glyph glyph = new(glyphMetrics, font.Size, textRun, Vector2.Zero);
 
         Vector2 locationInFontSpace = new Vector2(99, 99) / 72; // glyph ends up 10px over due to offset in fake glyph
         glyph.RenderTo(this.renderer, 0, locationInFontSpace, Vector2.Zero, new Vector2(-1F), GlyphLayoutMode.Horizontal, new TextOptions(font));

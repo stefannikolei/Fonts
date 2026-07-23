@@ -651,7 +651,9 @@ public static class TextMeasurer
         return metrics.GetBoundingBox(
             layoutMode,
             GetAnchoredOrigin(options, layoutMode),
-            metrics.GetScaledSize(options.Font.Size, options.Dpi));
+            metrics.GetScaledSize(options.Font.Size, options.Dpi),
+            null,
+            Vector2.Zero);
     }
 
     /// <summary>

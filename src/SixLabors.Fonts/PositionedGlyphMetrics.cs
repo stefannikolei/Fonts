@@ -19,12 +19,14 @@ internal readonly struct PositionedGlyphMetrics
     /// <param name="advanceWidth">The horizontal advance after positioning.</param>
     /// <param name="advanceHeight">The vertical advance after positioning.</param>
     /// <param name="offset">The placement offset after positioning.</param>
-    public PositionedGlyphMetrics(FontGlyphMetrics metrics, ushort advanceWidth, ushort advanceHeight, Vector2 offset)
+    /// <param name="textRun">The text run the glyph belongs to.</param>
+    public PositionedGlyphMetrics(FontGlyphMetrics metrics, ushort advanceWidth, ushort advanceHeight, Vector2 offset, TextRun textRun)
     {
         this.Metrics = metrics;
         this.AdvanceWidth = advanceWidth;
         this.AdvanceHeight = advanceHeight;
         this.Offset = offset;
+        this.TextRun = textRun;
     }
 
     /// <summary>
@@ -46,4 +48,10 @@ internal readonly struct PositionedGlyphMetrics
     /// Gets the placement offset in font design units after positioning.
     /// </summary>
     public Vector2 Offset { get; }
+
+    /// <summary>
+    /// Gets the text run the glyph belongs to, carried here so rendering reads it from
+    /// the positioned state rather than from per-glyph metric clones.
+    /// </summary>
+    public TextRun TextRun { get; }
 }

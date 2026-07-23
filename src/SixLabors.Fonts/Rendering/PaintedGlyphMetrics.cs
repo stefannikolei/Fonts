@@ -58,56 +58,6 @@ public sealed class PaintedGlyphMetrics : FontGlyphMetrics
               GlyphType.Painted)
         => this.source = source;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="PaintedGlyphMetrics"/> class for rendering with overrides.
-    /// </summary>
-    internal PaintedGlyphMetrics(
-        StreamFontMetrics font,
-        ushort glyphId,
-        CodePoint codePoint,
-        IPaintedGlyphSource source,
-        Bounds bounds,
-        ushort advanceWidth,
-        ushort advanceHeight,
-        short leftSideBearing,
-        short topSideBearing,
-        ushort unitsPerEM,
-        Vector2 offset,
-        Vector2 scaleFactor,
-        TextRun textRun)
-        : base(
-              font,
-              glyphId,
-              codePoint,
-              bounds,
-              advanceWidth,
-              advanceHeight,
-              leftSideBearing,
-              topSideBearing,
-              unitsPerEM,
-              offset,
-              scaleFactor,
-              textRun,
-              GlyphType.Painted)
-        => this.source = source;
-
-    /// <inheritdoc/>
-    internal override FontGlyphMetrics CloneForRendering(TextRun textRun)
-        => new PaintedGlyphMetrics(
-            this.FontMetrics,
-            this.GlyphId,
-            this.CodePoint,
-            this.source,
-            this.Bounds,
-            this.AdvanceWidth,
-            this.AdvanceHeight,
-            this.LeftSideBearing,
-            this.TopSideBearing,
-            this.UnitsPerEm,
-            this.Offset,
-            this.ScaleFactor,
-            textRun);
-
     /// <inheritdoc/>
     internal override Bounds GetDesignBounds()
     {
@@ -125,6 +75,8 @@ public sealed class PaintedGlyphMetrics : FontGlyphMetrics
         IGlyphRenderer renderer,
         Vector2 glyphOrigin,
         GlyphLayoutMode mode,
+        TextRun? textRun,
+        Vector2 positionOffset,
         float scaledPPEM,
         HintingMode hintingMode)
     {
@@ -134,17 +86,17 @@ public sealed class PaintedGlyphMetrics : FontGlyphMetrics
         }
 
         Vector2 scale = new Vector2(scaledPPEM) / this.ScaleFactor; // uniform
-        Matrix3x2 outlineTransform = this.GetOutlineTransform(mode);
+        Matrix3x2 outlineTransform = this.GetOutlineTransform(mode, textRun);
 
         // Keep painted geometry in Y-up font space through the same scale, offset, oblique, and
         // rotation sequence used by TrueType and CFF, then perform the device-space Y inversion.
         Matrix3x2 layout = Matrix3x2.CreateScale(scale);
-        layout.Translation = this.Offset * scale;
+        layout.Translation = (this.Offset + positionOffset) * scale;
         layout *= outlineTransform;
         layout *= Matrix3x2.CreateScale(1F, -1F);
         layout.Translation += glyphOrigin;
 
-        FontRectangle box = this.GetBoundingBox(mode, glyphOrigin, scaledPPEM);
+        FontRectangle box = this.GetBoundingBox(mode, glyphOrigin, scaledPPEM, textRun, positionOffset);
 
         // Source-to-UPEM: viewBox mapping (uniform "meet"), optional y-flip, optional root transform.
         Matrix3x2 s2u = ComputeSourceToUpem(canvas, this.UnitsPerEm);

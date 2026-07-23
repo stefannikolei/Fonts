@@ -14,12 +14,13 @@ namespace SixLabors.Fonts.Tables.TrueType;
 /// </summary>
 public partial class TrueTypeGlyphMetrics : FontGlyphMetrics
 {
-    private static readonly Vector2 YInverter = new(1, -1);
     private readonly GlyphVector vector;
 
     /// <summary>
-    /// Scaled, hinted outline copies keyed by ppem. Allocated on first render: shaping
-    /// and measurement clone metrics without ever rendering them, so an eager cache
+    /// Scaled, hinted, upright outline copies keyed by ppem. Offset translation, synthetic
+    /// oblique, and layout rotation are applied per point at emit time so one cached copy
+    /// serves every run, layout mode, and positioned offset. Allocated on first render:
+    /// shaping and measurement clone metrics without ever rendering them, so an eager cache
     /// would cost a dictionary per glyph per shaping pass.
     /// </summary>
     private ConcurrentDictionary<float, GlyphVector>? scaledVectorCache;
@@ -68,70 +69,6 @@ public partial class TrueTypeGlyphMetrics : FontGlyphMetrics
         => this.vector = vector;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="TrueTypeGlyphMetrics"/> class
-    /// with explicit offset, scale, and text run for rendering clones.
-    /// </summary>
-    /// <param name="font">The font metrics this glyph belongs to.</param>
-    /// <param name="glyphId">The glyph identifier.</param>
-    /// <param name="codePoint">The Unicode code point for this glyph.</param>
-    /// <param name="vector">The glyph outline vector.</param>
-    /// <param name="advanceWidth">The advance width in font units.</param>
-    /// <param name="advanceHeight">The advance height in font units.</param>
-    /// <param name="leftSideBearing">The left side bearing in font units.</param>
-    /// <param name="topSideBearing">The top side bearing in font units.</param>
-    /// <param name="unitsPerEM">The units per em for the font.</param>
-    /// <param name="offset">The rendering offset.</param>
-    /// <param name="scaleFactor">The scale factor.</param>
-    /// <param name="textRun">The text run this glyph is associated with.</param>
-    /// <param name="glyphType">The glyph type.</param>
-    internal TrueTypeGlyphMetrics(
-        StreamFontMetrics font,
-        ushort glyphId,
-        CodePoint codePoint,
-        GlyphVector vector,
-        ushort advanceWidth,
-        ushort advanceHeight,
-        short leftSideBearing,
-        short topSideBearing,
-        ushort unitsPerEM,
-        Vector2 offset,
-        Vector2 scaleFactor,
-        TextRun textRun,
-        GlyphType glyphType)
-        : base(
-              font,
-              glyphId,
-              codePoint,
-              vector.Bounds,
-              advanceWidth,
-              advanceHeight,
-              leftSideBearing,
-              topSideBearing,
-              unitsPerEM,
-              offset,
-              scaleFactor,
-              textRun,
-              glyphType)
-        => this.vector = vector;
-
-    /// <inheritdoc/>
-    internal override FontGlyphMetrics CloneForRendering(TextRun textRun)
-        => new TrueTypeGlyphMetrics(
-            this.FontMetrics,
-            this.GlyphId,
-            this.CodePoint,
-            this.vector,
-            this.AdvanceWidth,
-            this.AdvanceHeight,
-            this.LeftSideBearing,
-            this.TopSideBearing,
-            this.UnitsPerEm,
-            this.Offset,
-            this.ScaleFactor,
-            textRun,
-            this.GlyphType);
-
-    /// <summary>
     /// Gets the outline for the current glyph.
     /// </summary>
     /// <returns>The <see cref="GlyphVector"/>.</returns>
@@ -142,36 +79,40 @@ public partial class TrueTypeGlyphMetrics : FontGlyphMetrics
         IGlyphRenderer renderer,
         Vector2 glyphOrigin,
         GlyphLayoutMode mode,
+        TextRun? textRun,
+        Vector2 positionOffset,
         float scaledPPEM,
         HintingMode hintingMode)
     {
-        Matrix3x2 transform = this.GetOutlineTransform(mode);
         ConcurrentDictionary<float, GlyphVector> cache =
             LazyInitializer.EnsureInitialized(ref this.scaledVectorCache, static () => new());
+        Vector2 scale = new Vector2(scaledPPEM) / this.ScaleFactor;
         GlyphVector scaledVector = cache.GetOrAdd(scaledPPEM, _ =>
         {
             // Create a scaled deep copy of the vector so that we do not alter
-            // the globally cached instance.
+            // the globally cached instance. The hinter always receives the upright,
+            // untranslated outline.
             GlyphVector clone = GlyphVector.DeepClone(this.vector);
-            Vector2 scale = new Vector2(scaledPPEM) / this.ScaleFactor;
-
-            Matrix3x2 matrix = Matrix3x2.CreateScale(scale);
-            matrix.Translation = this.Offset * scale;
-            GlyphVector.TransformInPlace(ref clone, matrix);
+            GlyphVector.TransformInPlace(ref clone, Matrix3x2.CreateScale(scale));
 
             float pixelSize = scaledPPEM / 72F;
             this.FontMetrics.ApplyTrueTypeHinting(this.GetHintingMode(hintingMode), this, ref clone, scale, pixelSize);
-
-            // The shared outline transform applies synthetic oblique before layout rotation.
-            // Both happen after hinting so the hinter always receives the upright outline.
-            GlyphVector.TransformInPlace(ref clone, transform);
             return clone;
         });
 
         IList<ControlPoint> controlPoints = scaledVector.ControlPoints;
         IReadOnlyList<ushort> endPoints = scaledVector.EndPoints;
 
-        float boldStrength = this.GetSyntheticBoldStrength(scaledPPEM);
+        // Offset translation, synthetic oblique, and layout rotation are applied per point at
+        // emit time so the cached outline stays shareable across runs, modes, and positioned
+        // offsets. Placement lands after hinting, matching FreeType's treatment of GPOS
+        // offsets, followed by the Y-flip into device space and the origin translation.
+        Matrix3x2 emit = Matrix3x2.CreateTranslation((this.Offset + positionOffset) * scale);
+        emit *= this.GetOutlineTransform(mode, textRun);
+        emit *= Matrix3x2.CreateScale(1F, -1F);
+        emit.Translation += glyphOrigin;
+
+        float boldStrength = this.GetSyntheticBoldStrength(scaledPPEM, textRun);
         EmboldeningGlyphRenderer? emboldening = null;
         IGlyphRenderer target = renderer;
         if (boldStrength > 0F)
@@ -190,8 +131,8 @@ public partial class TrueTypeGlyphMetrics : FontGlyphMetrics
                 endOfContour = endPoints[i];
 
                 Vector2 prev;
-                Vector2 curr = (YInverter * controlPoints[endOfContour].Point) + glyphOrigin;
-                Vector2 next = (YInverter * controlPoints[startOfContour].Point) + glyphOrigin;
+                Vector2 curr = Vector2.Transform(controlPoints[endOfContour].Point, emit);
+                Vector2 next = Vector2.Transform(controlPoints[startOfContour].Point, emit);
 
                 if (controlPoints[endOfContour].OnCurve)
                 {
@@ -219,7 +160,7 @@ public partial class TrueTypeGlyphMetrics : FontGlyphMetrics
                     int currentIndex = startOfContour + p;
                     int nextIndex = startOfContour + ((p + 1) % length);
                     int prevIndex = startOfContour + ((length + p - 1) % length);
-                    next = (YInverter * controlPoints[nextIndex].Point) + glyphOrigin;
+                    next = Vector2.Transform(controlPoints[nextIndex].Point, emit);
 
                     if (controlPoints[currentIndex].OnCurve)
                     {

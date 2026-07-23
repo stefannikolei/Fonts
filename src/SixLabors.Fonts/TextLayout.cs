@@ -171,10 +171,24 @@ internal static partial class TextLayout
             }
         }
 
-        bidi.Process(bidiData);
+        // Purely left-to-right text resolves to a single even-level run without running
+        // the bidirectional algorithm: with no right-to-left or directional codepoints and
+        // a left-to-right (or auto) paragraph direction, every resolved level is zero.
+        // This is the overwhelmingly common case for Latin text and skips the full UAX#9
+        // pass. An overridden or right-to-left paragraph always resolves levels.
+        BidiRun[] bidiRuns;
+        if (options.TextDirection != TextDirection.RightToLeft
+            && options.TextBidiMode != TextBidiMode.Override
+            && bidiData.IsUniformLeftToRight)
+        {
+            bidiRuns = [new BidiRun(BidiCharacterType.LeftToRight, 0, 0, bidiData.Types.Length)];
+        }
+        else
+        {
+            bidi.Process(bidiData);
+            bidiRuns = [.. BidiRun.CoalesceLevels(bidi.ResolvedLevels)];
+        }
 
-        // Get the list of directional runs
-        BidiRun[] bidiRuns = [.. BidiRun.CoalesceLevels(bidi.ResolvedLevels)];
         Dictionary<int, int> bidiMap = [];
         ShapingProbe.Exit(ShapingProbe.Bidi, probe);
 

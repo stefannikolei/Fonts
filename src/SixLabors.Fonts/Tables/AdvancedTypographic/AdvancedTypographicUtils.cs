@@ -117,6 +117,11 @@ internal static class AdvancedTypographicUtils
         int count)
     {
         SkippingGlyphIterator iterator = new(fontMetrics, collection, index, lookupFlags, markFilteringSet);
+        if (ShapingProbe.Enabled)
+        {
+            ShapingProbe.ContextIterators++;
+        }
+
         int currentCount = collection.Count;
 
         foreach (SequenceLookupRecord lookupRecord in records)
@@ -164,6 +169,11 @@ internal static class AdvancedTypographicUtils
         int count)
     {
         SkippingGlyphIterator iterator = new(fontMetrics, collection, index, lookupFlags, markFilteringSet);
+        if (ShapingProbe.Enabled)
+        {
+            ShapingProbe.ContextIterators++;
+        }
+
         foreach (SequenceLookupRecord lookupRecord in records)
         {
             ushort sequenceIndex = lookupRecord.SequenceIndex;
@@ -190,13 +200,16 @@ internal static class AdvancedTypographicUtils
     {
         ulong featureMask = iterator.Collection.FeatureMap.GetMask(feature);
 
+        // The mask travels as match state so the lambda stays static: a capturing
+        // lambda here would allocate a closure and delegate on every ligature attempt.
         return Match(
             increment,
             sequence,
             iterator,
-            (component, data) =>
+            featureMask,
+            static (component, data, mask) =>
             {
-                if ((data.FeatureMask & featureMask) == 0)
+                if ((data.FeatureMask & mask) == 0)
                 {
                     return false;
                 }
@@ -234,11 +247,16 @@ internal static class AdvancedTypographicUtils
         int increment,
         ushort[] sequence,
         ClassDefinitionTable classDefinitionTable)
+
+        // The class table travels as match state so the lambda stays static: a
+        // capturing lambda here would allocate a closure and delegate on every
+        // contextual rule attempt.
         => Match(
             increment,
             sequence,
             iterator,
-            (component, data) => component == classDefinitionTable.ClassIndexOf(data.GlyphId),
+            classDefinitionTable,
+            static (component, data, table) => component == table.ClassIndexOf(data.GlyphId),
             default);
 
     /// <summary>
@@ -294,12 +312,6 @@ internal static class AdvancedTypographicUtils
     /// <returns><see langword="true"/> if all sequences matched; otherwise, <see langword="false"/>.</returns>
     public static bool ApplyChainedSequenceRule(SkippingGlyphIterator iterator, ChainedSequenceRuleTable rule)
     {
-        if (rule.BacktrackSequence.Length > 0
-            && !MatchSequence(iterator, -rule.BacktrackSequence.Length, rule.BacktrackSequence))
-        {
-            return false;
-        }
-
         if (rule.InputSequence.Length > 0
             && !MatchSequence(iterator, 1, rule.InputSequence))
         {
@@ -308,6 +320,12 @@ internal static class AdvancedTypographicUtils
 
         if (rule.LookaheadSequence.Length > 0
             && !MatchSequence(iterator, 1 + rule.InputSequence.Length, rule.LookaheadSequence))
+        {
+            return false;
+        }
+
+        if (rule.BacktrackSequence.Length > 0
+            && !MatchSequence(iterator, -rule.BacktrackSequence.Length, rule.BacktrackSequence))
         {
             return false;
         }
@@ -331,12 +349,6 @@ internal static class AdvancedTypographicUtils
         ClassDefinitionTable backtrackClassDefinitionTable,
         ClassDefinitionTable lookaheadClassDefinitionTable)
     {
-        if (rule.BacktrackSequence.Length > 0
-            && !MatchClassSequence(iterator, -rule.BacktrackSequence.Length, rule.BacktrackSequence, backtrackClassDefinitionTable))
-        {
-            return false;
-        }
-
         if (rule.InputSequence.Length > 0 &&
             !MatchClassSequence(iterator, 1, rule.InputSequence, inputClassDefinitionTable))
         {
@@ -345,6 +357,12 @@ internal static class AdvancedTypographicUtils
 
         if (rule.LookaheadSequence.Length > 0
             && !MatchClassSequence(iterator, 1 + rule.InputSequence.Length, rule.LookaheadSequence, lookaheadClassDefinitionTable))
+        {
+            return false;
+        }
+
+        if (rule.BacktrackSequence.Length > 0
+            && !MatchClassSequence(iterator, -rule.BacktrackSequence.Length, rule.BacktrackSequence, backtrackClassDefinitionTable))
         {
             return false;
         }
@@ -379,6 +397,10 @@ internal static class AdvancedTypographicUtils
         int endExclusive = index + count;
 
         SkippingGlyphIterator iterator = new(fontMetrics, collection, index, lookupFlags, markFilteringSet);
+        if (ShapingProbe.Enabled)
+        {
+            ShapingProbe.ContextIterators++;
+        }
 
         // Compute backtrack start using skippy prev(), not index-1.
         int backtrackStart = index;
@@ -527,9 +549,19 @@ internal static class AdvancedTypographicUtils
     {
         // Cache the shaping class on the GlyphShapingData to avoid repeated GDEF lookups.
         // The cache key stores the glyph id; -1 means "not cached".
+        if (ShapingProbe.Enabled)
+        {
+            ShapingProbe.ClassifyCalls++;
+        }
+
         if (shapingData.ShapingClassCacheKey == glyphId)
         {
             return shapingData.CachedShapingClass;
+        }
+
+        if (ShapingProbe.Enabled)
+        {
+            ShapingProbe.ClassifyMisses++;
         }
 
         bool isMark;
@@ -569,6 +601,58 @@ internal static class AdvancedTypographicUtils
     /// <returns><see langword="true"/> if the glyph is in the mark filtering set; otherwise, <see langword="false"/>.</returns>
     public static bool IsInMarkFilteringSet(FontMetrics fontMetrics, ushort markFilteringSet, ushort glyphId)
         => fontMetrics.IsInMarkFilteringSet(markFilteringSet, glyphId);
+
+    /// <summary>
+    /// Matches a sequence of elements against glyphs using an increment-based approach,
+    /// threading caller state through to the condition so callers can use static lambdas
+    /// instead of allocating closures.
+    /// </summary>
+    /// <typeparam name="T">The type of sequence elements to match.</typeparam>
+    /// <typeparam name="TState">The type of the state passed to the condition.</typeparam>
+    /// <param name="increment">The initial increment from the iterator's current position.</param>
+    /// <param name="sequence">The array of elements to match.</param>
+    /// <param name="iterator">The skipping glyph iterator.</param>
+    /// <param name="state">The caller state passed to each condition invocation.</param>
+    /// <param name="condition">The condition function to test each element against glyph data.</param>
+    /// <param name="matches">A span to store matched glyph indices, or default if not needed.</param>
+    /// <returns><see langword="true"/> if all elements in the sequence were matched; otherwise, <see langword="false"/>.</returns>
+    private static bool Match<T, TState>(
+        int increment,
+        T[] sequence,
+        SkippingGlyphIterator iterator,
+        TState state,
+        Func<T, GlyphShapingData, TState, bool> condition,
+        Span<int> matches)
+    {
+        int position = iterator.Index;
+        int offset = iterator.Increment(increment);
+        GlyphShapingCollection collection = iterator.Collection;
+
+        if (offset < 0)
+        {
+            return false;
+        }
+
+        int i = 0;
+        while (i < sequence.Length && i < MaxContextLength && offset < collection.Count)
+        {
+            if (!condition(sequence[i], collection[offset], state))
+            {
+                break;
+            }
+
+            if (matches.Length == MaxContextLength)
+            {
+                matches[i] = iterator.Index;
+            }
+
+            i++;
+            offset = iterator.Next();
+        }
+
+        iterator.Index = position;
+        return i == sequence.Length;
+    }
 
     /// <summary>
     /// Matches a sequence of elements against glyphs using an increment-based approach.

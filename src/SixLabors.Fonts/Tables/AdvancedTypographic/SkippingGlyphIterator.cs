@@ -21,6 +21,13 @@ internal struct SkippingGlyphIterator
     private ushort markFilteringSet;
 
     /// <summary>
+    /// True when the current lookup flags cannot ignore any glyph, so stepping never
+    /// needs to fetch or classify glyphs. Most lookups carry no ignore flags, which
+    /// makes plain index arithmetic the common path.
+    /// </summary>
+    private bool skipsNothing;
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="SkippingGlyphIterator"/> struct.
     /// </summary>
     /// <param name="fontMetrics">The font metrics for glyph class lookups.</param>
@@ -44,6 +51,7 @@ internal struct SkippingGlyphIterator
         this.markAttachmentType = (ushort)((int)(lookupFlags & LookupFlags.MarkAttachmentTypeMask) >> 8);
         this.useMarkFilteringSet = (lookupFlags & LookupFlags.UseMarkFilteringSet) != 0;
         this.markFilteringSet = markFilteringSet;
+        this.skipsNothing = this.ignoreClassMask == 0 && this.markAttachmentType == 0 && !this.useMarkFilteringSet;
     }
 
     /// <summary>
@@ -62,6 +70,11 @@ internal struct SkippingGlyphIterator
     /// <returns>The new index after advancing.</returns>
     public int Next()
     {
+        if (ShapingProbe.Enabled)
+        {
+            ShapingProbe.IteratorSteps++;
+        }
+
         this.Move(1);
         return this.Index;
     }
@@ -108,6 +121,7 @@ internal struct SkippingGlyphIterator
         this.markAttachmentType = (ushort)((int)(lookupFlags & LookupFlags.MarkAttachmentTypeMask) >> 8);
         this.useMarkFilteringSet = (lookupFlags & LookupFlags.UseMarkFilteringSet) != 0;
         this.markFilteringSet = markFilteringSet;
+        this.skipsNothing = this.ignoreClassMask == 0 && this.markAttachmentType == 0 && !this.useMarkFilteringSet;
     }
 
     /// <summary>
@@ -117,6 +131,15 @@ internal struct SkippingGlyphIterator
     private void Move(int direction)
     {
         this.Index += direction;
+
+        // When the flags cannot ignore anything, ShouldIgnore is provably false for
+        // every glyph: the class mask test is against zero and the mark branches are
+        // disabled. Skip the per-glyph fetch and classification entirely.
+        if (this.skipsNothing)
+        {
+            return;
+        }
+
         while (this.Index >= 0 && this.Index < this.Collection.Count)
         {
             if (!this.ShouldIgnore(this.Index))
@@ -136,7 +159,12 @@ internal struct SkippingGlyphIterator
     private readonly bool ShouldIgnore(int index)
     {
         GlyphShapingData data = this.Collection[index];
-        ushort props = AdvancedTypographicUtils.GetGlyphShapingClass(this.fontMetrics, data.GlyphId, data).Props;
+
+        // The shaping class is cached on the glyph keyed by glyph id; test the cache
+        // inline so the common hit path avoids the classification call entirely.
+        ushort props = data.ShapingClassCacheKey == data.GlyphId
+            ? data.CachedShapingClass.Props
+            : AdvancedTypographicUtils.GetGlyphShapingClass(this.fontMetrics, data.GlyphId, data).Props;
 
         if ((props & this.ignoreClassMask) != 0)
         {

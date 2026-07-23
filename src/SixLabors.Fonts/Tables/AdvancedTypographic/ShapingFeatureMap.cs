@@ -51,6 +51,19 @@ internal sealed class ShapingFeatureMap
     private readonly List<uint> tags = new(16);
 
     /// <summary>
+    /// The most recently resolved tag value. Queries within a pass strongly repeat the
+    /// same feature (every per-glyph apply during one feature's application resolves that
+    /// feature's tag), so a single-entry memo answers almost every query without a list
+    /// search. Zero means the memo is empty; the zero tag is never a valid feature.
+    /// </summary>
+    private uint lastTagValue;
+
+    /// <summary>
+    /// The mask paired with <see cref="lastTagValue"/>.
+    /// </summary>
+    private ulong lastMask;
+
+    /// <summary>
     /// Gets the mask bit for the given feature tag, or zero when the tag has not been
     /// registered. A zero result is safe at every consumption site: testing it enables
     /// or matches nothing and clearing it clears nothing.
@@ -59,8 +72,23 @@ internal sealed class ShapingFeatureMap
     /// <returns>The single-bit mask, or zero.</returns>
     public ulong GetMask(Tag tag)
     {
+        if (tag.Value == this.lastTagValue)
+        {
+            return this.lastMask;
+        }
+
         int index = this.tags.IndexOf(tag.Value);
-        return index < 0 ? 0 : 1UL << index;
+        ulong mask = index < 0 ? 0 : 1UL << index;
+
+        // A zero mask is never memoized: the tag may be registered later in the pass
+        // and the memo must not serve a stale zero after that registration.
+        if (mask != 0)
+        {
+            this.lastTagValue = tag.Value;
+            this.lastMask = mask;
+        }
+
+        return mask;
     }
 
     /// <summary>
@@ -87,6 +115,9 @@ internal sealed class ShapingFeatureMap
         }
 
         this.tags.Add(tag.Value);
-        return 1UL << (this.tags.Count - 1);
+        mask = 1UL << (this.tags.Count - 1);
+        this.lastTagValue = tag.Value;
+        this.lastMask = mask;
+        return mask;
     }
 }

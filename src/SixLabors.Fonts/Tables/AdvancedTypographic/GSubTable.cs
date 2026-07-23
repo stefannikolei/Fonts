@@ -306,6 +306,8 @@ internal class GSubTable : Table
                 ulong featureMask = collection.FeatureMap.GetMask(feature);
                 LookupTable featureLookupTable = featureLookup.LookupTable;
                 iterator.Reset(index, featureLookupTable.LookupFlags, featureLookupTable.MarkFilteringSet);
+                long featureStart = ShapingProbe.Timestamp();
+                long featureApplies = 0;
 
                 while (iterator.Index < index + count)
                 {
@@ -335,6 +337,7 @@ internal class GSubTable : Table
 
                     collectionCount = collection.Count;
                     featureLookup.LookupTable.TrySubstitution(fontMetrics, this, collection, featureLookup.Feature, iterator.Index, count - (iterator.Index - index));
+                    featureApplies++;
                     iterator.Next();
 
                     // Account for substitutions changing the length of the collection.
@@ -342,6 +345,8 @@ internal class GSubTable : Table
                     count += delta;
                     i += delta;
                 }
+
+                ShapingProbe.ExitFeature("GSUB", feature, featureStart, featureApplies);
             }
         }
     }

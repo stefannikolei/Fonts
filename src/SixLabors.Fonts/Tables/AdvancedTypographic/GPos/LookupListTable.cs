@@ -99,6 +99,13 @@ internal sealed class LookupTable
         GlyphSetDigest digest = default;
         for (int i = 0; i < lookupSubTables.Length; i++)
         {
+            // Each subtable also carries its own digest so application can skip
+            // subtables whose gating coverage cannot contain the current glyph
+            // without paying the virtual probe. Contextual formats that expose no
+            // leading coverage flood their digest and therefore always pass.
+            GlyphSetDigest subTableDigest = default;
+            lookupSubTables[i].CollectDigest(ref subTableDigest);
+            lookupSubTables[i].Digest = subTableDigest;
             lookupSubTables[i].CollectDigest(ref digest);
         }
 
@@ -221,8 +228,22 @@ internal sealed class LookupTable
         int index,
         int count)
     {
+        ushort glyphId = collection[index].GlyphId;
         foreach (LookupSubTable subTable in this.LookupSubTables)
         {
+            // A glyph outside the subtable's digest cannot match its coverage, so the
+            // probe (a virtual call, coverage search, or full context-match attempt)
+            // is skipped entirely.
+            if (!subTable.Digest.MightContain(glyphId))
+            {
+                continue;
+            }
+
+            if (ShapingProbe.Enabled)
+            {
+                ShapingProbe.SubTableProbes++;
+            }
+
             // A lookup is finished for a glyph after the client locates the target
             // glyph or glyph context and performs a positioning action, if specified.
             if (subTable.TryUpdatePosition(fontMetrics, table, collection, feature, index, count))
@@ -260,6 +281,12 @@ internal abstract class LookupSubTable
     /// Gets the mark filtering set index.
     /// </summary>
     public ushort MarkFilteringSet { get; }
+
+    /// <summary>
+    /// Gets or sets the approximate membership filter for the glyphs this subtable can
+    /// affect. Assigned once by the owning <see cref="LookupTable"/> during construction.
+    /// </summary>
+    public GlyphSetDigest Digest { get; internal set; }
 
     /// <summary>
     /// Adds the coverage that gates this subtable's applicability to the digest.

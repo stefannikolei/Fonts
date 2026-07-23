@@ -36,6 +36,42 @@ internal class BidiData
     public ArraySlice<BidiCharacterType> Types { get; private set; }
 
     /// <summary>
+    /// Gets a value indicating whether every resolved level is provably zero in a
+    /// left-to-right paragraph, allowing the bidirectional algorithm to be skipped.
+    /// True only when the text contains no embedding or isolate initiators and no
+    /// codepoint whose type can raise an embedding level: strong right-to-left letters
+    /// and Arabic numbers force non-zero levels, and boundary neutrals are excluded
+    /// conservatively because their resolved levels depend on removed-character
+    /// handling. Everything else (L, EN, separators, whitespace, neutrals, NSM) keeps
+    /// level zero.
+    /// </summary>
+    public bool IsUniformLeftToRight
+    {
+        get
+        {
+            if (this.HasEmbeddings || this.HasIsolates)
+            {
+                return false;
+            }
+
+            ArraySlice<BidiCharacterType> types = this.Types;
+            for (int i = 0; i < types.Length; i++)
+            {
+                BidiCharacterType type = types[i];
+                if (type is BidiCharacterType.RightToLeft
+                    or BidiCharacterType.ArabicLetter
+                    or BidiCharacterType.ArabicNumber
+                    or BidiCharacterType.BoundaryNeutral)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
+
+    /// <summary>
     /// Gets the paired bracket type for each code point
     /// </summary>
     public ArraySlice<BidiPairedBracketType> PairedBracketTypes { get; private set; }

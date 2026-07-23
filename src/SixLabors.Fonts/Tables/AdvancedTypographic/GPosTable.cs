@@ -259,6 +259,8 @@ internal class GPosTable : Table
                         ulong featureMask = collection.FeatureMap.GetMask(feature);
                         LookupTable featureLookupTable = featureLookup.LookupTable;
                         iterator.Reset(index, featureLookupTable.LookupFlags, featureLookupTable.MarkFilteringSet);
+                        long featureStart = ShapingProbe.Timestamp();
+                        long featureApplies = 0;
 
                         while (iterator.Index < index + count)
                         {
@@ -279,10 +281,13 @@ internal class GPosTable : Table
                             }
 
                             bool success = featureLookup.LookupTable.TryUpdatePosition(fontMetrics, this, collection, featureLookup.Feature, iterator.Index, count - (iterator.Index - index));
+                            featureApplies++;
                             kerned |= success && (feature == KernTag || feature == VKernTag);
                             updated |= success;
                             iterator.Next();
                         }
+
+                        ShapingProbe.ExitFeature("GPOS", feature, featureStart, featureApplies);
                     }
                 }
 

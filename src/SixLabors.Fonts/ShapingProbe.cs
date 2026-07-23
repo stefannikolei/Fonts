@@ -3,6 +3,7 @@
 
 // TEMPORARY diagnostic probe for shaping performance attribution. Delete before commit.
 using System.Diagnostics;
+using SixLabors.Fonts.Tables.AdvancedTypographic;
 
 namespace SixLabors.Fonts;
 
@@ -38,6 +39,19 @@ public static class ShapingProbe
 
     public static bool Enabled { get; set; }
 
+    public static readonly Dictionary<string, long> FeatureTicks = [];
+    public static readonly Dictionary<string, long> FeatureApplies = [];
+
+    public static long IteratorSteps;
+
+    public static long ContextIterators;
+
+    public static long ClassifyCalls;
+
+    public static long ClassifyMisses;
+
+    public static long SubTableProbes;
+
     public static long StageFeatureCalls;
     public static long LookupsConsidered;
     public static long LookupsSkippedByDigest;
@@ -46,14 +60,51 @@ public static class ShapingProbe
 
     public static void PrintCounters(int iterations)
         => Console.WriteLine(
-            $"stages/op={StageFeatureCalls / (double)iterations:F1} " +
+            $"iterSteps/op={IteratorSteps / (double)iterations:F1} ctxIters/op={ContextIterators / (double)iterations:F1} classify/op={ClassifyCalls / (double)iterations:F1} classifyMiss/op={ClassifyMisses / (double)iterations:F1} subProbes/op={SubTableProbes / (double)iterations:F1} " +
             $"lookups/op={LookupsConsidered / (double)iterations:F1} " +
             $"digestSkipped/op={LookupsSkippedByDigest / (double)iterations:F1} " +
             $"glyphGates/op={GlyphGateChecks / (double)iterations:F1} " +
             $"substAttempts/op={SubstitutionAttempts / (double)iterations:F1}");
 
     public static void ResetCounters()
-        => StageFeatureCalls = LookupsConsidered = LookupsSkippedByDigest = GlyphGateChecks = SubstitutionAttempts = 0;
+        => StageFeatureCalls = LookupsConsidered = LookupsSkippedByDigest = GlyphGateChecks = SubstitutionAttempts =
+           IteratorSteps = ContextIterators = ClassifyCalls = ClassifyMisses = SubTableProbes = 0;
+
+    public static long FeatureStepsStart;
+
+    public static long Timestamp()
+    {
+        FeatureStepsStart = IteratorSteps;
+        return Enabled ? Stopwatch.GetTimestamp() : 0;
+    }
+
+    public static readonly Dictionary<string, long> FeatureSteps = [];
+
+    public static void ExitFeature(string table, Tag feature, long start, long applies)
+    {
+        if (!Enabled)
+        {
+            return;
+        }
+
+        string key = $"{table}:{feature}";
+        FeatureTicks[key] = FeatureTicks.GetValueOrDefault(key) + Stopwatch.GetTimestamp() - start;
+        FeatureApplies[key] = FeatureApplies.GetValueOrDefault(key) + applies;
+        FeatureSteps[key] = FeatureSteps.GetValueOrDefault(key) + IteratorSteps - FeatureStepsStart;
+    }
+
+    public static void PrintFeatures(int iterations)
+    {
+        foreach (KeyValuePair<string, long> pair in FeatureTicks.OrderByDescending(x => x.Value))
+        {
+            double us = pair.Value * 1_000_000.0 / Stopwatch.Frequency / iterations;
+            Console.WriteLine($"  {pair.Key,-16} {us,8:F2} us/op  applies/op={FeatureApplies.GetValueOrDefault(pair.Key) / (double)iterations:F1}  steps/op={FeatureSteps.GetValueOrDefault(pair.Key) / (double)iterations:F1}");
+        }
+
+        FeatureTicks.Clear();
+        FeatureApplies.Clear();
+        FeatureSteps.Clear();
+    }
 
     public static (long Ticks, long Bytes) Enter()
         => Enabled ? (Stopwatch.GetTimestamp(), GC.GetAllocatedBytesForCurrentThread()) : default;

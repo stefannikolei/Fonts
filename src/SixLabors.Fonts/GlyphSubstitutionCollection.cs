@@ -126,7 +126,7 @@ internal sealed class GlyphSubstitutionCollection : GlyphShapingCollection
             // Move item to the right
             for (int i = fromIndex; i > toIndex; i--)
             {
-                this.glyphs[i].Data = this.glyphs[i - 1].Data;
+                this.glyphs[i] = new(this.glyphs[i].Offset, this.glyphs[i - 1].Data);
             }
         }
         else
@@ -134,11 +134,11 @@ internal sealed class GlyphSubstitutionCollection : GlyphShapingCollection
             // Move item to the left
             for (int i = fromIndex; i < toIndex; i++)
             {
-                this.glyphs[i].Data = this.glyphs[i + 1].Data;
+                this.glyphs[i] = new(this.glyphs[i].Offset, this.glyphs[i + 1].Data);
             }
         }
 
-        this.glyphs[toIndex].Data = data;
+        this.glyphs[toIndex] = new(this.glyphs[toIndex].Offset, data);
     }
 
     /// <summary>
@@ -195,8 +195,11 @@ internal sealed class GlyphSubstitutionCollection : GlyphShapingCollection
             int j = i;
             while (j > startIndex && comparer(glyphs[j - 1].Data, glyphs[j].Data) > 0)
             {
-                // Swap Data references between adjacent slots.
-                (glyphs[j].Data, glyphs[j - 1].Data) = (glyphs[j - 1].Data, glyphs[j].Data);
+                // Swap Data references between adjacent slots; offsets stay in place.
+                OffsetGlyphDataPair upper = glyphs[j];
+                OffsetGlyphDataPair lower = glyphs[j - 1];
+                glyphs[j] = new(upper.Offset, lower.Data);
+                glyphs[j - 1] = new(lower.Offset, upper.Data);
                 j--;
             }
         }
@@ -412,7 +415,7 @@ internal sealed class GlyphSubstitutionCollection : GlyphShapingCollection
     }
 
     [DebuggerDisplay("{DebuggerDisplay,nq}")]
-    private class OffsetGlyphDataPair
+    private readonly struct OffsetGlyphDataPair
     {
         public OffsetGlyphDataPair(int offset, GlyphShapingData data)
         {
@@ -420,9 +423,9 @@ internal sealed class GlyphSubstitutionCollection : GlyphShapingCollection
             this.Data = data;
         }
 
-        public int Offset { get; set; }
+        public int Offset { get; }
 
-        public GlyphShapingData Data { get; set; }
+        public GlyphShapingData Data { get; }
 
         private string DebuggerDisplay => FormattableString.Invariant($"Offset: {this.Offset}, Data: {this.Data.ToDebuggerDisplay()}");
     }

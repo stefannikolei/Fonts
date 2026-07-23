@@ -189,7 +189,8 @@ internal static partial class TextLayout
             bidiRuns = [.. BidiRun.CoalesceLevels(bidi.ResolvedLevels)];
         }
 
-        Dictionary<int, int> bidiMap = [];
+        int[] bidiMap = new int[bidiData.Types.Length];
+        Array.Fill(bidiMap, -1);
         ShapingProbe.Exit(ShapingProbe.Bidi, probe);
 
         probe = ShapingProbe.Enter();
@@ -1627,7 +1628,7 @@ internal static partial class TextLayout
         bool isFallbackRun,
         Font font,
         BidiRun[] bidiRuns,
-        Dictionary<int, int> bidiMap,
+        int[] bidiMap,
         GlyphSubstitutionCollection substitutions,
         GlyphPositioningCollection positionings)
     {

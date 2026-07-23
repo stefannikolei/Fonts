@@ -15,12 +15,15 @@ internal readonly struct ShapedText
     /// </summary>
     /// <param name="positionings">The positioned glyph shaping collection.</param>
     /// <param name="bidiRuns">The resolved bidi runs covering the shaped text.</param>
-    /// <param name="bidiMap">The code point to bidi-run mapping built during shaping.</param>
+    /// <param name="bidiMap">
+    /// The code point index to bidi-run index mapping built during shaping. Entries for
+    /// code points no shaping pass visited hold -1.
+    /// </param>
     /// <param name="layoutMode">The layout mode used while shaping.</param>
     public ShapedText(
         GlyphPositioningCollection positionings,
         BidiRun[] bidiRuns,
-        Dictionary<int, int> bidiMap,
+        int[] bidiMap,
         LayoutMode layoutMode)
     {
         this.Positionings = positionings;
@@ -40,9 +43,10 @@ internal readonly struct ShapedText
     public BidiRun[] BidiRuns { get; }
 
     /// <summary>
-    /// Gets the code point to bidi-run mapping built during shaping.
+    /// Gets the code point index to bidi-run index mapping built during shaping,
+    /// indexed by code point position. Unvisited positions hold -1.
     /// </summary>
-    public Dictionary<int, int> BidiMap { get; }
+    public int[] BidiMap { get; }
 
     /// <summary>
     /// Gets the layout mode used while shaping.

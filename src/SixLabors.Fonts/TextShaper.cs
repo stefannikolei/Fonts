@@ -27,6 +27,15 @@ namespace SixLabors.Fonts;
 /// </remarks>
 public static class TextShaper
 {
+    /// <summary>
+    /// The pool of reusable pipeline state, the reference engine's buffer memory model.
+    /// A scratch is exclusively owned between <see cref="ObjectPool{T}.Get"/> and
+    /// <see cref="ObjectPool{T}.Return"/>, and the result list is materialized by value
+    /// before the scratch is returned, so nothing pooled escapes a call. Retained
+    /// scratch storage stays at its high-water mark.
+    /// </summary>
+    private static readonly ObjectPool<ShapingScratch> ScratchPool = new(new ShapingScratchPooledObjectPolicy());
+
     /// <inheritdoc cref="Shape(ReadOnlySpan{char}, TextOptions)"/>
     public static IReadOnlyList<ShapedGlyph> Shape(string text, TextOptions options)
     {
@@ -59,33 +68,56 @@ public static class TextShaper
             return [];
         }
 
-        GlyphPositioningCollection positionings = TextLayout.ShapeText(text, options).Positionings;
-
-        var probe = ShapingProbe.Enter();
-        List<ShapedGlyph> glyphs = new(positionings.Count);
-        for (int i = 0; i < positionings.Count; i++)
+        ShapingScratch scratch = ScratchPool.Get();
+        try
         {
-            GlyphPositioningCollection.GlyphPositioningData data = positionings.GetPositioningData(i);
-            if (data.Data.IsPlaceholder)
+            (GlyphSubstitutionCollection substitutions, GlyphPositioningCollection positionings) = scratch.Prepare(options);
+            TextLayout.ShapeText(text, options, substitutions, positionings);
+
+            var probe = ShapingProbe.Enter();
+            List<ShapedGlyph> glyphs = new(positionings.Count);
+            for (int i = 0; i < positionings.Count; i++)
             {
-                // Placeholder runs reserve layout space for inline objects; they carry
-                // no glyph.
-                continue;
+                GlyphPositioningCollection.GlyphPositioningData data = positionings.GetPositioningData(i);
+                if (data.Data.IsPlaceholder)
+                {
+                    // Placeholder runs reserve layout space for inline objects; they carry
+                    // no glyph.
+                    continue;
+                }
+
+                FontGlyphMetrics metrics = data.Metrics;
+                glyphs.Add(new ShapedGlyph(
+                    data.Font,
+                    metrics.GlyphId,
+                    data.Data.CodePoint,
+                    data.Offset,
+                    data.Data.CodePointCount,
+                    data.AdvanceWidth,
+                    data.AdvanceHeight,
+                    metrics.Offset + data.PositionOffset));
             }
 
-            FontGlyphMetrics metrics = data.Metrics;
-            glyphs.Add(new ShapedGlyph(
-                data.Font,
-                metrics.GlyphId,
-                data.Data.CodePoint,
-                data.Offset,
-                data.Data.CodePointCount,
-                data.AdvanceWidth,
-                data.AdvanceHeight,
-                metrics.Offset + data.PositionOffset));
+            ShapingProbe.Exit(ShapingProbe.Projection, probe);
+            return glyphs;
         }
+        finally
+        {
+            ScratchPool.Return(scratch);
+        }
+    }
 
-        ShapingProbe.Exit(ShapingProbe.Projection, probe);
-        return glyphs;
+    /// <summary>
+    /// The pooling policy for <see cref="ShapingScratch"/> instances: scratch state is
+    /// reset on acquisition by <see cref="ShapingScratch.Prepare"/>, so returned
+    /// instances are always accepted.
+    /// </summary>
+    private sealed class ShapingScratchPooledObjectPolicy : IPooledObjectPolicy<ShapingScratch>
+    {
+        /// <inheritdoc/>
+        public ShapingScratch Create() => new();
+
+        /// <inheritdoc/>
+        public bool Return(ShapingScratch obj) => true;
     }
 }

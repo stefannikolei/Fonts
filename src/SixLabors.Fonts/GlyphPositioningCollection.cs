@@ -49,6 +49,27 @@ internal sealed class GlyphPositioningCollection : GlyphShapingCollection
     public GlyphPositioningData GetPositioningData(int index) => this.glyphs[index];
 
     /// <summary>
+    /// Resets the collection for reuse by a new shaping pass, returning its glyph data
+    /// instances to the pool. This collection owns the pass's final instances (the
+    /// substitution collection transfers ownership during metrics population), so this
+    /// is the single point instances are pooled, keeping each instance pooled at most
+    /// once.
+    /// </summary>
+    /// <param name="textOptions">The text options for the new pass.</param>
+    /// <param name="pool">The pool receiving the retired instances.</param>
+    internal void ResetForReuse(TextOptions textOptions, List<GlyphShapingData> pool)
+    {
+        List<GlyphPositioningData> glyphs = this.glyphs;
+        for (int i = 0; i < glyphs.Count; i++)
+        {
+            pool.Add(glyphs[i].Data);
+        }
+
+        glyphs.Clear();
+        this.ResetCore(textOptions);
+    }
+
+    /// <summary>
     /// Gets the glyph metrics at the given codepoint offset.
     /// </summary>
     /// <param name="offset">The zero-based index within the input codepoint collection.</param>

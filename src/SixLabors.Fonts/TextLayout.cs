@@ -121,19 +121,39 @@ internal static partial class TextLayout
     /// <returns>The wrapping-independent shaping state.</returns>
     public static ShapedText ShapeText(ReadOnlySpan<char> text, TextOptions options)
     {
-        // Gather the font and fallbacks.
-        Font[] fallbackFonts = (options.FallbackFontFamilies?.Count > 0)
-            ? [.. options.FallbackFontFamilies.Select(x => new Font(x, options.Font.Size, options.Font.RequestedStyle))]
-            : [];
-
-        LayoutMode layoutMode = options.LayoutMode;
-
         // One feature bit assignment for the whole pass: applied feature bits written
         // while substituting are read after the glyph data is copied into the
         // positioning collection, so both collections must agree on bit meaning.
         ShapingFeatureMap featureMap = new();
         GlyphSubstitutionCollection substitutions = new(options, featureMap);
         GlyphPositioningCollection positionings = new(options, featureMap);
+
+        return ShapeText(text, options, substitutions, positionings);
+    }
+
+    /// <summary>
+    /// Shapes <paramref name="text"/> using caller-supplied shaping collections,
+    /// allowing a reusable buffer to supply pre-reset collections whose storage
+    /// survives across calls. Both collections must share one
+    /// <see cref="ShapingFeatureMap"/> and already reflect <paramref name="options"/>.
+    /// </summary>
+    /// <param name="text">The text to process.</param>
+    /// <param name="options">The text options used while shaping.</param>
+    /// <param name="substitutions">The substitution collection to shape into.</param>
+    /// <param name="positionings">The positioning collection to shape into.</param>
+    /// <returns>The wrapping-independent shaping state.</returns>
+    public static ShapedText ShapeText(
+        ReadOnlySpan<char> text,
+        TextOptions options,
+        GlyphSubstitutionCollection substitutions,
+        GlyphPositioningCollection positionings)
+    {
+        // Gather the font and fallbacks.
+        Font[] fallbackFonts = (options.FallbackFontFamilies?.Count > 0)
+            ? [.. options.FallbackFontFamilies.Select(x => new Font(x, options.Font.Size, options.Font.RequestedStyle))]
+            : [];
+
+        LayoutMode layoutMode = options.LayoutMode;
 
         var probe = ShapingProbe.Enter();
 

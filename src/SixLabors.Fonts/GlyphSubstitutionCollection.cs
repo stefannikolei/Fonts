@@ -41,6 +41,14 @@ internal sealed class GlyphSubstitutionCollection : GlyphShapingCollection
     /// </summary>
     public int LigatureId { get; set; } = 1;
 
+    /// <summary>
+    /// Gets or sets the pool of retired <see cref="GlyphShapingData"/> instances a
+    /// reusable shaping pass rents from. Null outside buffer-managed passes. The
+    /// positioning collection returns its instances here at reuse-reset time; this
+    /// collection only ever rents.
+    /// </summary>
+    internal List<GlyphShapingData>? ReusePool { get; set; }
+
     /// <inheritdoc />
     public override GlyphShapingData this[int index]
     {
@@ -59,6 +67,39 @@ internal sealed class GlyphSubstitutionCollection : GlyphShapingCollection
         OffsetGlyphDataPair pair = this.glyphs[index];
         offset = pair.Offset;
         return pair.Data;
+    }
+
+    /// <summary>
+    /// Resets the collection for reuse by a new shaping pass. Storage references are
+    /// dropped without pooling: any instance still held here was either transferred to
+    /// the positioning collection, which pools it, or is dead.
+    /// </summary>
+    /// <param name="textOptions">The text options for the new pass.</param>
+    internal void ResetForReuse(TextOptions textOptions)
+    {
+        this.glyphs.Clear();
+        this.LigatureId = 1;
+        this.ResetCore(textOptions);
+    }
+
+    /// <summary>
+    /// Rents a reset instance from the reuse pool, or allocates one when the pool is
+    /// absent or empty.
+    /// </summary>
+    /// <param name="textRun">The text run.</param>
+    /// <returns>The <see cref="GlyphShapingData"/>.</returns>
+    private GlyphShapingData RentData(TextRun textRun)
+    {
+        List<GlyphShapingData>? pool = this.ReusePool;
+        if (pool is { Count: > 0 })
+        {
+            GlyphShapingData data = pool[^1];
+            pool.RemoveAt(pool.Count - 1);
+            data.Reset(textRun);
+            return data;
+        }
+
+        return new(textRun);
     }
 
     /// <summary>
@@ -83,12 +124,12 @@ internal sealed class GlyphSubstitutionCollection : GlyphShapingCollection
     public void AddGlyph(ushort glyphId, CodePoint codePoint, TextDirection direction, TextRun textRun, int offset)
     {
         this.RecordGlyphId(glyphId);
-        this.glyphs.Add(new(offset, new(textRun)
-        {
-            CodePoint = codePoint,
-            Direction = direction,
-            GlyphId = glyphId,
-        }));
+        GlyphShapingData data = this.RentData(textRun);
+        data.CodePoint = codePoint;
+        data.Direction = direction;
+        data.GlyphId = glyphId;
+
+        this.glyphs.Add(new(offset, data));
     }
 
     /// <summary>
@@ -99,14 +140,16 @@ internal sealed class GlyphSubstitutionCollection : GlyphShapingCollection
     /// <param name="textRun">The text run this placeholder belongs to.</param>
     /// <param name="offset">The zero-based index within the input codepoint collection.</param>
     public void AddPlaceholder(CodePoint codePoint, BidiRun bidiRun, TextRun textRun, int offset)
-        => this.glyphs.Add(new(offset, new(textRun)
-        {
-            CodePoint = codePoint,
-            Direction = (TextDirection)bidiRun.Direction,
-            GlyphId = 0,
-            IsPlaceholder = true,
-            BidiRun = bidiRun,
-        }));
+    {
+        GlyphShapingData data = this.RentData(textRun);
+        data.CodePoint = codePoint;
+        data.Direction = (TextDirection)bidiRun.Direction;
+        data.GlyphId = 0;
+        data.IsPlaceholder = true;
+        data.BidiRun = bidiRun;
+
+        this.glyphs.Add(new(offset, data));
+    }
 
     /// <summary>
     /// Moves the specified glyph to the specified position.

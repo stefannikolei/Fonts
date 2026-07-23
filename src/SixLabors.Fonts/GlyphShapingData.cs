@@ -228,6 +228,40 @@ internal class GlyphShapingData
         .Invariant($" {this.GlyphId} : {this.CodePoint.ToDebuggerDisplay()} : {CodePoint.GetScriptClass(this.CodePoint)} : {this.Direction} : {this.TextRun.TextAttributes} : {this.LigatureId} : {this.LigatureComponent} : {this.IsDecomposed}");
 
     /// <summary>
+    /// Resets the instance to its freshly constructed state for reuse by a pooled
+    /// shaping pass. Every mutable member must be reset here; a missed member leaks
+    /// state between shaping calls.
+    /// </summary>
+    /// <param name="textRun">The text run.</param>
+    public void Reset(TextRun textRun)
+    {
+        this.glyphId = 0;
+        this.bounds = default;
+        this.CachedShapingClass = default;
+        this.ShapingClassCacheKey = -1;
+        this.CodePoint = default;
+        this.CodePointCount = 1;
+        this.Direction = default;
+        this.TextRun = textRun;
+        this.LigatureId = 0;
+        this.IsLigated = false;
+        this.LigatureComponent = -1;
+        this.MarkAttachment = -1;
+        this.CursiveAttachment = -1;
+        this.RegisteredFeatureMask = 0;
+        this.FeatureMask = 0;
+        this.AppliedFeatureMask = 0;
+        this.IsSubstituted = false;
+        this.IsDecomposed = false;
+        this.IsPlaceholder = false;
+        this.BidiRun = default;
+        this.IsPositioned = false;
+        this.IsKerned = false;
+        this.UniversalShapingEngineInfo = null;
+        this.IndicShapingEngineInfo = null;
+    }
+
+    /// <summary>
     /// Clears the registered and enabled feature masks while preserving the applied
     /// mask, matching the semantics of copying with cleared features. Positioning
     /// reuses the substituted glyph data and re-plans its own features, but the applied

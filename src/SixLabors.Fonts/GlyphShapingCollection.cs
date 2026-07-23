@@ -45,14 +45,14 @@ internal abstract class GlyphShapingCollection
     /// <summary>
     /// Gets the text options used by this collection.
     /// </summary>
-    public TextOptions TextOptions { get; }
+    public TextOptions TextOptions { get; private set; }
 
     /// <summary>
     /// Gets the candidate OpenType language system tags resolved from
     /// <see cref="TextOptions.Culture"/>, most specific first, or an empty array when the
     /// culture expresses no language preference. Resolved once per shaping pass.
     /// </summary>
-    public Tag[] LanguageTags { get; }
+    public Tag[] LanguageTags { get; private set; }
 
     /// <summary>
     /// Gets the feature bit assignment shared by every collection of the shaping pass.
@@ -90,6 +90,22 @@ internal abstract class GlyphShapingCollection
     {
         this.glyphDigest.Add(glyphId);
         this[index].GlyphId = glyphId;
+    }
+
+    /// <summary>
+    /// Resets the pass-wide state shared by the collections for reuse by a new shaping
+    /// pass: adopts the new options, re-resolves the language candidates, and empties
+    /// the glyph digest. Derived collections call this from their reuse reset after
+    /// clearing their own storage.
+    /// </summary>
+    /// <param name="textOptions">The text options for the new pass.</param>
+    private protected void ResetCore(TextOptions textOptions)
+    {
+        this.TextOptions = textOptions;
+        this.glyphDigest = default;
+
+        CultureInfo culture = textOptions.Culture ?? CultureInfo.CurrentCulture;
+        this.LanguageTags = OpenTypeLanguageTagMap.TryGetTags(culture, out Tag[] tags) ? tags : [];
     }
 
     /// <summary>

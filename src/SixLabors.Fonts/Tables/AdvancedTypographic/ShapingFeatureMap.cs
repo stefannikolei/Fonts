@@ -64,6 +64,17 @@ internal sealed class ShapingFeatureMap
     private ulong lastMask;
 
     /// <summary>
+    /// Resets the map for reuse by a new shaping pass, emptying the tag registry and
+    /// the single-entry memo.
+    /// </summary>
+    internal void Reset()
+    {
+        this.tags.Clear();
+        this.lastTagValue = 0;
+        this.lastMask = 0;
+    }
+
+    /// <summary>
     /// Gets the mask bit for the given feature tag, or zero when the tag has not been
     /// registered. A zero result is safe at every consumption site: testing it enables
     /// or matches nothing and clearing it clears nothing.

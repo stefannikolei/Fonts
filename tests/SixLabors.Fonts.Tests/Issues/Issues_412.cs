@@ -18,7 +18,7 @@ public class Issues_412
             }
         };
 
-        IReadOnlyList<TextRun> runs = TextLayout.BuildTextRuns("abcde", options);
+        IReadOnlyList<TextRun> runs = TextShaper.BuildTextRuns("abcde", options);
 
         Assert.Equal(2, runs.Count);
 

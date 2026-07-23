@@ -25,7 +25,7 @@ namespace SixLabors.Fonts;
 /// <see cref="ShapedGlyph.CodePointIndex"/> falls inside the slice.
 /// </para>
 /// </remarks>
-public static class TextShaper
+public static partial class TextShaper
 {
     /// <summary>
     /// The pool of reusable pipeline state, the reference engine's buffer memory model.
@@ -72,7 +72,7 @@ public static class TextShaper
         try
         {
             (GlyphSubstitutionCollection substitutions, GlyphPositioningCollection positionings) = scratch.Prepare(options);
-            TextLayout.ShapeText(text, options, substitutions, positionings);
+            ShapeText(text, options, substitutions, positionings);
 
             var probe = ShapingProbe.Enter();
             List<ShapedGlyph> glyphs = new(positionings.Count);

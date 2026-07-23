@@ -58,7 +58,7 @@ public sealed partial class TextBlock
             return;
         }
 
-        ShapedText shaped = TextLayout.ShapeText(text, options);
+        ShapedText shaped = TextShaper.ShapeText(text, options);
         this.LogicalLine = TextLayout.ComposeLogicalLine(shaped, text, options);
     }
 

@@ -1006,7 +1006,7 @@ public class TextLayoutTests
             ]
         };
 
-        ShapedText shapedText = TextLayout.ShapeText(text.AsSpan(), options);
+        ShapedText shapedText = TextShaper.ShapeText(text.AsSpan(), options);
         LogicalTextLine logicalLine = TextLayout.ComposeLogicalLine(shapedText, text.AsSpan(), options);
 
         GlyphLayoutData placeholder = default;
@@ -2107,7 +2107,7 @@ public class TextLayoutTests
         Font font = CreateFont(text);
         TextOptions options = new(font);
 
-        IReadOnlyList<TextRun> runs = TextLayout.BuildTextRuns(text.AsSpan(), options);
+        IReadOnlyList<TextRun> runs = TextShaper.BuildTextRuns(text.AsSpan(), options);
 
         Assert.Single(runs);
         Assert.Equal(font, runs[0].Font);
@@ -2131,7 +2131,7 @@ public class TextLayoutTests
             }
         };
 
-        IReadOnlyList<TextRun> runs = TextLayout.BuildTextRuns(text.AsSpan(), options);
+        IReadOnlyList<TextRun> runs = TextShaper.BuildTextRuns(text.AsSpan(), options);
 
         Assert.Equal(7, runs.Count);
 
@@ -2185,7 +2185,7 @@ public class TextLayoutTests
             }
         };
 
-        IReadOnlyList<TextRun> runs = TextLayout.BuildTextRuns(text.AsSpan(), options);
+        IReadOnlyList<TextRun> runs = TextShaper.BuildTextRuns(text.AsSpan(), options);
 
         Assert.Equal(2, runs.Count);
         Assert.Equal(font, runs[0].Font);

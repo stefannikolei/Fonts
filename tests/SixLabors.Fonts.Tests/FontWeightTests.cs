@@ -54,7 +54,7 @@ public class FontWeightTests
             TextRuns = [textRun]
         };
 
-        TextRun resolvedRun = Assert.Single(TextLayout.BuildTextRuns("A", options));
+        TextRun resolvedRun = Assert.Single(TextShaper.BuildTextRuns("A", options));
         FontVariation weight = Assert.Single(
             resolvedRun.ResolvedFont.Variations.ToArray(),
             variation => variation.Tag == KnownVariationAxes.Weight);
@@ -165,7 +165,7 @@ public class FontWeightTests
 
         Font font = family.CreateFont(18);
         TextOptions options = new(font) { FontWeight = requestedWeight };
-        TextRun textRun = Assert.Single(TextLayout.BuildTextRuns("Weight", options));
+        TextRun textRun = Assert.Single(TextShaper.BuildTextRuns("Weight", options));
 
         // DirectWrite resolves both 500 and 600 to Segoe UI Semibold. This specifically protects
         // the equal-distance 500 request from incorrectly selecting the lighter Regular 400 face.
@@ -202,7 +202,7 @@ public class FontWeightTests
 
         Font font = family.CreateFont(18);
         TextOptions options = new(font) { FontWeight = requestedWeight };
-        TextRun textRun = Assert.Single(TextLayout.BuildTextRuns("Weight", options));
+        TextRun textRun = Assert.Single(TextShaper.BuildTextRuns("Weight", options));
 
         // CSS Fonts Level 4 section 5 maps missing weights to the nearest face in a specified
         // search direction. For the installed Arial family, 100-500 select Regular, 600-700

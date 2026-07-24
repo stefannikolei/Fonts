@@ -174,21 +174,20 @@ internal class GPosTable : Table
         kerned = false;
         bool updated = false;
 
-        // Segments recorded during an in-place substitution pass carry their shaper
-        // and plan; reuse them so one plan drives both tables and positioning never
+        // Segments recorded during an in-place substitution pass carry their plan;
+        // reuse them so one plan drives both tables and positioning never
         // re-segments, re-creates, or re-plans. An empty list means records were
         // seeded across buffers and positioning must segment for itself below.
-        List<(int Index, int Count, ScriptClass Script, BaseShaper Shaper)> segments = buffer.SegmentShapers;
+        List<(int Index, int Count, ScriptClass Script, ShapePlan Plan)> segments = buffer.SegmentPlans;
         if (segments.Count > 0)
         {
             for (int s = 0; s < segments.Count; s++)
             {
-                (int index, int count, ScriptClass script, BaseShaper shaper) = segments[s];
+                (int index, int count, ScriptClass script, ShapePlan shapePlan) = segments[s];
                 updated |= this.PositionSegment(
                     fontMetrics,
                     buffer,
-                    shaper,
-                    script,
+                    shapePlan,
                     index,
                     count,
                     maxOperationsCount,
@@ -251,17 +250,18 @@ internal class GPosTable : Table
             }
 
             Tag unicodeScriptTag = this.GetUnicodeScriptTag(current);
-            BaseShaper shaper = buffer.GetOrCreateShaper(current, unicodeScriptTag, fontMetrics);
+            ShapePlan shapePlan = buffer.GetOrCreatePlan(current, unicodeScriptTag, fontMetrics);
 
             // Plan positioning features for each glyph. Records seeded across buffers
             // had their feature registrations cleared, so this pass re-plans.
-            shaper.Plan(buffer, index, count);
+            buffer.CurrentPlan = shapePlan;
+            shapePlan.Shaper.Plan(buffer, index, count);
+            buffer.CurrentPlan = null;
 
             updated |= this.PositionSegment(
                 fontMetrics,
                 buffer,
-                shaper,
-                current,
+                shapePlan,
                 index,
                 count,
                 maxOperationsCount,
@@ -279,16 +279,43 @@ internal class GPosTable : Table
     }
 
     /// <summary>
+    /// Fills the merge scratch from a plan group's prebuilt lookup list, combining
+    /// the per-pass masks of every feature that registered each lookup. The prebuilt
+    /// list already carries lookup-index order and deduplication, so this is a copy
+    /// with mask lookups rather than a merge.
+    /// </summary>
+    /// <param name="group">The plan stage group to read.</param>
+    /// <param name="featureMap">The pass's feature bit assignment.</param>
+    /// <param name="merged">The merge scratch to fill.</param>
+    private static void FillMergedFromPlan(
+        ShapePlanStageGroup<LookupTable> group,
+        ShapingFeatureMap featureMap,
+        List<(Tag Feature, ushort Index, LookupTable LookupTable, ulong Mask)> merged)
+    {
+        merged.Clear();
+        List<(Tag Feature, ushort Index, LookupTable LookupTable, Tag[] Contributing)> lookups = group.Lookups;
+        for (int i = 0; i < lookups.Count; i++)
+        {
+            (Tag feature, ushort lookupIndex, LookupTable lookupTable, Tag[] contributing) = lookups[i];
+            ulong mask = 0;
+            for (int c = 0; c < contributing.Length; c++)
+            {
+                mask |= featureMap.GetMask(contributing[c]);
+            }
+
+            merged.Add((feature, lookupIndex, lookupTable, mask));
+        }
+    }
+
+    /// <summary>
     /// Applies the positioning stages of a planned segment: mark zeroing, the
     /// pause-delimited stage groups in lookup-index order, attachment resolution, and
-    /// position materialization. The caller supplies a shaper whose plan already
-    /// covers the segment, either fresh from re-planning or reused from the
-    /// substitution pass.
+    /// position materialization. The caller supplies the plan that covers the
+    /// segment, either freshly re-planned or reused from the substitution pass.
     /// </summary>
     /// <param name="fontMetrics">The font metrics.</param>
     /// <param name="buffer">The glyph positioning buffer.</param>
-    /// <param name="shaper">The shaper whose plan covers the segment.</param>
-    /// <param name="script">The script class the segment resolved to.</param>
+    /// <param name="shapePlan">The plan covering the segment.</param>
     /// <param name="index">The starting index of the segment.</param>
     /// <param name="count">The number of glyphs in the segment.</param>
     /// <param name="maxOperationsCount">The maximum allowable operations count.</param>
@@ -299,8 +326,7 @@ internal class GPosTable : Table
     private bool PositionSegment(
         FontMetrics fontMetrics,
         ShapingBuffer buffer,
-        BaseShaper shaper,
-        ScriptClass script,
+        ShapePlan shapePlan,
         int index,
         int count,
         int maxOperationsCount,
@@ -310,7 +336,7 @@ internal class GPosTable : Table
     {
         bool updated = false;
 
-        if (shaper.MarkZeroingMode == MarkZeroingMode.PreGPos)
+        if (shapePlan.Shaper.MarkZeroingMode == MarkZeroingMode.PreGPos)
         {
             ZeroMarkAdvances(fontMetrics, buffer, index, count);
         }
@@ -320,72 +346,22 @@ internal class GPosTable : Table
         // feature's lookups apply together in lookup-list order, the order the
         // specification defines for lookups within a single application pass. A
         // lookup registered by several of the group's features applies once with
-        // their glyph masks combined.
-        List<ShapingStage> shapingStages = shaper.GetShapingStages();
+        // their glyph masks combined. Group boundaries and merged lookup lists are
+        // prebuilt on the plan; only the per-pass masks are combined here.
+        buffer.CurrentPlan = shapePlan;
+        List<ShapePlanStageGroup<LookupTable>> groups = shapePlan.GetOrBuildGPosStageGroups(this);
+        List<ShapingStage> shapingStages = shapePlan.Stages;
         SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, default, 0);
         List<(Tag Feature, ushort Index, LookupTable LookupTable, ulong Mask)> merged = buffer.GPosLookupScratch;
-
-        int stageIndex = 0;
-        while (stageIndex < shapingStages.Count)
+        for (int g = 0; g < groups.Count; g++)
         {
-            shapingStages[stageIndex].PreProcessFeature(buffer, index, count);
+            ShapePlanStageGroup<LookupTable> group = groups[g];
 
-            // Extend the group while its interior holds no actions: a post action
-            // closes the group after its stage and a pre action opens a new one.
-            int groupEnd = stageIndex;
-            while (true)
-            {
-                groupEnd++;
-                if (shapingStages[groupEnd - 1].HasPostAction || groupEnd >= shapingStages.Count || shapingStages[groupEnd].HasPreAction)
-                {
-                    break;
-                }
-            }
+            shapingStages[group.Start].PreProcessFeature(buffer, index, count);
 
-            // Merge the group's lookups into lookup-index order. Insertion keeps
-            // the scratch sorted; a lookup already present from another feature
-            // gains that feature's mask instead of a second entry.
-            merged.Clear();
-            for (int s = stageIndex; s < groupEnd; s++)
-            {
-                Tag featureTag = shapingStages[s].FeatureTag;
-                var lookupProbe = ShapingProbe.Enter();
-                bool found = this.TryGetFeatureLookups(fontMetrics, in featureTag, script, buffer.LanguageTags, out List<(Tag Feature, ushort Index, LookupTable LookupTable)>? lookups);
-                ShapingProbe.Exit(ShapingProbe.LookupResolve, lookupProbe);
-                if (!found || lookups is null)
-                {
-                    continue;
-                }
-
-                ulong mask = buffer.FeatureMap.GetMask(featureTag);
-                foreach ((Tag Feature, ushort Index, LookupTable LookupTable) featureLookup in lookups)
-                {
-                    int insertAt = merged.Count;
-                    bool alreadyMerged = false;
-                    while (insertAt > 0)
-                    {
-                        (Tag Feature, ushort Index, LookupTable LookupTable, ulong Mask) prior = merged[insertAt - 1];
-                        if (prior.Index == featureLookup.Index)
-                        {
-                            merged[insertAt - 1] = (prior.Feature, prior.Index, prior.LookupTable, prior.Mask | mask);
-                            alreadyMerged = true;
-                            break;
-                        }
-
-                        if (prior.Index < featureLookup.Index)
-                        {
-                            break;
-                        }
-
-                        insertAt--;
-                    }
-
-                    if (!alreadyMerged)
-                    {
-                        merged.Insert(insertAt, (featureLookup.Feature, featureLookup.Index, featureLookup.LookupTable, mask));
-                    }
-                }
-            }
+            var lookupProbe = ShapingProbe.Enter();
+            FillMergedFromPlan(group, buffer.FeatureMap, merged);
+            ShapingProbe.Exit(ShapingProbe.LookupResolve, lookupProbe);
 
             for (int m = 0; m < merged.Count; m++)
             {
@@ -431,12 +407,12 @@ internal class GPosTable : Table
                 ShapingProbe.ExitFeature("GPOS", feature, featureStart, featureApplies);
             }
 
-            shapingStages[groupEnd - 1].PostProcessFeature(buffer, index, count);
-            stageIndex = groupEnd;
+            shapingStages[group.End - 1].PostProcessFeature(buffer, index, count);
         }
 
         EndLookups:
-        if (shaper.MarkZeroingMode == MarkZeroingMode.PostGpos)
+        buffer.CurrentPlan = null;
+        if (shapePlan.Shaper.MarkZeroingMode == MarkZeroingMode.PostGpos)
         {
             ZeroMarkAdvances(fontMetrics, buffer, index, count);
         }
@@ -460,7 +436,7 @@ internal class GPosTable : Table
     /// </param>
     /// <param name="value">When this method returns, contains the list of feature lookups if found.</param>
     /// <returns><see langword="true"/> if lookups were found; otherwise, <see langword="false"/>.</returns>
-    private bool TryGetFeatureLookups(
+    public bool TryGetFeatureLookups(
         FontMetrics fontMetrics,
         in Tag stageFeature,
         ScriptClass script,

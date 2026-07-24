@@ -155,40 +155,6 @@ internal sealed class ShapingBuffer
     private FontMetrics? shapingClassCacheOwner;
 
     /// <summary>
-    /// The bit offset of the script class in a feature lookups cache tag.
-    /// </summary>
-    private const int FeatureLookupsCacheScriptShift = 32;
-
-    /// <summary>
-    /// The feature lookups cache tag bit distinguishing a populated slot from an
-    /// empty one, since a zero tag could otherwise read as a valid all-zero lookup.
-    /// </summary>
-    private const ulong FeatureLookupsCacheMarkerFlag = 1UL << 63;
-
-    /// <summary>
-    /// Validation tags for the substitution-phase feature lookups cache. A slot's tag
-    /// packs the marker, the feature tag, and the script class, so a hit is one load
-    /// and one compare instead of a dictionary probe that hashes the language
-    /// candidates per query.
-    /// </summary>
-    private readonly ulong[] subFeatureLookupsCacheTags = new ulong[128];
-
-    /// <summary>
-    /// The resolved lookup lists for each slot of
-    /// <see cref="subFeatureLookupsCacheTags"/>, held untyped because the
-    /// substitution and positioning tables declare distinct lookup list types.
-    /// </summary>
-    private readonly object?[] subFeatureLookupsCacheValues = new object?[128];
-
-    /// <summary>
-    /// The layout table instance the substitution-phase entries belong to. Consulting
-    /// from a different table clears the cache before use; a reset clears the owner
-    /// because the language candidates the entries were resolved under belong to the
-    /// pass.
-    /// </summary>
-    private object? subFeatureLookupsCacheOwner;
-
-    /// <summary>
     /// The bidi runs recorded for inline placeholders, keyed by codepoint offset.
     /// Placeholder state lives here rather than on every glyph record because only
     /// placeholders carry a bidi run of their own, and only the copy-out reads it.
@@ -196,13 +162,13 @@ internal sealed class ShapingBuffer
     private readonly List<(int CodePointIndex, BidiRun Run)> placeholderBidiRuns = new();
 
     /// <summary>
-    /// Shaper instances reused across segments and passes, keyed by script, script
-    /// tag, and font. Safe to reuse because the pooled buffer is exclusively owned
-    /// and shaper per-segment state is reassigned at each pause invocation. Cleared
-    /// when a reset adopts a different options instance, whose values the shapers
-    /// captured at construction.
+    /// Shape plans reused across segments and passes, keyed by script, script tag,
+    /// and font. Safe to reuse because the pooled buffer is exclusively owned and a
+    /// plan's per-segment shaper state is reassigned at each pause invocation.
+    /// Cleared when a reset adopts a different options instance, whose values the
+    /// plans captured when built.
     /// </summary>
-    private readonly List<(ScriptClass Script, Tag ScriptTag, FontMetrics FontMetrics, Tables.AdvancedTypographic.Shapers.BaseShaper Shaper)> shaperCache = new(4);
+    private readonly List<(ScriptClass Script, Tag ScriptTag, FontMetrics FontMetrics, Tables.AdvancedTypographic.ShapePlan Plan)> planCache = new(4);
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ShapingBuffer"/> class.
@@ -271,11 +237,18 @@ internal sealed class ShapingBuffer
 
     /// <summary>
     /// Gets the shaping segments recorded during substitution: each script segment's
-    /// final range, script, and the shaper that planned it. The in-place positioning
+    /// final range, script, and the plan that shaped it. The in-place positioning
     /// pass reuses these so one plan drives both tables; the list stays empty when
     /// records were seeded across buffers and positioning must segment for itself.
     /// </summary>
-    public List<(int Index, int Count, ScriptClass Script, Tables.AdvancedTypographic.Shapers.BaseShaper Shaper)> SegmentShapers { get; } = new();
+    public List<(int Index, int Count, ScriptClass Script, Tables.AdvancedTypographic.ShapePlan Plan)> SegmentPlans { get; } = new();
+
+    /// <summary>
+    /// Gets or sets the plan for the segment currently being shaped. Pause actions
+    /// run inside segment processing and query it for prebuilt feature resolutions;
+    /// the layout tables set it around each segment and clear it after.
+    /// </summary>
+    public Tables.AdvancedTypographic.ShapePlan? CurrentPlan { get; set; }
 
     /// <summary>
     /// Gets the reusable scratch the substitution table uses to merge a stage group's
@@ -405,21 +378,18 @@ internal sealed class ShapingBuffer
         this.LigatureId = 1;
         this.glyphDigest = default;
         this.placeholderBidiRuns.Clear();
-        this.SegmentShapers.Clear();
+        this.SegmentPlans.Clear();
+        this.CurrentPlan = null;
 
-        // Cached shapers captured option values at construction, so a different
-        // options instance invalidates them.
+        // Cached plans captured option values when built, so a different options
+        // instance invalidates them.
         if (!ReferenceEquals(this.TextOptions, textOptions))
         {
-            this.shaperCache.Clear();
+            this.planCache.Clear();
         }
 
         this.TextOptions = textOptions;
         this.LanguageTags = ResolveLanguageTags(textOptions);
-
-        // Cached feature resolutions were made under the previous pass's language
-        // candidates, so a new pass must not serve them.
-        this.subFeatureLookupsCacheOwner = null;
     }
 
     /// <summary>
@@ -431,7 +401,7 @@ internal sealed class ShapingBuffer
         this.count = 0;
         this.LigatureId = 1;
         this.placeholderBidiRuns.Clear();
-        this.SegmentShapers.Clear();
+        this.SegmentPlans.Clear();
     }
 
     /// <summary>
@@ -1150,93 +1120,34 @@ internal sealed class ShapingBuffer
 
     /// <summary>
     /// Gets a shaper for the given script and font, reusing a cached instance when
-    /// one was created for the same key. Instances persist across passes while the
-    /// options instance is unchanged, so steady-state shaping constructs no shapers.
+    /// one was built for the same key. Plans persist across passes while the options
+    /// instance is unchanged, so steady-state shaping builds no plans and constructs
+    /// no shapers. Plans whose resolution depends on live variation coordinates are
+    /// rebuilt every call and never cached.
     /// </summary>
     /// <param name="script">The script class to shape.</param>
     /// <param name="unicodeScriptTag">The resolved OpenType script tag.</param>
-    /// <param name="fontMetrics">The font metrics the shaper binds to.</param>
-    /// <returns>The <see cref="Tables.AdvancedTypographic.Shapers.BaseShaper"/>.</returns>
-    public Tables.AdvancedTypographic.Shapers.BaseShaper GetOrCreateShaper(ScriptClass script, Tag unicodeScriptTag, FontMetrics fontMetrics)
+    /// <param name="fontMetrics">The font metrics the plan binds to.</param>
+    /// <returns>The <see cref="Tables.AdvancedTypographic.ShapePlan"/>.</returns>
+    public Tables.AdvancedTypographic.ShapePlan GetOrCreatePlan(ScriptClass script, Tag unicodeScriptTag, FontMetrics fontMetrics)
     {
-        List<(ScriptClass Script, Tag ScriptTag, FontMetrics FontMetrics, Tables.AdvancedTypographic.Shapers.BaseShaper Shaper)> cache = this.shaperCache;
+        List<(ScriptClass Script, Tag ScriptTag, FontMetrics FontMetrics, Tables.AdvancedTypographic.ShapePlan Plan)> cache = this.planCache;
         for (int i = 0; i < cache.Count; i++)
         {
-            (ScriptClass cachedScript, Tag cachedTag, FontMetrics cachedMetrics, Tables.AdvancedTypographic.Shapers.BaseShaper cachedShaper) = cache[i];
+            (ScriptClass cachedScript, Tag cachedTag, FontMetrics cachedMetrics, Tables.AdvancedTypographic.ShapePlan cachedPlan) = cache[i];
             if (cachedScript == script && cachedTag == unicodeScriptTag && ReferenceEquals(cachedMetrics, fontMetrics))
             {
-                return cachedShaper;
+                return cachedPlan;
             }
         }
 
-        Tables.AdvancedTypographic.Shapers.BaseShaper shaper = Tables.AdvancedTypographic.Shapers.ShaperFactory.Create(script, unicodeScriptTag, fontMetrics, this.TextOptions);
-        cache.Add((script, unicodeScriptTag, fontMetrics, shaper));
-        return shaper;
-    }
-
-    /// <summary>
-    /// Looks up a resolved feature lookup list through a direct-mapped cache in front
-    /// of the substitution table's own cache, whose probes hash the language
-    /// candidate array per query. A hit is one load and one compare.
-    /// </summary>
-    /// <param name="table">The layout table performing the resolution.</param>
-    /// <param name="feature">The feature tag.</param>
-    /// <param name="script">The script class the feature resolves under.</param>
-    /// <param name="lookups">When this method returns, contains the cached lookup list if found.</param>
-    /// <returns><see langword="true"/> if a cached list was found.</returns>
-    public bool TryGetFeatureLookups(object table, Tag feature, ScriptClass script, out object? lookups)
-    {
-        if (!ReferenceEquals(this.subFeatureLookupsCacheOwner, table))
+        Tables.AdvancedTypographic.ShapePlan plan = Tables.AdvancedTypographic.ShapePlan.Build(fontMetrics, script, unicodeScriptTag, this.TextOptions, this.LanguageTags);
+        if (plan.IsCacheable)
         {
-            Array.Clear(this.subFeatureLookupsCacheTags);
-            this.subFeatureLookupsCacheOwner = table;
+            cache.Add((script, unicodeScriptTag, fontMetrics, plan));
         }
 
-        ulong tag = FeatureLookupsCacheMarkerFlag
-            | feature.Value
-            | ((ulong)script << FeatureLookupsCacheScriptShift);
-
-        int slot = FeatureLookupsCacheSlot(feature, script);
-        if (this.subFeatureLookupsCacheTags[slot] == tag)
-        {
-            lookups = this.subFeatureLookupsCacheValues[slot];
-            return true;
-        }
-
-        lookups = null;
-        return false;
-    }
-
-    /// <summary>
-    /// Stores a resolved feature lookup list in the direct-mapped feature lookups
-    /// cache. Must be called after <see cref="TryGetFeatureLookups"/> has
-    /// established the cache owner for the same table, and never for resolutions
-    /// that depend on live variation coordinates.
-    /// </summary>
-    /// <param name="feature">The feature tag.</param>
-    /// <param name="script">The script class the feature resolved under.</param>
-    /// <param name="lookups">The resolved lookup list.</param>
-    public void SetFeatureLookups(Tag feature, ScriptClass script, object lookups)
-    {
-        int slot = FeatureLookupsCacheSlot(feature, script);
-        this.subFeatureLookupsCacheTags[slot] = FeatureLookupsCacheMarkerFlag
-            | feature.Value
-            | ((ulong)script << FeatureLookupsCacheScriptShift);
-        this.subFeatureLookupsCacheValues[slot] = lookups;
-    }
-
-    /// <summary>
-    /// Computes the direct-map slot for a feature and script. Folds all four tag
-    /// bytes so features sharing trailing characters spread across slots rather than
-    /// thrashing one.
-    /// </summary>
-    /// <param name="feature">The feature tag.</param>
-    /// <param name="script">The script class.</param>
-    /// <returns>The slot index.</returns>
-    private static int FeatureLookupsCacheSlot(Tag feature, ScriptClass script)
-    {
-        uint value = feature.Value;
-        return (int)((value ^ (value >> 8) ^ (value >> 16) ^ (value >> 24) ^ (uint)script) & 127);
+        return plan;
     }
 
     /// <summary>

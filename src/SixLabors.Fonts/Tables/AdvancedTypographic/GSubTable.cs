@@ -195,8 +195,11 @@ internal class GSubTable : Table
 
             Tag unicodeScriptTag = this.GetUnicodeScriptTag(current);
             var createProbe = ShapingProbe.Enter();
-            BaseShaper shaper = buffer.GetOrCreateShaper(current, unicodeScriptTag, fontMetrics);
+            ShapePlan shapePlan = buffer.GetOrCreatePlan(current, unicodeScriptTag, fontMetrics);
             ShapingProbe.Exit(ShapingProbe.SubShaperCreate, createProbe);
+
+            buffer.CurrentPlan = shapePlan;
+            BaseShaper shaper = shapePlan.Shaper;
 
             // Plan substitution features for each glyph.
             // Shapers can adjust the count during initialization and feature processing so we must capture
@@ -214,17 +217,19 @@ internal class GSubTable : Table
             // feature's lookups apply together in lookup-list order, the order the
             // specification defines for lookups within a single application pass. A
             // lookup registered by several of the group's features applies once with
-            // their glyph masks combined.
-            List<ShapingStage> stages = shaper.GetShapingStages();
+            // their glyph masks combined. Group boundaries and merged lookup lists
+            // are prebuilt on the plan; only the per-pass masks are combined here.
+            List<ShapePlanStageGroup<LookupTable>> groups = shapePlan.GetOrBuildGSubStageGroups();
+            List<ShapingStage> stages = shapePlan.Stages;
             SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, default, 0);
             List<(Tag Feature, ushort Index, LookupTable LookupTable, ulong Mask)> merged = buffer.GSubLookupScratch;
-
-            int stageIndex = 0;
-            while (stageIndex < stages.Count)
+            for (int g = 0; g < groups.Count; g++)
             {
+                ShapePlanStageGroup<LookupTable> group = groups[g];
+
                 collectionCount = buffer.Count;
                 var preProbe = ShapingProbe.Enter();
-                stages[stageIndex].PreProcessFeature(buffer, index, count);
+                stages[group.Start].PreProcessFeature(buffer, index, count);
                 ShapingProbe.Exit(ShapingProbe.SubStagePrePost, preProbe);
 
                 // Account for substitutions changing the length of the buffer.
@@ -232,62 +237,9 @@ internal class GSubTable : Table
                 count += delta;
                 i += delta;
 
-                // Extend the group while its interior holds no actions: a post action
-                // closes the group after its stage and a pre action opens a new one.
-                int groupEnd = stageIndex;
-                while (true)
-                {
-                    groupEnd++;
-                    if (stages[groupEnd - 1].HasPostAction || groupEnd >= stages.Count || stages[groupEnd].HasPreAction)
-                    {
-                        break;
-                    }
-                }
-
-                // Merge the group's lookups into lookup-index order. Insertion keeps
-                // the scratch sorted; a lookup already present from another feature
-                // gains that feature's mask instead of a second entry.
-                merged.Clear();
-                for (int s = stageIndex; s < groupEnd; s++)
-                {
-                    Tag featureTag = stages[s].FeatureTag;
-                    var lookupProbe = ShapingProbe.Enter();
-                    bool found = this.TryGetFeatureLookups(fontMetrics, in featureTag, current, buffer, out List<(Tag Feature, ushort Index, LookupTable LookupTable)>? lookups);
-                    ShapingProbe.Exit(ShapingProbe.LookupResolve, lookupProbe);
-                    if (!found || lookups is null)
-                    {
-                        continue;
-                    }
-
-                    ulong mask = buffer.FeatureMap.GetMask(featureTag);
-                    foreach ((Tag Feature, ushort Index, LookupTable LookupTable) featureLookup in lookups)
-                    {
-                        int insertAt = merged.Count;
-                        bool alreadyMerged = false;
-                        while (insertAt > 0)
-                        {
-                            (Tag Feature, ushort Index, LookupTable LookupTable, ulong Mask) prior = merged[insertAt - 1];
-                            if (prior.Index == featureLookup.Index)
-                            {
-                                merged[insertAt - 1] = (prior.Feature, prior.Index, prior.LookupTable, prior.Mask | mask);
-                                alreadyMerged = true;
-                                break;
-                            }
-
-                            if (prior.Index < featureLookup.Index)
-                            {
-                                break;
-                            }
-
-                            insertAt--;
-                        }
-
-                        if (!alreadyMerged)
-                        {
-                            merged.Insert(insertAt, (featureLookup.Feature, featureLookup.Index, featureLookup.LookupTable, mask));
-                        }
-                    }
-                }
+                var lookupProbe = ShapingProbe.Enter();
+                FillMergedFromPlan(group, buffer.FeatureMap, merged);
+                ShapingProbe.Exit(ShapingProbe.LookupResolve, lookupProbe);
 
                 var applyProbe = ShapingProbe.Enter();
                 this.ApplyMergedLookups(
@@ -306,21 +258,20 @@ internal class GSubTable : Table
 
                 collectionCount = buffer.Count;
                 var postProbe = ShapingProbe.Enter();
-                stages[groupEnd - 1].PostProcessFeature(buffer, index, count);
+                stages[group.End - 1].PostProcessFeature(buffer, index, count);
                 ShapingProbe.Exit(ShapingProbe.SubStagePrePost, postProbe);
 
                 // Account for substitutions changing the length of the buffer.
                 delta = buffer.Count - collectionCount;
                 count += delta;
                 i += delta;
-
-                stageIndex = groupEnd;
             }
 
+            buffer.CurrentPlan = null;
+
             // Record the segment with its post-substitution range so the in-place
-            // positioning pass can reuse the shaper and its plan; one plan then
-            // drives both tables.
-            buffer.SegmentShapers.Add((index, count, current, shaper));
+            // positioning pass can reuse the plan; one plan then drives both tables.
+            buffer.SegmentPlans.Add((index, count, current, shapePlan));
         }
     }
 
@@ -421,15 +372,43 @@ internal class GSubTable : Table
     }
 
     /// <summary>
-    /// Tries to get the feature lookups for the given stage feature, script, and the
-    /// buffer's language candidates.
+    /// Fills the merge scratch from a plan group's prebuilt lookup list, combining
+    /// the per-pass masks of every feature that registered each lookup. The prebuilt
+    /// list already carries lookup-index order and deduplication, so this is a copy
+    /// with mask lookups rather than a merge.
+    /// </summary>
+    /// <param name="group">The plan stage group to read.</param>
+    /// <param name="featureMap">The pass's feature bit assignment.</param>
+    /// <param name="merged">The merge scratch to fill.</param>
+    private static void FillMergedFromPlan(
+        ShapePlanStageGroup<LookupTable> group,
+        ShapingFeatureMap featureMap,
+        List<(Tag Feature, ushort Index, LookupTable LookupTable, ulong Mask)> merged)
+    {
+        merged.Clear();
+        List<(Tag Feature, ushort Index, LookupTable LookupTable, Tag[] Contributing)> lookups = group.Lookups;
+        for (int i = 0; i < lookups.Count; i++)
+        {
+            (Tag feature, ushort lookupIndex, LookupTable lookupTable, Tag[] contributing) = lookups[i];
+            ulong mask = 0;
+            for (int c = 0; c < contributing.Length; c++)
+            {
+                mask |= featureMap.GetMask(contributing[c]);
+            }
+
+            merged.Add((feature, lookupIndex, lookupTable, mask));
+        }
+    }
+
+    /// <summary>
+    /// Tries to get the feature lookups for the given stage feature, script, and language.
     /// </summary>
     /// <param name="fontMetrics">The font metrics.</param>
     /// <param name="stageFeature">The feature tag for the current shaping stage.</param>
     /// <param name="script">The script class.</param>
-    /// <param name="buffer">
-    /// The glyph shaping buffer carrying the language candidates and the per-pass
-    /// resolution cache.
+    /// <param name="languageTags">
+    /// The candidate OpenType language system tags, most specific first. An empty array
+    /// selects the default language system.
     /// </param>
     /// <param name="value">When this method returns, contains the list of feature lookups if found.</param>
     /// <returns><see langword="true"/> if lookups were found; otherwise, <see langword="false"/>.</returns>
@@ -437,7 +416,7 @@ internal class GSubTable : Table
         FontMetrics fontMetrics,
         in Tag stageFeature,
         ScriptClass script,
-        ShapingBuffer buffer,
+        Tag[] languageTags,
         [NotNullWhen(true)] out List<(Tag Feature, ushort Index, LookupTable LookupTable)>? value)
     {
         if (this.ScriptList is null)
@@ -446,22 +425,11 @@ internal class GSubTable : Table
             return false;
         }
 
-        Tag[] languageTags = buffer.LanguageTags;
-
         // Feature variations resolve against the font's live variation coordinates, so
         // caching would mix results across differently configured variable fonts.
         if (this.FeatureVariations is not null)
         {
             value = this.ResolveFeatureLookups(fontMetrics, stageFeature, script, languageTags);
-            return value.Count > 0;
-        }
-
-        // The buffer fronts the table cache with a direct-mapped cache whose hit is
-        // one load and one compare, skipping the dictionary probe that hashes the
-        // language candidates per query.
-        if (buffer.TryGetFeatureLookups(this, stageFeature, script, out object? cached))
-        {
-            value = (List<(Tag Feature, ushort Index, LookupTable LookupTable)>)cached!;
             return value.Count > 0;
         }
 
@@ -476,7 +444,6 @@ internal class GSubTable : Table
             this.featureLookupsCache.TryAdd(key, value);
         }
 
-        buffer.SetFeatureLookups(stageFeature, script, value);
         return value.Count > 0;
     }
 

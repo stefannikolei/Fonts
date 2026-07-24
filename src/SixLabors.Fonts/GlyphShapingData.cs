@@ -52,7 +52,27 @@ internal struct GlyphShapingData
     /// </summary>
     private const ushort ShapingClassCacheValidFlag = 1 << 6;
 
+    /// <summary>
+    /// The modulus folding ligature ids into the stored byte range 1..255, keeping a
+    /// live id distinct from the zero not-a-ligature value. Id equality is only ever
+    /// compared between a mark and its neighbouring ligature, where folded ids stay
+    /// unique.
+    /// </summary>
+    private const int LigatureIdModulus = byte.MaxValue;
+
     private ushort glyphId;
+
+    /// <summary>
+    /// The ligature id folded into byte range, or zero when the glyph is not a
+    /// ligature.
+    /// </summary>
+    private byte ligatureId;
+
+    /// <summary>
+    /// The ligature component index stored as component + 1, so the default record
+    /// encodes the -1 no-component sentinel as zero.
+    /// </summary>
+    private byte ligatureComponentPlusOne;
 
     /// <summary>
     /// Packed boolean shaping state addressed through the named flag constants above.
@@ -187,9 +207,15 @@ internal struct GlyphShapingData
     public ushort TextRunIndex { get; set; }
 
     /// <summary>
-    /// Gets or sets the id of any ligature this glyph is a member of.
+    /// Gets or sets the id of any ligature this glyph is a member of. Zero means the
+    /// glyph is not a ligature member; assigned ids fold into the stored byte range
+    /// while remaining distinct from zero.
     /// </summary>
-    public int LigatureId { get; set; }
+    public int LigatureId
+    {
+        readonly get => this.ligatureId;
+        set => this.ligatureId = value == 0 ? (byte)0 : (byte)(((value - 1) % LigatureIdModulus) + 1);
+    }
 
     /// <summary>
     /// Gets or sets a value indicating whether the glyph is ligated.
@@ -201,9 +227,16 @@ internal struct GlyphShapingData
     }
 
     /// <summary>
-    /// Gets or sets the ligature component index of the glyph.
+    /// Gets or sets the ligature component index of the glyph, or -1 when the glyph
+    /// is not a ligature component. Stored offset by one so the default record holds
+    /// the -1 sentinel; indices clamp to the storable range, far beyond any real
+    /// font's component count.
     /// </summary>
-    public int LigatureComponent { get; set; } = -1;
+    public int LigatureComponent
+    {
+        readonly get => this.ligatureComponentPlusOne - 1;
+        set => this.ligatureComponentPlusOne = (byte)(Math.Min(value, byte.MaxValue - 1) + 1);
+    }
 
     /// <summary>
     /// Gets or sets the mask of features a shaper has registered for this glyph, enabled

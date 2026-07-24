@@ -51,6 +51,24 @@ internal sealed class ShapingBuffer
     private GlyphSetDigest glyphDigest;
 
     /// <summary>
+    /// Validation tags for the direct-mapped glyph metrics cache. A slot's tag packs
+    /// every key field of the font's own metrics cache above a marker bit, so a hit is
+    /// one load and one compare. Zero marks a slot empty.
+    /// </summary>
+    private readonly ulong[] metricsCacheTags = new ulong[256];
+
+    /// <summary>
+    /// The resolved metrics for each slot of <see cref="metricsCacheTags"/>.
+    /// </summary>
+    private readonly FontGlyphMetrics?[] metricsCacheValues = new FontGlyphMetrics?[256];
+
+    /// <summary>
+    /// The font metrics instance the cache entries belong to. Seeding from a different
+    /// font clears the cache before use.
+    /// </summary>
+    private FontMetrics? metricsCacheOwner;
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="ShapingBuffer"/> class.
     /// </summary>
     /// <param name="textOptions">The text options.</param>
@@ -664,7 +682,7 @@ internal sealed class ShapingBuffer
             bool isVertical = AdvancedTypographicUtils.IsVerticalGlyph(codePoint, layoutMode)
                 || (source.AppliedFeatureMask & verticalMask) != 0;
 
-            FontGlyphMetrics glyphMetrics = fontMetrics.GetGlyphMetrics(codePoint, id, textAttributes, textDecorations, layoutMode, colorFontSupport);
+            FontGlyphMetrics glyphMetrics = this.GetGlyphMetricsCached(fontMetrics, codePoint, id, textAttributes, textDecorations, layoutMode, colorFontSupport);
 
             if (glyphMetrics.GlyphType == GlyphType.Fallback && !CodePoint.IsControl(codePoint))
             {
@@ -732,7 +750,7 @@ internal sealed class ShapingBuffer
                     bool isVertical = AdvancedTypographicUtils.IsVerticalGlyph(codePoint, layoutMode)
                         || (shape.AppliedFeatureMask & verticalMask) != 0;
 
-                    FontGlyphMetrics glyphMetrics = fontMetrics.GetGlyphMetrics(codePoint, id, textAttributes, textDecorations, layoutMode, colorFontSupport);
+                    FontGlyphMetrics glyphMetrics = this.GetGlyphMetricsCached(fontMetrics, codePoint, id, textAttributes, textDecorations, layoutMode, colorFontSupport);
 
                     // If the glyphs are fallbacks we don't want them as
                     // we've already captured them on the first run.
@@ -770,6 +788,55 @@ internal sealed class ShapingBuffer
         }
 
         return !hasFallBacks;
+    }
+
+    /// <summary>
+    /// Resolves glyph metrics through a direct-mapped cache in front of the font's own
+    /// resolver. The tag packs the same key fields the font's cache hashes, so a hit
+    /// replaces a dictionary probe with one load and one compare. No synchronization is
+    /// needed: a pooled buffer is exclusively owned for the duration of a shaping pass.
+    /// </summary>
+    /// <param name="fontMetrics">The font metrics to resolve against.</param>
+    /// <param name="codePoint">The code point represented by the glyph.</param>
+    /// <param name="glyphId">The glyph id.</param>
+    /// <param name="textAttributes">The text attributes applied to the glyph.</param>
+    /// <param name="textDecorations">The text decorations applied to the glyph.</param>
+    /// <param name="layoutMode">The layout mode.</param>
+    /// <param name="colorFontSupport">The color font support level.</param>
+    /// <returns>The resolved <see cref="FontGlyphMetrics"/>.</returns>
+    private FontGlyphMetrics GetGlyphMetricsCached(
+        FontMetrics fontMetrics,
+        CodePoint codePoint,
+        ushort glyphId,
+        TextAttributes textAttributes,
+        TextDecorations textDecorations,
+        LayoutMode layoutMode,
+        ColorFontSupport colorFontSupport)
+    {
+        if (!ReferenceEquals(this.metricsCacheOwner, fontMetrics))
+        {
+            Array.Clear(this.metricsCacheTags);
+            this.metricsCacheOwner = fontMetrics;
+        }
+
+        bool isVertical = AdvancedTypographicUtils.IsVerticalGlyph(codePoint, layoutMode);
+        ulong tag = (1UL << 63)
+            | (uint)codePoint.Value
+            | ((ulong)glyphId << 21)
+            | ((ulong)(uint)textAttributes << 37)
+            | ((ulong)(uint)colorFontSupport << 45)
+            | ((isVertical ? 1UL : 0UL) << 49);
+
+        int slot = glyphId & 0xFF;
+        if (this.metricsCacheTags[slot] == tag)
+        {
+            return this.metricsCacheValues[slot]!;
+        }
+
+        FontGlyphMetrics glyphMetrics = fontMetrics.GetGlyphMetrics(codePoint, glyphId, textAttributes, textDecorations, layoutMode, colorFontSupport);
+        this.metricsCacheTags[slot] = tag;
+        this.metricsCacheValues[slot] = glyphMetrics;
+        return glyphMetrics;
     }
 
     /// <summary>

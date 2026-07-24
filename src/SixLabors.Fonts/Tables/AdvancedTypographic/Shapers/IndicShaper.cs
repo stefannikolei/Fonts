@@ -2,6 +2,7 @@
 // Licensed under the Six Labors Split License.
 
 using System.Globalization;
+using SixLabors.Fonts.Tables.AdvancedTypographic.GSub;
 using SixLabors.Fonts.Unicode;
 using SixLabors.Fonts.Unicode.Resources;
 using UnicodeTrieGenerator.StateAutomation;
@@ -87,9 +88,6 @@ internal sealed class IndicShaper : DefaultShaper
     /// <summary>Dotted circle code point (U+25CC) used as a placeholder base.</summary>
     private const int DottedCircle = 0x25cc;
 
-    /// <summary>The text options.</summary>
-    private readonly TextOptions textOptions;
-
     /// <summary>The font metrics used for glyph lookups.</summary>
     private readonly FontMetrics fontMetrics;
 
@@ -98,6 +96,12 @@ internal sealed class IndicShaper : DefaultShaper
 
     /// <summary>Whether this font uses old-spec Indic script tags.</summary>
     private readonly bool isOldSpec;
+
+    /// <summary>
+    /// Whether feature probes disallow matching context outside the probed glyph
+    /// sequence. New-spec scripts other than Malayalam match with zero context.
+    /// </summary>
+    private readonly bool zeroContext;
 
     /// <summary>Whether any broken clusters were detected during syllable setup.</summary>
     private bool hasBrokenClusters;
@@ -112,7 +116,6 @@ internal sealed class IndicShaper : DefaultShaper
     public IndicShaper(ScriptClass script, Tag unicodeScriptTag, TextOptions textOptions, FontMetrics fontMetrics)
         : base(script, MarkZeroingMode.None, textOptions)
     {
-        this.textOptions = textOptions;
         this.fontMetrics = fontMetrics;
 
         if (IndicConfigurations.TryGetValue(script, out ShapingConfiguration value))
@@ -125,6 +128,7 @@ internal sealed class IndicShaper : DefaultShaper
         }
 
         this.isOldSpec = this.indicConfiguration.HasOldSpec && !unicodeScriptTag.ToString().EndsWith("2", StringComparison.OrdinalIgnoreCase);
+        this.zeroContext = !this.isOldSpec && script != ScriptClass.Malayalam;
     }
 
     /// <inheritdoc />
@@ -322,13 +326,10 @@ internal sealed class IndicShaper : DefaultShaper
             return;
         }
 
-        // Create a reusable temporary substitution buffer and probe span to allow checking whether
-        // certain combinations will be substituted. The probe buffer MUST share the
-        // pass's feature map: the probed glyphs are copies of real glyphs whose feature
-        // masks were assigned by it, and a private map would resolve the probed feature
-        // to a different bit, turning the enable into a no-op.
-        ShapingBuffer tempCollection = new(this.textOptions, buffer.FeatureMap, ShapingBufferRole.Substitution);
-        Span<GlyphShapingData> tempBuffer = new GlyphShapingData[3];
+        // Reusable glyph id span for feature probes. Hoisted out of the syllable loop
+        // because a stack allocation inside the loop body would grow the stack once
+        // per syllable for the lifetime of the call.
+        Span<ushort> probeGlyphs = stackalloc ushort[3];
 
         ShapingConfiguration indicConfiguration = this.indicConfiguration;
         FontMetrics fontMetrics = this.fontMetrics;
@@ -342,17 +343,7 @@ internal sealed class IndicShaper : DefaultShaper
 
                 if (data.Syllable.IndicPosition == Positions.Base_C)
                 {
-                    GlyphShapingData virama = new(data, false)
-                    {
-                        GlyphId = viramaId,
-                        CodePoint = viramaPoint
-                    };
-
-                    tempBuffer[2] = virama;
-                    tempBuffer[1] = data;
-                    tempBuffer[0] = virama;
-
-                    data.Syllable.IndicPosition = this.ConsonantPosition(tempCollection, tempBuffer);
+                    data.Syllable.IndicPosition = this.ConsonantPosition(buffer, viramaId, data.GlyphId);
                 }
             }
         }
@@ -437,12 +428,12 @@ internal sealed class IndicShaper : DefaultShaper
                  (indicConfiguration.RephMode == RephMode.Explicit && buffer[start + 2].Syllable.IndicCategory == Categories.ZWJ)))
             {
                 // See if it matches the 'rphf' feature.
-                tempBuffer[2] = buffer[start + 2];
-                tempBuffer[1] = buffer[start + 1];
-                tempBuffer[0] = buffer[start];
+                probeGlyphs[0] = buffer[start].GlyphId;
+                probeGlyphs[1] = buffer[start + 1].GlyphId;
+                probeGlyphs[2] = buffer[start + 2].GlyphId;
 
-                if ((indicConfiguration.RephMode == RephMode.Explicit && this.WouldSubstitute(tempCollection, in RphfTag, tempBuffer)) ||
-                    this.WouldSubstitute(tempCollection, in RphfTag, tempBuffer[..2]))
+                if ((indicConfiguration.RephMode == RephMode.Explicit && this.WouldSubstitute(buffer, in RphfTag, probeGlyphs)) ||
+                    this.WouldSubstitute(buffer, in RphfTag, probeGlyphs[..2]))
                 {
                     limit += 2;
                     while (limit < end && IsJoiner(ref buffer[limit]))
@@ -836,9 +827,9 @@ internal sealed class IndicShaper : DefaultShaper
                 // Find a Halant,Ra sequence and mark it for pre-base reordering processing.
                 for (int i = basePosition + 1; i + prefLen - 1 < end; i++)
                 {
-                    tempBuffer[1] = buffer[i + 1];
-                    tempBuffer[0] = buffer[i];
-                    if (this.WouldSubstitute(tempCollection, in PrefTag, tempBuffer[..2]))
+                    probeGlyphs[0] = buffer[i].GlyphId;
+                    probeGlyphs[1] = buffer[i + 1].GlyphId;
+                    if (this.WouldSubstitute(buffer, in PrefTag, probeGlyphs[..2]))
                     {
                         for (int j = 0; j < prefLen; j++)
                         {
@@ -898,28 +889,37 @@ internal sealed class IndicShaper : DefaultShaper
     }
 
     /// <summary>
-    /// Determines the positional class of a consonant by testing whether it would be
-    /// substituted by below-base, post-base, or pre-base features.
+    /// Determines the positional class of a consonant by testing whether the
+    /// virama-consonant and consonant-virama pairs would be substituted by the
+    /// below-base, vattu, post-base, or pre-base forming features.
     /// </summary>
-    /// <param name="buffer">A temporary substitution buffer for testing.</param>
-    /// <param name="data">The consonant and virama glyph data to test.</param>
+    /// <param name="buffer">The glyph shaping buffer providing the language tags.</param>
+    /// <param name="virama">The virama glyph id.</param>
+    /// <param name="consonant">The consonant glyph id.</param>
     /// <returns>The consonant's positional class.</returns>
-    private Positions ConsonantPosition(ShapingBuffer buffer, ReadOnlySpan<GlyphShapingData> data)
+    private Positions ConsonantPosition(ShapingBuffer buffer, ushort virama, ushort consonant)
     {
-        if (this.WouldSubstitute(buffer, in BlwfTag, data[..2]) ||
-            this.WouldSubstitute(buffer, in BlwfTag, data.Slice(1, 2)))
+        Span<ushort> glyphs = stackalloc ushort[3];
+        glyphs[0] = virama;
+        glyphs[1] = consonant;
+        glyphs[2] = virama;
+
+        if (this.WouldSubstitute(buffer, in BlwfTag, glyphs[..2]) ||
+            this.WouldSubstitute(buffer, in BlwfTag, glyphs.Slice(1, 2)) ||
+            this.WouldSubstitute(buffer, in VatuTag, glyphs[..2]) ||
+            this.WouldSubstitute(buffer, in VatuTag, glyphs.Slice(1, 2)))
         {
             return Positions.Below_C;
         }
 
-        if (this.WouldSubstitute(buffer, in PstfTag, data[..2]) ||
-            this.WouldSubstitute(buffer, in PstfTag, data.Slice(1, 2)))
+        if (this.WouldSubstitute(buffer, in PstfTag, glyphs[..2]) ||
+            this.WouldSubstitute(buffer, in PstfTag, glyphs.Slice(1, 2)))
         {
             return Positions.Post_C;
         }
 
-        if (this.WouldSubstitute(buffer, in PrefTag, data[..2]) ||
-            this.WouldSubstitute(buffer, in PrefTag, data.Slice(1, 2)))
+        if (this.WouldSubstitute(buffer, in PrefTag, glyphs[..2]) ||
+            this.WouldSubstitute(buffer, in PrefTag, glyphs.Slice(1, 2)))
         {
             return Positions.Post_C;
         }
@@ -928,51 +928,28 @@ internal sealed class IndicShaper : DefaultShaper
     }
 
     /// <summary>
-    /// Tests whether applying a specific feature to the given glyphs would produce a substitution.
+    /// Tests whether applying a specific feature to the given glyph sequence would
+    /// produce a substitution, querying the feature's lookups directly without
+    /// running any substitution.
     /// </summary>
-    /// <param name="buffer">A temporary substitution buffer for testing.</param>
+    /// <param name="buffer">The glyph shaping buffer providing the language tags.</param>
     /// <param name="featureTag">The feature tag to test.</param>
-    /// <param name="glyphs">The glyph data to test.</param>
+    /// <param name="glyphs">The glyph id sequence to test.</param>
     /// <returns><see langword="true"/> if a substitution would occur.</returns>
-    private bool WouldSubstitute(ShapingBuffer buffer, in Tag featureTag, ReadOnlySpan<GlyphShapingData> glyphs)
+    private bool WouldSubstitute(ShapingBuffer buffer, in Tag featureTag, ReadOnlySpan<ushort> glyphs)
     {
-        buffer.Clear();
-        for (int i = 0; i < glyphs.Length; i++)
+        if (!this.fontMetrics.TryGetGSubTable(out GSubTable? gSubTable) ||
+            !gSubTable.TryGetFeatureLookups(this.fontMetrics, in featureTag, this.ScriptClass, buffer.LanguageTags, out List<(Tag Feature, ushort Index, LookupTable LookupTable)>? lookups))
         {
-            buffer.AddGlyph(glyphs[i], i);
-            buffer.EnableShapingFeature(i, featureTag);
+            return false;
         }
 
-        FontMetrics fontMetrics = this.fontMetrics;
-        if (fontMetrics.TryGetGSubTable(out GSubTable? gSubTable))
+        foreach ((Tag _, ushort _, LookupTable lookupTable) in lookups)
         {
-            const int index = 0;
-            SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, default, 0);
-            int initialCount = buffer.Count;
-            int collectionCount = initialCount;
-            int count = initialCount - index;
-            int i = index;
-
-            // Set max constraints to prevent OutOfMemoryException or infinite loops from attacks.
-            int maxCount = AdvancedTypographicUtils.GetMaxAllowableShapingCollectionCount(buffer.Count);
-            int maxOperationsCount = AdvancedTypographicUtils.GetMaxAllowableShapingOperationsCount(buffer.Count);
-            int currentOperations = 0;
-
-            gSubTable.ApplyFeature(
-                fontMetrics,
-                buffer,
-                ref iterator,
-                in featureTag,
-                this.ScriptClass,
-                index,
-                ref count,
-                ref i,
-                ref collectionCount,
-                maxCount,
-                maxOperationsCount,
-                ref currentOperations);
-
-            return buffer.Count != initialCount;
+            if (lookupTable.WouldApply(glyphs, this.zeroContext))
+            {
+                return true;
+            }
         }
 
         return false;

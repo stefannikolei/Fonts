@@ -140,6 +140,47 @@ internal sealed class LookupType6Format1SubTable : LookupSubTable
 
         return false;
     }
+
+    /// <inheritdoc />
+    public override bool WouldApply(ReadOnlySpan<ushort> glyphs, bool zeroContext)
+    {
+        int offset = this.coverageTable.CoverageIndexOf(glyphs[0]);
+        if (offset < 0 || offset >= this.seqRuleSetTables.Length)
+        {
+            return false;
+        }
+
+        foreach (ChainedSequenceRuleTable rule in this.seqRuleSetTables[offset].SequenceRuleTables)
+        {
+            if (zeroContext && (rule.BacktrackSequence.Length != 0 || rule.LookaheadSequence.Length != 0))
+            {
+                continue;
+            }
+
+            ushort[] input = rule.InputSequence;
+            if (input.Length + 1 != glyphs.Length)
+            {
+                continue;
+            }
+
+            bool matched = true;
+            for (int i = 0; i < input.Length; i++)
+            {
+                if (glyphs[i + 1] != input[i])
+                {
+                    matched = false;
+                    break;
+                }
+            }
+
+            if (matched)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }
 
 /// <summary>
@@ -289,6 +330,51 @@ internal sealed class LookupType6Format2SubTable : LookupSubTable
 
         return false;
     }
+
+    /// <inheritdoc />
+    public override bool WouldApply(ReadOnlySpan<ushort> glyphs, bool zeroContext)
+    {
+        int classId = this.inputClassDefinitionTable.ClassIndexOf(glyphs[0]);
+        ChainedClassSequenceRuleTable[]? rules = classId >= 0 && classId < this.sequenceRuleSetTables.Length
+            ? this.sequenceRuleSetTables[classId]?.SubRules
+            : null;
+
+        if (rules is null)
+        {
+            return false;
+        }
+
+        foreach (ChainedClassSequenceRuleTable rule in rules)
+        {
+            if (zeroContext && (rule.BacktrackSequence.Length != 0 || rule.LookaheadSequence.Length != 0))
+            {
+                continue;
+            }
+
+            ushort[] input = rule.InputSequence;
+            if (input.Length + 1 != glyphs.Length)
+            {
+                continue;
+            }
+
+            bool matched = true;
+            for (int i = 0; i < input.Length; i++)
+            {
+                if (this.inputClassDefinitionTable.ClassIndexOf(glyphs[i + 1]) != input[i])
+                {
+                    matched = false;
+                    break;
+                }
+            }
+
+            if (matched)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }
 
 /// <summary>
@@ -422,5 +508,30 @@ internal sealed class LookupType6Format3SubTable : LookupSubTable
             buffer,
             index,
             count);
+    }
+
+    /// <inheritdoc />
+    public override bool WouldApply(ReadOnlySpan<ushort> glyphs, bool zeroContext)
+    {
+        if (zeroContext && (this.backtrackCoverageTables.Length != 0 || this.lookaheadCoverageTables.Length != 0))
+        {
+            return false;
+        }
+
+        CoverageTable[] coverages = this.inputCoverageTables;
+        if (coverages.Length != glyphs.Length)
+        {
+            return false;
+        }
+
+        for (int i = 1; i < glyphs.Length; i++)
+        {
+            if (coverages[i].CoverageIndexOf(glyphs[i]) < 0)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

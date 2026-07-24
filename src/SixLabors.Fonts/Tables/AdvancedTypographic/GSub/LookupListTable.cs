@@ -233,6 +233,37 @@ internal sealed class LookupTable
     }
 
     /// <summary>
+    /// Tests whether this lookup would trigger a substitution on the given glyph
+    /// sequence without applying it. Shapers use this to probe a feature's effect
+    /// while classifying glyphs, before any real substitution runs.
+    /// </summary>
+    /// <param name="glyphs">The glyph id sequence to query.</param>
+    /// <param name="zeroContext">Whether matching against context outside the sequence is disallowed.</param>
+    /// <returns><see langword="true"/> if a substitution would be triggered.</returns>
+    public bool WouldApply(ReadOnlySpan<ushort> glyphs, bool zeroContext)
+    {
+        if (glyphs.Length == 0 || !this.Digest.MightContain(glyphs[0]))
+        {
+            return false;
+        }
+
+        foreach (LookupSubTable subTable in this.LookupSubTables)
+        {
+            if (!subTable.Digest.MightContain(glyphs[0]))
+            {
+                continue;
+            }
+
+            if (subTable.WouldApply(glyphs, zeroContext))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Loads a lookup subtable based on the lookup type.
     /// </summary>
     /// <param name="lookupType">The lookup type identifying the kind of substitution.</param>
@@ -320,4 +351,15 @@ internal abstract class LookupSubTable
         Tag feature,
         int index,
         int count);
+
+    /// <summary>
+    /// Tests whether this subtable would trigger a substitution on the given glyph
+    /// sequence without applying it. The first glyph anchors the match and the
+    /// sequence length must account for every matched glyph; context outside the
+    /// sequence is consulted only when <paramref name="zeroContext"/> permits it.
+    /// </summary>
+    /// <param name="glyphs">The glyph id sequence to query.</param>
+    /// <param name="zeroContext">Whether matching against context outside the sequence is disallowed.</param>
+    /// <returns><see langword="true"/> if a substitution would be triggered.</returns>
+    public abstract bool WouldApply(ReadOnlySpan<ushort> glyphs, bool zeroContext);
 }

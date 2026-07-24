@@ -119,6 +119,10 @@ internal sealed class LookupType1Format1SubTable : LookupSubTable
 
         return false;
     }
+
+    /// <inheritdoc />
+    public override bool WouldApply(ReadOnlySpan<ushort> glyphs, bool zeroContext)
+        => glyphs.Length == 1 && this.coverageTable.CoverageIndexOf(glyphs[0]) > -1;
 }
 
 /// <summary>
@@ -211,4 +215,8 @@ internal sealed class LookupType1Format2SubTable : LookupSubTable
 
         return false;
     }
+
+    /// <inheritdoc />
+    public override bool WouldApply(ReadOnlySpan<ushort> glyphs, bool zeroContext)
+        => glyphs.Length == 1 && this.coverageTable.CoverageIndexOf(glyphs[0]) > -1;
 }

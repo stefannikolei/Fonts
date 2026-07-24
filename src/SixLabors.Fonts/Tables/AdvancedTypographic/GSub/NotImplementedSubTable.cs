@@ -26,4 +26,8 @@ internal class NotImplementedSubTable : LookupSubTable
         int index,
         int count)
         => false;
+
+    /// <inheritdoc />
+    public override bool WouldApply(ReadOnlySpan<ushort> glyphs, bool zeroContext)
+        => false;
 }

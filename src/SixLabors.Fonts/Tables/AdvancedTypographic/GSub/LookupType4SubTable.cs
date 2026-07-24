@@ -296,6 +296,42 @@ internal sealed class LookupType4Format1SubTable : LookupSubTable
         return false;
     }
 
+    /// <inheritdoc />
+    public override bool WouldApply(ReadOnlySpan<ushort> glyphs, bool zeroContext)
+    {
+        int offset = this.coverageTable.CoverageIndexOf(glyphs[0]);
+        if (offset < 0 || offset >= this.ligatureSetTables.Length)
+        {
+            return false;
+        }
+
+        foreach (LigatureTable ligature in this.ligatureSetTables[offset].Ligatures)
+        {
+            ushort[] components = ligature.ComponentGlyphs;
+            if (components.Length + 1 != glyphs.Length)
+            {
+                continue;
+            }
+
+            bool matched = true;
+            for (int i = 0; i < components.Length; i++)
+            {
+                if (glyphs[i + 1] != components[i])
+                {
+                    matched = false;
+                    break;
+                }
+            }
+
+            if (matched)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>
     /// Represents a ligature set table containing an array of ligature tables
     /// for a single first-component glyph, ordered by preference.

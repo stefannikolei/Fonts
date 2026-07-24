@@ -144,6 +144,10 @@ internal sealed class LookupType2Format1SubTable : LookupSubTable
         return false;
     }
 
+    /// <inheritdoc />
+    public override bool WouldApply(ReadOnlySpan<ushort> glyphs, bool zeroContext)
+        => glyphs.Length == 1 && this.coverageTable.CoverageIndexOf(glyphs[0]) > -1;
+
     /// <summary>
     /// Represents a sequence table containing an ordered list of substitute glyph IDs
     /// that replace a single input glyph.

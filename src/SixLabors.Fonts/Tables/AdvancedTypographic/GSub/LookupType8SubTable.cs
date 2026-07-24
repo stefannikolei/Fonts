@@ -201,4 +201,8 @@ internal sealed class LookupType8Format1SubTable : LookupSubTable
 
         return hasChanged;
     }
+
+    /// <inheritdoc />
+    public override bool WouldApply(ReadOnlySpan<ushort> glyphs, bool zeroContext)
+        => glyphs.Length == 1 && this.coverageTable.CoverageIndexOf(glyphs[0]) > -1;
 }

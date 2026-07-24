@@ -37,6 +37,20 @@ internal readonly struct ShapingStage : IEquatable<ShapingStage>
     public Tag FeatureTag { get; }
 
     /// <summary>
+    /// Gets a value indicating whether this stage runs an action before its feature.
+    /// A pre action opens a new application group: every lookup registered by earlier
+    /// stages must have applied before the action runs.
+    /// </summary>
+    public bool HasPreAction => this.preAction is not null;
+
+    /// <summary>
+    /// Gets a value indicating whether this stage runs an action after its feature.
+    /// A post action closes its application group: the group's lookups must all have
+    /// applied before the action runs.
+    /// </summary>
+    public bool HasPostAction => this.postAction is not null;
+
+    /// <summary>
     /// Invokes the pre-processing action for this shaping stage, if one was provided.
     /// </summary>
     /// <param name="buffer">The glyph shaping buffer.</param>

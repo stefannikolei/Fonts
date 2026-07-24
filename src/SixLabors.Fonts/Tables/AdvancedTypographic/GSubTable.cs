@@ -209,13 +209,22 @@ internal class GSubTable : Table
             i += delta;
             count += delta;
 
+            // Stages are applied in pause-delimited groups: a stage action is a
+            // synchronization point, and between two actions every registered
+            // feature's lookups apply together in lookup-list order, the order the
+            // specification defines for lookups within a single application pass. A
+            // lookup registered by several of the group's features applies once with
+            // their glyph masks combined.
             List<ShapingStage> stages = shaper.GetShapingStages();
             SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, default, 0);
-            foreach (ShapingStage stage in stages)
+            List<(Tag Feature, ushort Index, LookupTable LookupTable, ulong Mask)> merged = buffer.GSubLookupScratch;
+
+            int stageIndex = 0;
+            while (stageIndex < stages.Count)
             {
                 collectionCount = buffer.Count;
                 var preProbe = ShapingProbe.Enter();
-                stage.PreProcessFeature(buffer, index, count);
+                stages[stageIndex].PreProcessFeature(buffer, index, count);
                 ShapingProbe.Exit(ShapingProbe.SubStagePrePost, preProbe);
 
                 // Account for substitutions changing the length of the buffer.
@@ -223,15 +232,69 @@ internal class GSubTable : Table
                 count += delta;
                 i += delta;
 
-                Tag featureTag = stage.FeatureTag;
+                // Extend the group while its interior holds no actions: a post action
+                // closes the group after its stage and a pre action opens a new one.
+                int groupEnd = stageIndex;
+                while (true)
+                {
+                    groupEnd++;
+                    if (stages[groupEnd - 1].HasPostAction || groupEnd >= stages.Count || stages[groupEnd].HasPreAction)
+                    {
+                        break;
+                    }
+                }
+
+                // Merge the group's lookups into lookup-index order. Insertion keeps
+                // the scratch sorted; a lookup already present from another feature
+                // gains that feature's mask instead of a second entry.
+                merged.Clear();
+                for (int s = stageIndex; s < groupEnd; s++)
+                {
+                    Tag featureTag = stages[s].FeatureTag;
+                    var lookupProbe = ShapingProbe.Enter();
+                    bool found = this.TryGetFeatureLookups(fontMetrics, in featureTag, current, buffer.LanguageTags, out List<(Tag Feature, ushort Index, LookupTable LookupTable)>? lookups);
+                    ShapingProbe.Exit(ShapingProbe.LookupResolve, lookupProbe);
+                    if (!found || lookups is null)
+                    {
+                        continue;
+                    }
+
+                    ulong mask = buffer.FeatureMap.GetMask(featureTag);
+                    foreach ((Tag Feature, ushort Index, LookupTable LookupTable) featureLookup in lookups)
+                    {
+                        int insertAt = merged.Count;
+                        bool alreadyMerged = false;
+                        while (insertAt > 0)
+                        {
+                            (Tag Feature, ushort Index, LookupTable LookupTable, ulong Mask) prior = merged[insertAt - 1];
+                            if (prior.Index == featureLookup.Index)
+                            {
+                                merged[insertAt - 1] = (prior.Feature, prior.Index, prior.LookupTable, prior.Mask | mask);
+                                alreadyMerged = true;
+                                break;
+                            }
+
+                            if (prior.Index < featureLookup.Index)
+                            {
+                                break;
+                            }
+
+                            insertAt--;
+                        }
+
+                        if (!alreadyMerged)
+                        {
+                            merged.Insert(insertAt, (featureLookup.Feature, featureLookup.Index, featureLookup.LookupTable, mask));
+                        }
+                    }
+                }
 
                 var applyProbe = ShapingProbe.Enter();
-                this.ApplyFeature(
+                this.ApplyMergedLookups(
                     fontMetrics,
                     buffer,
                     ref iterator,
-                    in featureTag,
-                    current,
+                    merged,
                     index,
                     ref count,
                     ref i,
@@ -243,25 +306,28 @@ internal class GSubTable : Table
 
                 collectionCount = buffer.Count;
                 var postProbe = ShapingProbe.Enter();
-                stage.PostProcessFeature(buffer, index, count);
+                stages[groupEnd - 1].PostProcessFeature(buffer, index, count);
                 ShapingProbe.Exit(ShapingProbe.SubStagePrePost, postProbe);
 
                 // Account for substitutions changing the length of the buffer.
                 delta = buffer.Count - collectionCount;
                 count += delta;
                 i += delta;
+
+                stageIndex = groupEnd;
             }
         }
     }
 
     /// <summary>
-    /// Applies a specific feature's lookups to the glyph substitution buffer.
+    /// Applies a stage group's merged lookups to the glyph substitution buffer in
+    /// lookup-index order. Each entry's mask combines every group feature that
+    /// registered the lookup, so the per-glyph gate stays a single bitwise AND.
     /// </summary>
     /// <param name="fontMetrics">The font metrics.</param>
     /// <param name="buffer">The glyph substitution buffer.</param>
     /// <param name="iterator">The skipping glyph iterator.</param>
-    /// <param name="featureTag">The feature tag to apply.</param>
-    /// <param name="current">The current script class.</param>
+    /// <param name="merged">The group's lookups, sorted by lookup index.</param>
     /// <param name="index">The starting index in the buffer.</param>
     /// <param name="count">The number of glyphs to process (updated by substitutions).</param>
     /// <param name="i">The outer loop index (updated by substitutions).</param>
@@ -269,12 +335,11 @@ internal class GSubTable : Table
     /// <param name="maxCount">The maximum allowable buffer count.</param>
     /// <param name="maxOperationsCount">The maximum allowable operations count.</param>
     /// <param name="currentOperations">The current operations counter.</param>
-    internal void ApplyFeature(
+    private void ApplyMergedLookups(
         FontMetrics fontMetrics,
         ShapingBuffer buffer,
         ref SkippingGlyphIterator iterator,
-        in Tag featureTag,
-        ScriptClass current,
+        List<(Tag Feature, ushort Index, LookupTable LookupTable, ulong Mask)> merged,
         int index,
         ref int count,
         ref int i,
@@ -283,81 +348,70 @@ internal class GSubTable : Table
         int maxOperationsCount,
         ref int currentOperations)
     {
-        var lookupProbe = ShapingProbe.Enter();
-        bool found = this.TryGetFeatureLookups(fontMetrics, in featureTag, current, buffer.LanguageTags, out List<(Tag Feature, ushort Index, LookupTable LookupTable)>? lookups);
-        ShapingProbe.Exit(ShapingProbe.LookupResolve, lookupProbe);
-        if (found && lookups is not null)
+        for (int m = 0; m < merged.Count; m++)
         {
-            // Apply features in order.
-            foreach ((Tag Feature, ushort Index, LookupTable LookupTable) featureLookup in lookups)
-            {
-                Tag feature = featureLookup.Feature;
+            (Tag feature, ushort _, LookupTable featureLookupTable, ulong featureMask) = merged[m];
 
-                // Skip the whole lookup when its coverage cannot intersect any glyph id
-                // the buffer has ever contained; most fonts carry many lookups for
-                // glyphs a given text never produces.
+            // Skip the whole lookup when its coverage cannot intersect any glyph id
+            // the buffer has ever contained; most fonts carry many lookups for
+            // glyphs a given text never produces.
+            if (ShapingProbe.Enabled)
+            {
+                ShapingProbe.LookupsConsidered++;
+            }
+
+            if (!featureLookupTable.Digest.MightIntersect(buffer.GlyphDigest))
+            {
                 if (ShapingProbe.Enabled)
                 {
-                    ShapingProbe.LookupsConsidered++;
+                    ShapingProbe.LookupsSkippedByDigest++;
                 }
 
-                if (!featureLookup.LookupTable.Digest.MightIntersect(buffer.GlyphDigest))
-                {
-                    if (ShapingProbe.Enabled)
-                    {
-                        ShapingProbe.LookupsSkippedByDigest++;
-                    }
+                continue;
+            }
 
+            iterator.Reset(index, featureLookupTable.LookupFlags, featureLookupTable.MarkFilteringSet);
+            long featureStart = ShapingProbe.Timestamp();
+            long featureApplies = 0;
+
+            while (iterator.Index < index + count)
+            {
+                if (buffer.Count >= maxCount || currentOperations++ >= maxOperationsCount)
+                {
+                    return;
+                }
+
+                if (ShapingProbe.Enabled)
+                {
+                    ShapingProbe.GlyphGateChecks++;
+                }
+
+                // The digest cheaply rejects glyphs no subtable of this lookup can
+                // affect; a maybe falls through to the exact coverage test inside.
+                ref GlyphShapingData glyphData = ref buffer[iterator.Index];
+                if ((glyphData.FeatureMask & featureMask) == 0 || !featureLookupTable.Digest.MightContain(glyphData.GlyphId))
+                {
+                    iterator.Next();
                     continue;
                 }
 
-                // Resolve the feature's mask bit once per lookup; the per-glyph gate
-                // below is then a single bitwise AND against the glyph's enabled mask.
-                ulong featureMask = buffer.FeatureMap.GetMask(feature);
-                LookupTable featureLookupTable = featureLookup.LookupTable;
-                iterator.Reset(index, featureLookupTable.LookupFlags, featureLookupTable.MarkFilteringSet);
-                long featureStart = ShapingProbe.Timestamp();
-                long featureApplies = 0;
-
-                while (iterator.Index < index + count)
+                if (ShapingProbe.Enabled)
                 {
-                    if (buffer.Count >= maxCount || currentOperations++ >= maxOperationsCount)
-                    {
-                        return;
-                    }
-
-                    if (ShapingProbe.Enabled)
-                    {
-                        ShapingProbe.GlyphGateChecks++;
-                    }
-
-                    // The digest cheaply rejects glyphs no subtable of this lookup can
-                    // affect; a maybe falls through to the exact coverage test inside.
-                    ref GlyphShapingData glyphData = ref buffer[iterator.Index];
-                    if ((glyphData.FeatureMask & featureMask) == 0 || !featureLookupTable.Digest.MightContain(glyphData.GlyphId))
-                    {
-                        iterator.Next();
-                        continue;
-                    }
-
-                    if (ShapingProbe.Enabled)
-                    {
-                        ShapingProbe.SubstitutionAttempts++;
-                    }
-
-                    collectionCount = buffer.Count;
-                    featureLookup.LookupTable.TrySubstitution(fontMetrics, this, buffer, featureLookup.Feature, iterator.Index, count - (iterator.Index - index));
-                    featureApplies++;
-                    iterator.Next();
-
-                    // Account for substitutions changing the length of the buffer.
-                    int delta = buffer.Count - collectionCount;
-                    count += delta;
-                    i += delta;
+                    ShapingProbe.SubstitutionAttempts++;
                 }
 
-                ShapingProbe.ExitFeature("GSUB", feature, featureStart, featureApplies);
+                collectionCount = buffer.Count;
+                featureLookupTable.TrySubstitution(fontMetrics, this, buffer, feature, iterator.Index, count - (iterator.Index - index));
+                featureApplies++;
+                iterator.Next();
+
+                // Account for substitutions changing the length of the buffer.
+                int delta = buffer.Count - collectionCount;
+                count += delta;
+                i += delta;
             }
+
+            ShapingProbe.ExitFeature("GSUB", feature, featureStart, featureApplies);
         }
     }
 

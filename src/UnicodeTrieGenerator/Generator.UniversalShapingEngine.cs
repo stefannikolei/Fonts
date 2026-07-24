@@ -730,7 +730,7 @@ public static partial class Generator
         // Write the decompositions
         if (decompositions != null)
         {
-            writer.WriteLine("        public static Dictionary<int, int[]> Decompositions => new()");
+            writer.WriteLine("        public static Dictionary<int, int[]> Decompositions { get; } = new()");
             writer.WriteLine("        {");
 
             counter = 0;

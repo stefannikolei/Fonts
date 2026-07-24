@@ -49,6 +49,13 @@ internal sealed class UniversalShaper : DefaultShaper
         new(UniversalShapingData.StateTable, UniversalShapingData.AcceptingStates, UniversalShapingData.Tags);
 
     /// <summary>
+    /// The syllable type for each machine state, translated from the tag rows once so
+    /// match handling never maps rule name strings.
+    /// </summary>
+    private static readonly SyllableType[] StateSyllableTypes =
+        SyllableTypeMap.FromMachineTags(UniversalShapingData.Tags);
+
+    /// <summary>
     /// The 'rphf' (reph forms) feature tag.
     /// </summary>
     private static readonly Tag RphfTag = Tag.Parse("rphf");
@@ -268,13 +275,14 @@ internal sealed class UniversalShaper : DefaultShaper
         }
 
         int syllable = 0;
-        foreach (StateMatch match in StateMachine.Match(values))
+        StateMachine.MatchEnumerator match = StateMachine.EnumerateMatches(values);
+        while (match.MoveNext())
         {
             ++syllable;
 
             // Create shaper info. The symbol index is stored directly: it is the value
             // the state machine consumes and the key into the generated name table.
-            SyllableType syllableType = SyllableTypeMap.FromTag(match.Tags[0]);
+            SyllableType syllableType = StateSyllableTypes[match.TagState];
             if (syllableType == SyllableType.BrokenCluster)
             {
                 this.hasBrokenClusters = true;

@@ -5,8 +5,8 @@ namespace SixLabors.Fonts.Tables.AdvancedTypographic;
 
 /// <summary>
 /// Maps state machine grammar rule names to <see cref="SyllableType"/> values. Invoked
-/// once per matched syllable at the state machine boundary, so per-glyph storage and
-/// comparison never touch the rule name strings.
+/// when a shaper translates its machine's tag rows into a per-state table, so match
+/// handling and per-glyph storage never touch the rule name strings.
 /// </summary>
 internal static class SyllableTypeMap
 {
@@ -34,4 +34,24 @@ internal static class SyllableTypeMap
         "vowel_syllable" => SyllableType.VowelSyllable,
         _ => SyllableType.Other,
     };
+
+    /// <summary>
+    /// Builds the per-state syllable type table for a machine's tag rows, translated
+    /// once at machine construction so match handling reads an array element instead
+    /// of mapping a rule name string per match. States without a tag map to
+    /// <see cref="SyllableType.None"/>.
+    /// </summary>
+    /// <param name="tags">The machine's per-state tag rows.</param>
+    /// <returns>The per-state <see cref="SyllableType"/> table.</returns>
+    public static SyllableType[] FromMachineTags(string[][] tags)
+    {
+        SyllableType[] types = new SyllableType[tags.Length];
+        for (int i = 0; i < tags.Length; i++)
+        {
+            string[] row = tags[i];
+            types[i] = row.Length > 0 ? FromTag(row[0]) : SyllableType.None;
+        }
+
+        return types;
+    }
 }

@@ -23,6 +23,13 @@ internal sealed class MyanmarShaper : DefaultShaper
             Unicode.Resources.MyanmarShapingData.Tags);
 
     /// <summary>
+    /// The syllable type for each machine state, translated from the tag rows once so
+    /// match handling never maps rule name strings.
+    /// </summary>
+    private static readonly SyllableType[] StateSyllableTypes =
+        SyllableTypeMap.FromMachineTags(Unicode.Resources.MyanmarShapingData.Tags);
+
+    /// <summary>
     /// Maps Myanmar shaping category codes to compact DFA symbol indices.
     /// </summary>
     private static readonly int[] CategoryToSymbolId = BuildCategoryToSymbolId();
@@ -154,7 +161,8 @@ internal sealed class MyanmarShaper : DefaultShaper
 
         int syllable = 0;
         int last = 0;
-        foreach (StateMatch match in StateMachine.Match(values))
+        StateMachine.MatchEnumerator match = StateMachine.EnumerateMatches(values);
+        while (match.MoveNext())
         {
             if (match.StartIndex > last)
             {
@@ -171,18 +179,17 @@ internal sealed class MyanmarShaper : DefaultShaper
 
             ++syllable;
 
+            SyllableType syllableType = StateSyllableTypes[match.TagState];
+            if (syllableType == SyllableType.BrokenCluster)
+            {
+                this.hasBrokenClusters = true;
+            }
+
             // Create shaper info.
             for (int i = match.StartIndex; i <= match.EndIndex; i++)
             {
                 ref GlyphShapingData data = ref buffer[i + index];
                 CodePoint codePoint = data.CodePoint;
-
-                SyllableType syllableType = SyllableTypeMap.FromTag(match.Tags[0]);
-
-                if (syllableType == SyllableType.BrokenCluster)
-                {
-                    this.hasBrokenClusters = true;
-                }
 
                 data.Syllable.IndicCategory = (Categories)IndicShapingCategory(codePoint);
                 data.Syllable.IndicPosition = (Positions)IndicShapingPosition(codePoint);

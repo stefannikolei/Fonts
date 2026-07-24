@@ -13,50 +13,78 @@ namespace SixLabors.Fonts.Tables.AdvancedTypographic.Shapers;
 /// </summary>
 internal sealed class MyanmarShaper : DefaultShaper
 {
-    /// <summary>The state machine for Myanmar syllable identification.</summary>
+    /// <summary>
+    /// The state machine for Myanmar syllable identification.
+    /// </summary>
     private static readonly StateMachine StateMachine =
         new(
             Unicode.Resources.MyanmarShapingData.StateTable,
             Unicode.Resources.MyanmarShapingData.AcceptingStates,
             Unicode.Resources.MyanmarShapingData.Tags);
 
-    /// <summary>Maps Myanmar shaping category codes to compact DFA symbol indices.</summary>
+    /// <summary>
+    /// Maps Myanmar shaping category codes to compact DFA symbol indices.
+    /// </summary>
     private static readonly int[] CategoryToSymbolId = BuildCategoryToSymbolId();
 
-    /// <summary>The 'rphf' (reph forms) feature tag.</summary>
+    /// <summary>
+    /// The 'rphf' (reph forms) feature tag.
+    /// </summary>
     private static readonly Tag RphfTag = Tag.Parse("rphf");
 
-    /// <summary>The 'pref' (pre-base forms) feature tag.</summary>
+    /// <summary>
+    /// The 'pref' (pre-base forms) feature tag.
+    /// </summary>
     private static readonly Tag PrefTag = Tag.Parse("pref");
 
-    /// <summary>The 'blwf' (below-base forms) feature tag.</summary>
+    /// <summary>
+    /// The 'blwf' (below-base forms) feature tag.
+    /// </summary>
     private static readonly Tag BlwfTag = Tag.Parse("blwf");
 
-    /// <summary>The 'pstf' (post-base forms) feature tag.</summary>
+    /// <summary>
+    /// The 'pstf' (post-base forms) feature tag.
+    /// </summary>
     private static readonly Tag PstfTag = Tag.Parse("pstf");
 
-    /// <summary>The 'pres' (pre-base substitutions) feature tag.</summary>
+    /// <summary>
+    /// The 'pres' (pre-base substitutions) feature tag.
+    /// </summary>
     private static readonly Tag PresTag = Tag.Parse("pres");
 
-    /// <summary>The 'abvs' (above-base substitutions) feature tag.</summary>
+    /// <summary>
+    /// The 'abvs' (above-base substitutions) feature tag.
+    /// </summary>
     private static readonly Tag AbvsTag = Tag.Parse("abvs");
 
-    /// <summary>The 'blws' (below-base substitutions) feature tag.</summary>
+    /// <summary>
+    /// The 'blws' (below-base substitutions) feature tag.
+    /// </summary>
     private static readonly Tag BlwsTag = Tag.Parse("blws");
 
-    /// <summary>The 'psts' (post-base substitutions) feature tag.</summary>
+    /// <summary>
+    /// The 'psts' (post-base substitutions) feature tag.
+    /// </summary>
     private static readonly Tag PstsTag = Tag.Parse("psts");
 
-    /// <summary>Dotted circle code point (U+25CC) used as a placeholder base.</summary>
+    /// <summary>
+    /// Dotted circle code point (U+25CC) used as a placeholder base.
+    /// </summary>
     private const int DottedCircle = 0x25cc;
 
-    /// <summary>The text options.</summary>
+    /// <summary>
+    /// The text options.
+    /// </summary>
     private readonly TextOptions textOptions;
 
-    /// <summary>The font metrics used for glyph lookups.</summary>
+    /// <summary>
+    /// The font metrics used for glyph lookups.
+    /// </summary>
     private readonly FontMetrics fontMetrics;
 
-    /// <summary>Whether any broken clusters were detected during syllable setup.</summary>
+    /// <summary>
+    /// Whether any broken clusters were detected during syllable setup.
+    /// </summary>
     private bool hasBrokenClusters;
 
     /// <summary>

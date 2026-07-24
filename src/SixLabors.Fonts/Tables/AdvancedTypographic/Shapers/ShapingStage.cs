@@ -12,10 +12,14 @@ namespace SixLabors.Fonts.Tables.AdvancedTypographic.Shapers;
 /// </remarks>
 internal readonly struct ShapingStage : IEquatable<ShapingStage>
 {
-    /// <summary>The optional action to invoke before the feature is applied.</summary>
+    /// <summary>
+    /// The optional action to invoke before the feature is applied.
+    /// </summary>
     private readonly Action<ShapingBuffer, int, int>? preAction;
 
-    /// <summary>The optional action to invoke after the feature is applied.</summary>
+    /// <summary>
+    /// The optional action to invoke after the feature is applied.
+    /// </summary>
     private readonly Action<ShapingBuffer, int, int>? postAction;
 
     /// <summary>

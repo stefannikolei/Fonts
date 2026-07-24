@@ -12,52 +12,84 @@ namespace SixLabors.Fonts.Tables.AdvancedTypographic.Shapers;
 /// </summary>
 internal sealed class ArabicShaper : DefaultShaper
 {
-    /// <summary>The 'mset' (mark positioning via substitution) feature tag.</summary>
+    /// <summary>
+    /// The 'mset' (mark positioning via substitution) feature tag.
+    /// </summary>
     private static readonly Tag MsetTag = Tag.Parse("mset");
 
-    /// <summary>The 'fina' (terminal forms) feature tag.</summary>
+    /// <summary>
+    /// The 'fina' (terminal forms) feature tag.
+    /// </summary>
     private static readonly Tag FinaTag = Tag.Parse("fina");
 
-    /// <summary>The 'fin2' (terminal forms #2) feature tag.</summary>
+    /// <summary>
+    /// The 'fin2' (terminal forms #2) feature tag.
+    /// </summary>
     private static readonly Tag Fin2Tag = Tag.Parse("fin2");
 
-    /// <summary>The 'fin3' (terminal forms #3) feature tag.</summary>
+    /// <summary>
+    /// The 'fin3' (terminal forms #3) feature tag.
+    /// </summary>
     private static readonly Tag Fin3Tag = Tag.Parse("fin3");
 
-    /// <summary>The 'isol' (isolated forms) feature tag.</summary>
+    /// <summary>
+    /// The 'isol' (isolated forms) feature tag.
+    /// </summary>
     private static readonly Tag IsolTag = Tag.Parse("isol");
 
-    /// <summary>The 'init' (initial forms) feature tag.</summary>
+    /// <summary>
+    /// The 'init' (initial forms) feature tag.
+    /// </summary>
     private static readonly Tag InitTag = Tag.Parse("init");
 
-    /// <summary>The 'medi' (medial forms) feature tag.</summary>
+    /// <summary>
+    /// The 'medi' (medial forms) feature tag.
+    /// </summary>
     private static readonly Tag MediTag = Tag.Parse("medi");
 
-    /// <summary>The 'med2' (medial forms #2) feature tag.</summary>
+    /// <summary>
+    /// The 'med2' (medial forms #2) feature tag.
+    /// </summary>
     private static readonly Tag Med2Tag = Tag.Parse("med2");
 
-    /// <summary>No joining action.</summary>
+    /// <summary>
+    /// No joining action.
+    /// </summary>
     private const byte None = 0;
 
-    /// <summary>Isolated form action.</summary>
+    /// <summary>
+    /// Isolated form action.
+    /// </summary>
     private const byte Isol = 1;
 
-    /// <summary>Final form action.</summary>
+    /// <summary>
+    /// Final form action.
+    /// </summary>
     private const byte Fina = 2;
 
-    /// <summary>Final form #2 action (for ALAPH).</summary>
+    /// <summary>
+    /// Final form #2 action (for ALAPH).
+    /// </summary>
     private const byte Fin2 = 3;
 
-    /// <summary>Final form #3 action (for ALAPH after DALATH RISH).</summary>
+    /// <summary>
+    /// Final form #3 action (for ALAPH after DALATH RISH).
+    /// </summary>
     private const byte Fin3 = 4;
 
-    /// <summary>Medial form action.</summary>
+    /// <summary>
+    /// Medial form action.
+    /// </summary>
     private const byte Medi = 5;
 
-    /// <summary>Medial form #2 action (for ALAPH).</summary>
+    /// <summary>
+    /// Medial form #2 action (for ALAPH).
+    /// </summary>
     private const byte Med2 = 6;
 
-    /// <summary>Initial form action.</summary>
+    /// <summary>
+    /// Initial form action.
+    /// </summary>
     private const byte Init = 7;
 
     /// <summary>

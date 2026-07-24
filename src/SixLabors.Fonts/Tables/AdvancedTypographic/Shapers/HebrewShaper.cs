@@ -47,10 +47,14 @@ internal class HebrewShaper : DefaultShaper
         0xFB4A, // TAV
     ];
 
-    /// <summary>The font metrics used for glyph lookups during composition.</summary>
+    /// <summary>
+    /// The font metrics used for glyph lookups during composition.
+    /// </summary>
     private readonly FontMetrics fontMetrics;
 
-    /// <summary>Whether the font has GSUB features for Hebrew.</summary>
+    /// <summary>
+    /// Whether the font has GSUB features for Hebrew.
+    /// </summary>
     private readonly bool hasGsub;
 
     /// <summary>
@@ -284,13 +288,17 @@ internal class HebrewShaper : DefaultShaper
         return 0;
     }
 
-    /// <summary>Returns <see langword="true"/> if the codepoint is PATAH (U+05B7) or QAMATS (U+05B8).</summary>
+    /// <summary>
+    /// Returns <see langword="true"/> if the codepoint is PATAH (U+05B7) or QAMATS (U+05B8).
+    /// </summary>
     /// <param name="codepoint">The codepoint value to test.</param>
     /// <returns><see langword="true"/> if the codepoint is PATAH or QAMATS.</returns>
     private static bool IsPatahOrQamats(int codepoint)
         => codepoint is 0x05B7 or 0x05B8;
 
-    /// <summary>Returns <see langword="true"/> if the codepoint is SHEVA (U+05B0) or HIRIQ (U+05B4).</summary>
+    /// <summary>
+    /// Returns <see langword="true"/> if the codepoint is SHEVA (U+05B0) or HIRIQ (U+05B4).
+    /// </summary>
     /// <param name="codepoint">The codepoint value to test.</param>
     /// <returns><see langword="true"/> if the codepoint is SHEVA or HIRIQ.</returns>
     private static bool IsShevaOrHiriq(int codepoint)

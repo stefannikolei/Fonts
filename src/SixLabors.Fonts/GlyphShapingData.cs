@@ -31,11 +31,49 @@ internal struct GlyphShapingData
     public SyllableInfo Syllable;
 #pragma warning restore SA1401
 
+    /// <summary>
+    /// The <see cref="flags"/> bit recording <see cref="IsLigated"/>.
+    /// </summary>
+    private const ushort LigatedFlag = 1 << 0;
+
+    /// <summary>
+    /// The <see cref="flags"/> bit recording <see cref="IsSubstituted"/>.
+    /// </summary>
+    private const ushort SubstitutedFlag = 1 << 1;
+
+    /// <summary>
+    /// The <see cref="flags"/> bit recording <see cref="IsDecomposed"/>.
+    /// </summary>
+    private const ushort DecomposedFlag = 1 << 2;
+
+    /// <summary>
+    /// The <see cref="flags"/> bit recording <see cref="IsPlaceholder"/>.
+    /// </summary>
+    private const ushort PlaceholderFlag = 1 << 3;
+
+    /// <summary>
+    /// The <see cref="flags"/> bit recording <see cref="IsPositioned"/>.
+    /// </summary>
+    private const ushort PositionedFlag = 1 << 4;
+
+    /// <summary>
+    /// The <see cref="flags"/> bit recording <see cref="IsKerned"/>.
+    /// </summary>
+    private const ushort KernedFlag = 1 << 5;
+
+    /// <summary>
+    /// The <see cref="flags"/> bit recording that <see cref="shapingClassCacheId"/>
+    /// holds the glyph id <see cref="CachedShapingClass"/> was computed for. A default
+    /// record therefore reports an invalid cache.
+    /// </summary>
+    private const ushort ShapingClassCacheValidFlag = 1 << 6;
+
     private ushort glyphId;
 
     /// <summary>
-    /// Packed boolean shaping state. Single bits keep the record narrow; the bool
-    /// properties are the only readers and writers.
+    /// Packed boolean shaping state addressed through the named flag constants above.
+    /// Single bits keep the record narrow; the properties are the only readers and
+    /// writers.
     /// </summary>
     private ushort flags;
 
@@ -122,17 +160,17 @@ internal struct GlyphShapingData
     /// </summary>
     public int ShapingClassCacheKey
     {
-        readonly get => (this.flags & (1 << 6)) != 0 ? this.shapingClassCacheId : -1;
+        readonly get => (this.flags & ShapingClassCacheValidFlag) != 0 ? this.shapingClassCacheId : -1;
         set
         {
             if (value < 0)
             {
-                this.flags = (ushort)(this.flags & ~(1 << 6));
+                this.flags = (ushort)(this.flags & ~ShapingClassCacheValidFlag);
             }
             else
             {
                 this.shapingClassCacheId = (ushort)value;
-                this.flags = (ushort)(this.flags | (1 << 6));
+                this.flags = (ushort)(this.flags | ShapingClassCacheValidFlag);
             }
         }
     }
@@ -177,8 +215,8 @@ internal struct GlyphShapingData
     /// </summary>
     public bool IsLigated
     {
-        readonly get => (this.flags & 1) != 0;
-        set => this.flags = value ? (ushort)(this.flags | 1) : (ushort)(this.flags & ~1);
+        readonly get => (this.flags & LigatedFlag) != 0;
+        set => this.flags = value ? (ushort)(this.flags | LigatedFlag) : (ushort)(this.flags & ~LigatedFlag);
     }
 
     /// <summary>
@@ -225,8 +263,8 @@ internal struct GlyphShapingData
     /// </summary>
     public bool IsSubstituted
     {
-        readonly get => (this.flags & (1 << 1)) != 0;
-        set => this.flags = value ? (ushort)(this.flags | (1 << 1)) : (ushort)(this.flags & ~(1 << 1));
+        readonly get => (this.flags & SubstitutedFlag) != 0;
+        set => this.flags = value ? (ushort)(this.flags | SubstitutedFlag) : (ushort)(this.flags & ~SubstitutedFlag);
     }
 
     /// <summary>
@@ -234,8 +272,8 @@ internal struct GlyphShapingData
     /// </summary>
     public bool IsDecomposed
     {
-        readonly get => (this.flags & (1 << 2)) != 0;
-        set => this.flags = value ? (ushort)(this.flags | (1 << 2)) : (ushort)(this.flags & ~(1 << 2));
+        readonly get => (this.flags & DecomposedFlag) != 0;
+        set => this.flags = value ? (ushort)(this.flags | DecomposedFlag) : (ushort)(this.flags & ~DecomposedFlag);
     }
 
     /// <summary>
@@ -244,8 +282,8 @@ internal struct GlyphShapingData
     /// </summary>
     public bool IsPlaceholder
     {
-        readonly get => (this.flags & (1 << 3)) != 0;
-        set => this.flags = value ? (ushort)(this.flags | (1 << 3)) : (ushort)(this.flags & ~(1 << 3));
+        readonly get => (this.flags & PlaceholderFlag) != 0;
+        set => this.flags = value ? (ushort)(this.flags | PlaceholderFlag) : (ushort)(this.flags & ~PlaceholderFlag);
     }
 
     /// <summary>
@@ -253,8 +291,8 @@ internal struct GlyphShapingData
     /// </summary>
     public bool IsPositioned
     {
-        readonly get => (this.flags & (1 << 4)) != 0;
-        set => this.flags = value ? (ushort)(this.flags | (1 << 4)) : (ushort)(this.flags & ~(1 << 4));
+        readonly get => (this.flags & PositionedFlag) != 0;
+        set => this.flags = value ? (ushort)(this.flags | PositionedFlag) : (ushort)(this.flags & ~PositionedFlag);
     }
 
     /// <summary>
@@ -262,8 +300,8 @@ internal struct GlyphShapingData
     /// </summary>
     public bool IsKerned
     {
-        readonly get => (this.flags & (1 << 5)) != 0;
-        set => this.flags = value ? (ushort)(this.flags | (1 << 5)) : (ushort)(this.flags & ~(1 << 5));
+        readonly get => (this.flags & KernedFlag) != 0;
+        set => this.flags = value ? (ushort)(this.flags | KernedFlag) : (ushort)(this.flags & ~KernedFlag);
     }
 
     private string DebuggerDisplay

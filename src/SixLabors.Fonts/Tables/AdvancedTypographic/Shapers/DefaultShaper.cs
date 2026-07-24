@@ -11,73 +11,119 @@ namespace SixLabors.Fonts.Tables.AdvancedTypographic.Shapers;
 /// </summary>
 internal class DefaultShaper : BaseShaper
 {
-    /// <summary>The 'rvrn' (required variation alternates) feature tag.</summary>
+    /// <summary>
+    /// The 'rvrn' (required variation alternates) feature tag.
+    /// </summary>
     protected static readonly Tag RvnrTag = Tag.Parse("rvrn");
 
-    /// <summary>The 'ltra' (left-to-right alternates) feature tag.</summary>
+    /// <summary>
+    /// The 'ltra' (left-to-right alternates) feature tag.
+    /// </summary>
     protected static readonly Tag LtraTag = Tag.Parse("ltra");
 
-    /// <summary>The 'ltrm' (left-to-right mirrored forms) feature tag.</summary>
+    /// <summary>
+    /// The 'ltrm' (left-to-right mirrored forms) feature tag.
+    /// </summary>
     protected static readonly Tag LtrmTag = Tag.Parse("ltrm");
 
-    /// <summary>The 'rtla' (right-to-left alternates) feature tag.</summary>
+    /// <summary>
+    /// The 'rtla' (right-to-left alternates) feature tag.
+    /// </summary>
     protected static readonly Tag RtlaTag = Tag.Parse("rtla");
 
-    /// <summary>The 'rtlm' (right-to-left mirrored forms) feature tag.</summary>
+    /// <summary>
+    /// The 'rtlm' (right-to-left mirrored forms) feature tag.
+    /// </summary>
     protected static readonly Tag RtlmTag = Tag.Parse("rtlm");
 
-    /// <summary>The 'frac' (fractions) feature tag.</summary>
+    /// <summary>
+    /// The 'frac' (fractions) feature tag.
+    /// </summary>
     protected static readonly Tag FracTag = Tag.Parse("frac");
 
-    /// <summary>The 'numr' (numerators) feature tag.</summary>
+    /// <summary>
+    /// The 'numr' (numerators) feature tag.
+    /// </summary>
     protected static readonly Tag NumrTag = Tag.Parse("numr");
 
-    /// <summary>The 'dnom' (denominators) feature tag.</summary>
+    /// <summary>
+    /// The 'dnom' (denominators) feature tag.
+    /// </summary>
     protected static readonly Tag DnomTag = Tag.Parse("dnom");
 
-    /// <summary>The 'ccmp' (glyph composition/decomposition) feature tag.</summary>
+    /// <summary>
+    /// The 'ccmp' (glyph composition/decomposition) feature tag.
+    /// </summary>
     protected static readonly Tag CcmpTag = Tag.Parse("ccmp");
 
-    /// <summary>The 'locl' (localized forms) feature tag.</summary>
+    /// <summary>
+    /// The 'locl' (localized forms) feature tag.
+    /// </summary>
     protected static readonly Tag LoclTag = Tag.Parse("locl");
 
-    /// <summary>The 'rlig' (required ligatures) feature tag.</summary>
+    /// <summary>
+    /// The 'rlig' (required ligatures) feature tag.
+    /// </summary>
     protected static readonly Tag RligTag = Tag.Parse("rlig");
 
-    /// <summary>The 'mark' (mark positioning) feature tag.</summary>
+    /// <summary>
+    /// The 'mark' (mark positioning) feature tag.
+    /// </summary>
     protected static readonly Tag MarkTag = Tag.Parse("mark");
 
-    /// <summary>The 'mkmk' (mark-to-mark positioning) feature tag.</summary>
+    /// <summary>
+    /// The 'mkmk' (mark-to-mark positioning) feature tag.
+    /// </summary>
     protected static readonly Tag MkmkTag = Tag.Parse("mkmk");
 
-    /// <summary>The 'calt' (contextual alternates) feature tag.</summary>
+    /// <summary>
+    /// The 'calt' (contextual alternates) feature tag.
+    /// </summary>
     protected static readonly Tag CaltTag = Tag.Parse("calt");
 
-    /// <summary>The 'clig' (contextual ligatures) feature tag.</summary>
+    /// <summary>
+    /// The 'clig' (contextual ligatures) feature tag.
+    /// </summary>
     protected static readonly Tag CligTag = Tag.Parse("clig");
 
-    /// <summary>The 'liga' (standard ligatures) feature tag.</summary>
+    /// <summary>
+    /// The 'liga' (standard ligatures) feature tag.
+    /// </summary>
     protected static readonly Tag LigaTag = Tag.Parse("liga");
 
-    /// <summary>The 'rclt' (required contextual alternates) feature tag.</summary>
+    /// <summary>
+    /// The 'rclt' (required contextual alternates) feature tag.
+    /// </summary>
     protected static readonly Tag RcltTag = Tag.Parse("rclt");
 
-    /// <summary>The 'curs' (cursive positioning) feature tag.</summary>
+    /// <summary>
+    /// The 'curs' (cursive positioning) feature tag.
+    /// </summary>
     protected static readonly Tag CursTag = Tag.Parse("curs");
 
-    /// <summary>The 'kern' (kerning) feature tag.</summary>
+    /// <summary>
+    /// The 'kern' (kerning) feature tag.
+    /// </summary>
     protected static readonly Tag KernTag = Tag.Parse("kern");
 
-    /// <summary>The 'vert' (vertical alternates) feature tag.</summary>
+    /// <summary>
+    /// The 'vert' (vertical alternates) feature tag.
+    /// </summary>
     protected static readonly Tag VertTag = Tag.Parse("vert");
 
-    /// <summary>The 'vkrn' (vertical kerning) feature tag.</summary>
+    /// <summary>
+    /// The 'vkrn' (vertical kerning) feature tag.
+    /// </summary>
     protected static readonly Tag VKernTag = Tag.Parse("vkrn");
 
-    /// <summary>The fraction slash code point (U+2044).</summary>
+    /// <summary>
+    /// The fraction slash code point (U+2044).
+    /// </summary>
     private static readonly CodePoint FractionSlash = new(0x2044);
 
-    /// <summary>The solidus (slash) code point (U+002F).</summary>
+    /// <summary>
+    /// The solidus (slash) code point (U+002F).
+    /// </summary>
     private static readonly CodePoint Slash = new(0x002F);
 
     /// <summary>
@@ -87,10 +133,14 @@ internal class DefaultShaper : BaseShaper
     /// </summary>
     private readonly List<ShapingStage> shapingStages = new(16);
 
-    /// <summary>The kerning mode from the text options.</summary>
+    /// <summary>
+    /// The kerning mode from the text options.
+    /// </summary>
     private readonly KerningMode kerningMode;
 
-    /// <summary>The user-specified feature tags from the text options.</summary>
+    /// <summary>
+    /// The user-specified feature tags from the text options.
+    /// </summary>
     private readonly IReadOnlyList<Tag> featureTags;
 
     /// <summary>

@@ -12,82 +12,134 @@ namespace SixLabors.Fonts.Tables.AdvancedTypographic.Shapers;
 /// </summary>
 internal sealed class HangulShaper : DefaultShaper
 {
-    /// <summary>The 'ljmo' (leading Jamo forms) feature tag.</summary>
+    /// <summary>
+    /// The 'ljmo' (leading Jamo forms) feature tag.
+    /// </summary>
     private static readonly Tag LjmoTag = Tag.Parse("ljmo");
 
-    /// <summary>The 'vjmo' (vowel Jamo forms) feature tag.</summary>
+    /// <summary>
+    /// The 'vjmo' (vowel Jamo forms) feature tag.
+    /// </summary>
     private static readonly Tag VjmoTag = Tag.Parse("vjmo");
 
-    /// <summary>The 'tjmo' (trailing Jamo forms) feature tag.</summary>
+    /// <summary>
+    /// The 'tjmo' (trailing Jamo forms) feature tag.
+    /// </summary>
     private static readonly Tag TjmoTag = Tag.Parse("tjmo");
 
-    /// <summary>The base code point for precomposed Hangul syllables (U+AC00).</summary>
+    /// <summary>
+    /// The base code point for precomposed Hangul syllables (U+AC00).
+    /// </summary>
     private const int HangulBase = 0xac00;
 
-    /// <summary>The base code point for leading consonant Jamo (U+1100).</summary>
+    /// <summary>
+    /// The base code point for leading consonant Jamo (U+1100).
+    /// </summary>
     private const int LBase = 0x1100; // lead
 
-    /// <summary>The base code point for vowel Jamo (U+1161).</summary>
+    /// <summary>
+    /// The base code point for vowel Jamo (U+1161).
+    /// </summary>
     private const int VBase = 0x1161; // vowel
 
-    /// <summary>The base code point for trailing consonant Jamo (U+11A7).</summary>
+    /// <summary>
+    /// The base code point for trailing consonant Jamo (U+11A7).
+    /// </summary>
     private const int TBase = 0x11a7; // trail
 
-    /// <summary>The number of leading consonant Jamo.</summary>
+    /// <summary>
+    /// The number of leading consonant Jamo.
+    /// </summary>
     private const int LCount = 19;
 
-    /// <summary>The number of vowel Jamo.</summary>
+    /// <summary>
+    /// The number of vowel Jamo.
+    /// </summary>
     private const int VCount = 21;
 
-    /// <summary>The number of trailing consonant Jamo (including no-trail).</summary>
+    /// <summary>
+    /// The number of trailing consonant Jamo (including no-trail).
+    /// </summary>
     private const int TCount = 28;
 
-    /// <summary>The last leading consonant Jamo code point.</summary>
+    /// <summary>
+    /// The last leading consonant Jamo code point.
+    /// </summary>
     private const int LEnd = LBase + LCount - 1;
 
-    /// <summary>The last vowel Jamo code point.</summary>
+    /// <summary>
+    /// The last vowel Jamo code point.
+    /// </summary>
     private const int VEnd = VBase + VCount - 1;
 
-    /// <summary>The last trailing consonant Jamo code point.</summary>
+    /// <summary>
+    /// The last trailing consonant Jamo code point.
+    /// </summary>
     private const int TEnd = TBase + TCount - 1;
 
-    /// <summary>The dotted circle code point (U+25CC) used as a placeholder base.</summary>
+    /// <summary>
+    /// The dotted circle code point (U+25CC) used as a placeholder base.
+    /// </summary>
     private const int DottedCircle = 0x25cc;
 
-    /// <summary>Other character category.</summary>
+    /// <summary>
+    /// Other character category.
+    /// </summary>
     private const byte X = 0;
 
-    /// <summary>Leading consonant category.</summary>
+    /// <summary>
+    /// Leading consonant category.
+    /// </summary>
     private const byte L = 1;
 
-    /// <summary>Medial vowel category.</summary>
+    /// <summary>
+    /// Medial vowel category.
+    /// </summary>
     private const byte V = 2;
 
-    /// <summary>Trailing consonant category.</summary>
+    /// <summary>
+    /// Trailing consonant category.
+    /// </summary>
     private const byte T = 3;
 
-    /// <summary>Composed lead-vowel syllable category.</summary>
+    /// <summary>
+    /// Composed lead-vowel syllable category.
+    /// </summary>
     private const byte LV = 4;
 
-    /// <summary>Composed lead-vowel-trail syllable category.</summary>
+    /// <summary>
+    /// Composed lead-vowel-trail syllable category.
+    /// </summary>
     private const byte LVT = 5;
 
-    /// <summary>Tone mark category.</summary>
+    /// <summary>
+    /// Tone mark category.
+    /// </summary>
     private const byte M = 6;
 
-    /// <summary>No action.</summary>
+    /// <summary>
+    /// No action.
+    /// </summary>
     private const byte None = 0;
 
-    /// <summary>Decompose composed syllable action.</summary>
+    /// <summary>
+    /// Decompose composed syllable action.
+    /// </summary>
     private const byte Decompose = 1;
 
-    /// <summary>Compose Jamo sequence action.</summary>
+    /// <summary>
+    /// Compose Jamo sequence action.
+    /// </summary>
     private const byte Compose = 2;
 
-    /// <summary>Reorder tone mark action.</summary>
+    /// <summary>
+    /// Reorder tone mark action.
+    /// </summary>
     private const byte ToneMark = 4;
 
-    /// <summary>Invalid sequence (insert dotted circle) action.</summary>
+    /// <summary>
+    /// Invalid sequence (insert dotted circle) action.
+    /// </summary>
     private const byte Invalid = 5;
 
     /// <summary>
@@ -110,7 +162,9 @@ internal sealed class HangulShaper : DefaultShaper
         { new byte[] { None, 0 }, new byte[] { None, 1 }, new byte[] { None, 0 }, new byte[] { None, 0 }, new byte[] { Decompose, 2 }, new byte[] { Decompose, 3 }, new byte[] { ToneMark, 0 } },
     };
 
-    /// <summary>The font metrics used for glyph lookups during composition/decomposition.</summary>
+    /// <summary>
+    /// The font metrics used for glyph lookups during composition/decomposition.
+    /// </summary>
     private readonly FontMetrics fontMetrics;
 
     /// <summary>

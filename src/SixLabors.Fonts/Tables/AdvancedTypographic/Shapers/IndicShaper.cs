@@ -15,86 +15,140 @@ namespace SixLabors.Fonts.Tables.AdvancedTypographic.Shapers;
 /// </summary>
 internal sealed class IndicShaper : DefaultShaper
 {
-    /// <summary>The state machine for Indic syllable identification.</summary>
+    /// <summary>
+    /// The state machine for Indic syllable identification.
+    /// </summary>
     private static readonly StateMachine StateMachine =
         new(StateTable, AcceptingStates, Tags);
 
-    /// <summary>Maps Indic shaping category codes to compact DFA symbol indices.</summary>
+    /// <summary>
+    /// Maps Indic shaping category codes to compact DFA symbol indices.
+    /// </summary>
     private static readonly int[] CategoryToSymbolId = BuildCategoryToSymbolId();
 
-    /// <summary>The 'rphf' (reph forms) feature tag.</summary>
+    /// <summary>
+    /// The 'rphf' (reph forms) feature tag.
+    /// </summary>
     private static readonly Tag RphfTag = Tag.Parse("rphf");
 
-    /// <summary>The 'nukt' (nukta forms) feature tag.</summary>
+    /// <summary>
+    /// The 'nukt' (nukta forms) feature tag.
+    /// </summary>
     private static readonly Tag NuktTag = Tag.Parse("nukt");
 
-    /// <summary>The 'akhn' (akhands) feature tag.</summary>
+    /// <summary>
+    /// The 'akhn' (akhands) feature tag.
+    /// </summary>
     private static readonly Tag AkhnTag = Tag.Parse("akhn");
 
-    /// <summary>The 'pref' (pre-base forms) feature tag.</summary>
+    /// <summary>
+    /// The 'pref' (pre-base forms) feature tag.
+    /// </summary>
     private static readonly Tag PrefTag = Tag.Parse("pref");
 
-    /// <summary>The 'rkrf' (rakar forms) feature tag.</summary>
+    /// <summary>
+    /// The 'rkrf' (rakar forms) feature tag.
+    /// </summary>
     private static readonly Tag RkrfTag = Tag.Parse("rkrf");
 
-    /// <summary>The 'abvf' (above-base forms) feature tag.</summary>
+    /// <summary>
+    /// The 'abvf' (above-base forms) feature tag.
+    /// </summary>
     private static readonly Tag AbvfTag = Tag.Parse("abvf");
 
-    /// <summary>The 'blwf' (below-base forms) feature tag.</summary>
+    /// <summary>
+    /// The 'blwf' (below-base forms) feature tag.
+    /// </summary>
     private static readonly Tag BlwfTag = Tag.Parse("blwf");
 
-    /// <summary>The 'half' (half forms) feature tag.</summary>
+    /// <summary>
+    /// The 'half' (half forms) feature tag.
+    /// </summary>
     private static readonly Tag HalfTag = Tag.Parse("half");
 
-    /// <summary>The 'pstf' (post-base forms) feature tag.</summary>
+    /// <summary>
+    /// The 'pstf' (post-base forms) feature tag.
+    /// </summary>
     private static readonly Tag PstfTag = Tag.Parse("pstf");
 
-    /// <summary>The 'vatu' (vattu variants) feature tag.</summary>
+    /// <summary>
+    /// The 'vatu' (vattu variants) feature tag.
+    /// </summary>
     private static readonly Tag VatuTag = Tag.Parse("vatu");
 
-    /// <summary>The 'cjct' (conjunct forms) feature tag.</summary>
+    /// <summary>
+    /// The 'cjct' (conjunct forms) feature tag.
+    /// </summary>
     private static readonly Tag CjctTag = Tag.Parse("cjct");
 
-    /// <summary>The 'cfar' (conjunct form after Ra) feature tag.</summary>
+    /// <summary>
+    /// The 'cfar' (conjunct form after Ra) feature tag.
+    /// </summary>
     private static readonly Tag CfarTag = Tag.Parse("cfar");
 
-    /// <summary>The 'init' (initial forms) feature tag.</summary>
+    /// <summary>
+    /// The 'init' (initial forms) feature tag.
+    /// </summary>
     private static readonly Tag InitTag = Tag.Parse("init");
 
-    /// <summary>The 'abvs' (above-base substitutions) feature tag.</summary>
+    /// <summary>
+    /// The 'abvs' (above-base substitutions) feature tag.
+    /// </summary>
     private static readonly Tag AbvsTag = Tag.Parse("abvs");
 
-    /// <summary>The 'blws' (below-base substitutions) feature tag.</summary>
+    /// <summary>
+    /// The 'blws' (below-base substitutions) feature tag.
+    /// </summary>
     private static readonly Tag BlwsTag = Tag.Parse("blws");
 
-    /// <summary>The 'pres' (pre-base substitutions) feature tag.</summary>
+    /// <summary>
+    /// The 'pres' (pre-base substitutions) feature tag.
+    /// </summary>
     private static readonly Tag PresTag = Tag.Parse("pres");
 
-    /// <summary>The 'psts' (post-base substitutions) feature tag.</summary>
+    /// <summary>
+    /// The 'psts' (post-base substitutions) feature tag.
+    /// </summary>
     private static readonly Tag PstsTag = Tag.Parse("psts");
 
-    /// <summary>The 'haln' (halant forms) feature tag.</summary>
+    /// <summary>
+    /// The 'haln' (halant forms) feature tag.
+    /// </summary>
     private static readonly Tag HalnTag = Tag.Parse("haln");
 
-    /// <summary>The 'dist' (distances) feature tag.</summary>
+    /// <summary>
+    /// The 'dist' (distances) feature tag.
+    /// </summary>
     private static readonly Tag DistTag = Tag.Parse("dist");
 
-    /// <summary>The 'abvm' (above-base mark positioning) feature tag.</summary>
+    /// <summary>
+    /// The 'abvm' (above-base mark positioning) feature tag.
+    /// </summary>
     private static readonly Tag AbvmTag = Tag.Parse("abvm");
 
-    /// <summary>The 'blwm' (below-base mark positioning) feature tag.</summary>
+    /// <summary>
+    /// The 'blwm' (below-base mark positioning) feature tag.
+    /// </summary>
     private static readonly Tag BlwmTag = Tag.Parse("blwm");
 
-    /// <summary>Dotted circle code point (U+25CC) used as a placeholder base.</summary>
+    /// <summary>
+    /// Dotted circle code point (U+25CC) used as a placeholder base.
+    /// </summary>
     private const int DottedCircle = 0x25cc;
 
-    /// <summary>The font metrics used for glyph lookups.</summary>
+    /// <summary>
+    /// The font metrics used for glyph lookups.
+    /// </summary>
     private readonly FontMetrics fontMetrics;
 
-    /// <summary>The script-specific shaping configuration for this Indic script.</summary>
+    /// <summary>
+    /// The script-specific shaping configuration for this Indic script.
+    /// </summary>
     private ShapingConfiguration indicConfiguration;
 
-    /// <summary>Whether this font uses old-spec Indic script tags.</summary>
+    /// <summary>
+    /// Whether this font uses old-spec Indic script tags.
+    /// </summary>
     private readonly bool isOldSpec;
 
     /// <summary>
@@ -103,7 +157,9 @@ internal sealed class IndicShaper : DefaultShaper
     /// </summary>
     private readonly bool zeroContext;
 
-    /// <summary>Whether any broken clusters were detected during syllable setup.</summary>
+    /// <summary>
+    /// Whether any broken clusters were detected during syllable setup.
+    /// </summary>
     private bool hasBrokenClusters;
 
     /// <summary>

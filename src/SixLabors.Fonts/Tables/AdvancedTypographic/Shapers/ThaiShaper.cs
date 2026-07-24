@@ -44,7 +44,9 @@ internal class ThaiShaper : DefaultShaper
         { new(PuaAction.NOP, 2), new(PuaAction.SD, 2), new(PuaAction.NOP, 2) },
     };
 
-    /// <summary>Shift-Down PUA mappings for tone marks and below-vowel marks.</summary>
+    /// <summary>
+    /// Shift-Down PUA mappings for tone marks and below-vowel marks.
+    /// </summary>
     private static readonly PuaMapping[] SdMappings =
     [
         new(0x0E48, 0xF70A, 0xF88B), // MAI EK
@@ -57,7 +59,9 @@ internal class ThaiShaper : DefaultShaper
         new(0x0E3A, 0xF71A, 0xF89D), // PHINTHU
     ];
 
-    /// <summary>Shift-Down-Left PUA mappings for tone marks.</summary>
+    /// <summary>
+    /// Shift-Down-Left PUA mappings for tone marks.
+    /// </summary>
     private static readonly PuaMapping[] SdlMappings =
     [
         new(0x0E48, 0xF705, 0xF88C), // MAI EK
@@ -67,7 +71,9 @@ internal class ThaiShaper : DefaultShaper
         new(0x0E4C, 0xF709, 0xF898), // THANTHAKHAT
     ];
 
-    /// <summary>Shift-Left PUA mappings for tone marks and above-vowel marks.</summary>
+    /// <summary>
+    /// Shift-Left PUA mappings for tone marks and above-vowel marks.
+    /// </summary>
     private static readonly PuaMapping[] SlMappings =
     [
         new(0x0E48, 0xF713, 0xF88A), // MAI EK
@@ -84,17 +90,23 @@ internal class ThaiShaper : DefaultShaper
         new(0x0E4D, 0xF711, 0xF899), // NIKHAHIT
     ];
 
-    /// <summary>Remove-Descender PUA mappings for consonants with removable descenders.</summary>
+    /// <summary>
+    /// Remove-Descender PUA mappings for consonants with removable descenders.
+    /// </summary>
     private static readonly PuaMapping[] RdMappings =
     [
         new(0x0E0D, 0xF70F, 0xF89A), // YO YING
         new(0x0E10, 0xF700, 0xF89E), // THO THAN
     ];
 
-    /// <summary>The font metrics used for glyph lookups and PUA shaping.</summary>
+    /// <summary>
+    /// The font metrics used for glyph lookups and PUA shaping.
+    /// </summary>
     private readonly FontMetrics fontMetrics;
 
-    /// <summary>Whether the font has GSUB features for Thai/Lao.</summary>
+    /// <summary>
+    /// Whether the font has GSUB features for Thai/Lao.
+    /// </summary>
     private readonly bool hasGsub;
 
     /// <summary>
@@ -102,19 +114,29 @@ internal class ThaiShaper : DefaultShaper
     /// </summary>
     private enum ConsonantType
     {
-        /// <summary>Normal consonant.</summary>
+        /// <summary>
+        /// Normal consonant.
+        /// </summary>
         NC,
 
-        /// <summary>Ascending consonant (Thai: 0x0E1B, 0x0E1D, 0x0E1F).</summary>
+        /// <summary>
+        /// Ascending consonant (Thai: 0x0E1B, 0x0E1D, 0x0E1F).
+        /// </summary>
         AC,
 
-        /// <summary>Consonant with removable descender (Thai: 0x0E0D, 0x0E10).</summary>
+        /// <summary>
+        /// Consonant with removable descender (Thai: 0x0E0D, 0x0E10).
+        /// </summary>
         RC,
 
-        /// <summary>Consonant with strict descender (Thai: 0x0E0E, 0x0E0F).</summary>
+        /// <summary>
+        /// Consonant with strict descender (Thai: 0x0E0E, 0x0E0F).
+        /// </summary>
         DC,
 
-        /// <summary>Not a consonant.</summary>
+        /// <summary>
+        /// Not a consonant.
+        /// </summary>
         NotConsonant
     }
 
@@ -123,16 +145,24 @@ internal class ThaiShaper : DefaultShaper
     /// </summary>
     private enum MarkType
     {
-        /// <summary>Above-vowel mark.</summary>
+        /// <summary>
+        /// Above-vowel mark.
+        /// </summary>
         AV,
 
-        /// <summary>Below-vowel mark.</summary>
+        /// <summary>
+        /// Below-vowel mark.
+        /// </summary>
         BV,
 
-        /// <summary>Tone mark.</summary>
+        /// <summary>
+        /// Tone mark.
+        /// </summary>
         T,
 
-        /// <summary>Not a mark.</summary>
+        /// <summary>
+        /// Not a mark.
+        /// </summary>
         NotMark
     }
 
@@ -141,19 +171,29 @@ internal class ThaiShaper : DefaultShaper
     /// </summary>
     private enum PuaAction
     {
-        /// <summary>No operation.</summary>
+        /// <summary>
+        /// No operation.
+        /// </summary>
         NOP,
 
-        /// <summary>Shift combining-mark down.</summary>
+        /// <summary>
+        /// Shift combining-mark down.
+        /// </summary>
         SD,
 
-        /// <summary>Shift combining-mark left.</summary>
+        /// <summary>
+        /// Shift combining-mark left.
+        /// </summary>
         SL,
 
-        /// <summary>Shift combining-mark down-left.</summary>
+        /// <summary>
+        /// Shift combining-mark down-left.
+        /// </summary>
         SDL,
 
-        /// <summary>Remove descender from base consonant.</summary>
+        /// <summary>
+        /// Remove descender from base consonant.
+        /// </summary>
         RD
     }
 
@@ -475,10 +515,14 @@ internal class ThaiShaper : DefaultShaper
     /// </summary>
     private readonly struct StateTransition(PuaAction action, int nextState)
     {
-        /// <summary>Gets the PUA action to apply.</summary>
+        /// <summary>
+        /// Gets the PUA action to apply.
+        /// </summary>
         public PuaAction Action { get; } = action;
 
-        /// <summary>Gets the next state for the state machine.</summary>
+        /// <summary>
+        /// Gets the next state for the state machine.
+        /// </summary>
         public int NextState { get; } = nextState;
     }
 
@@ -487,13 +531,19 @@ internal class ThaiShaper : DefaultShaper
     /// </summary>
     private readonly struct PuaMapping(ushort original, ushort winPua, ushort macPua)
     {
-        /// <summary>Gets the original Thai codepoint.</summary>
+        /// <summary>
+        /// Gets the original Thai codepoint.
+        /// </summary>
         public ushort Original { get; } = original;
 
-        /// <summary>Gets the Windows PUA replacement codepoint.</summary>
+        /// <summary>
+        /// Gets the Windows PUA replacement codepoint.
+        /// </summary>
         public ushort WinPua { get; } = winPua;
 
-        /// <summary>Gets the Mac PUA replacement codepoint.</summary>
+        /// <summary>
+        /// Gets the Mac PUA replacement codepoint.
+        /// </summary>
         public ushort MacPua { get; } = macPua;
     }
 }

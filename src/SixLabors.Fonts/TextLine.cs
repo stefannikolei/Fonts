@@ -1026,21 +1026,31 @@ internal sealed class TextLine
         /// <param name="level">The bidi embedding level for this run.</param>
         public OrderedBidiRun(int level) => this.Level = level;
 
-        /// <summary>Gets the bidi embedding level of this run.</summary>
+        /// <summary>
+        /// Gets the bidi embedding level of this run.
+        /// </summary>
         public int Level { get; }
 
-        /// <summary>Gets or sets the next run in visual order.</summary>
+        /// <summary>
+        /// Gets or sets the next run in visual order.
+        /// </summary>
         public OrderedBidiRun? Next { get; set; }
 
-        /// <summary>Appends an entry to this run.</summary>
+        /// <summary>
+        /// Appends an entry to this run.
+        /// </summary>
         /// <param name="info">The entry to append.</param>
         public void Add(GlyphLayoutData info) => this.info.Add(info);
 
-        /// <summary>Returns a slice view over this run's entries.</summary>
+        /// <summary>
+        /// Returns a slice view over this run's entries.
+        /// </summary>
         /// <returns>A slice over the entries.</returns>
         public ArraySlice<GlyphLayoutData> AsSlice() => this.info.AsSlice();
 
-        /// <summary>Reverses the entries in this run in place (for rule L2).</summary>
+        /// <summary>
+        /// Reverses the entries in this run in place (for rule L2).
+        /// </summary>
         public void Reverse() => this.AsSlice().Span.Reverse();
     }
 
@@ -1050,16 +1060,24 @@ internal sealed class TextLine
     /// </summary>
     private sealed class BidiRange
     {
-        /// <summary>Gets or sets the shared bidi embedding level for this range.</summary>
+        /// <summary>
+        /// Gets or sets the shared bidi embedding level for this range.
+        /// </summary>
         public int Level { get; set; }
 
-        /// <summary>Gets or sets the leftmost run in the range.</summary>
+        /// <summary>
+        /// Gets or sets the leftmost run in the range.
+        /// </summary>
         public OrderedBidiRun? Left { get; set; }
 
-        /// <summary>Gets or sets the rightmost run in the range.</summary>
+        /// <summary>
+        /// Gets or sets the rightmost run in the range.
+        /// </summary>
         public OrderedBidiRun? Right { get; set; }
 
-        /// <summary>Gets or sets the previous range in the processing stack.</summary>
+        /// <summary>
+        /// Gets or sets the previous range in the processing stack.
+        /// </summary>
         public BidiRange? Previous { get; set; }
 
         /// <summary>

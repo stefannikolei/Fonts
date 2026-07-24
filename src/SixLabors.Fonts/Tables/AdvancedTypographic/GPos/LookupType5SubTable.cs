@@ -119,14 +119,14 @@ internal static class LookupType5SubTable
         public override bool TryUpdatePosition(
             FontMetrics fontMetrics,
             GPosTable table,
-            GlyphPositioningCollection collection,
+            ShapingBuffer buffer,
             Tag feature,
             int index,
             int count)
         {
             // Mark-to-Ligature Attachment Positioning.
             // Implements: https://docs.microsoft.com/en-us/typography/opentype/spec/gpos#lookup-type-5-mark-to-ligature-attachment-positioning-subtable
-            ushort glyphId = collection[index].GlyphId;
+            ushort glyphId = buffer[index].GlyphId;
             if (glyphId == 0)
             {
                 return false;
@@ -142,8 +142,8 @@ internal static class LookupType5SubTable
             int baseGlyphIndex = index;
             while (--baseGlyphIndex >= 0)
             {
-                GlyphShapingData data = collection[baseGlyphIndex];
-                if (!AdvancedTypographicUtils.IsMarkGlyph(fontMetrics, data.GlyphId, data))
+                ref GlyphShapingData data = ref buffer[baseGlyphIndex];
+                if (!AdvancedTypographicUtils.IsMarkGlyph(fontMetrics, data.GlyphId, ref data))
                 {
                     break;
                 }
@@ -154,7 +154,7 @@ internal static class LookupType5SubTable
                 return false;
             }
 
-            ushort baseGlyphId = collection[baseGlyphIndex].GlyphId;
+            ushort baseGlyphId = buffer[baseGlyphIndex].GlyphId;
             int ligatureIndex = this.ligatureCoverage.CoverageIndexOf(baseGlyphId);
             if (ligatureIndex < 0 || ligatureIndex >= this.ligatureArrayTable.LigatureAttachTables.Length)
             {
@@ -166,15 +166,15 @@ internal static class LookupType5SubTable
             // If yes, we can directly use the component index. If not, we attach the mark
             // glyph to the last component of the ligature.
             LigatureAttachTable ligatureAttach = this.ligatureArrayTable.LigatureAttachTables[ligatureIndex];
-            GlyphShapingData markGlyph = collection[index];
-            GlyphShapingData ligGlyph = collection[baseGlyphIndex];
+            ref GlyphShapingData markGlyph = ref buffer[index];
+            ref GlyphShapingData ligGlyph = ref buffer[baseGlyphIndex];
             int compIndex = ligGlyph.LigatureId > 0 && ligGlyph.LigatureId == markGlyph.LigatureId && markGlyph.LigatureComponent > 0
                 ? Math.Min(markGlyph.LigatureComponent, ligGlyph.CodePointCount) - 1
                 : ligGlyph.CodePointCount - 1;
 
             MarkRecord markRecord = this.markArrayTable.MarkRecords[markIndex];
             AnchorTable baseAnchor = ligatureAttach.ComponentRecords[compIndex].LigatureAnchorTables[markRecord.MarkClass];
-            AdvancedTypographicUtils.ApplyAnchor(fontMetrics, collection, index, baseAnchor, markRecord, baseGlyphIndex, feature);
+            AdvancedTypographicUtils.ApplyAnchor(fontMetrics, buffer, index, baseAnchor, markRecord, baseGlyphIndex, feature);
 
             return true;
         }

@@ -121,12 +121,12 @@ internal sealed class LookupType3Format1SubTable : LookupSubTable
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,
-        GlyphSubstitutionCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
         int index,
         int count)
     {
-        ushort glyphId = collection[index].GlyphId;
+        ushort glyphId = buffer[index].GlyphId;
         if (glyphId == 0)
         {
             return false;
@@ -139,7 +139,7 @@ internal sealed class LookupType3Format1SubTable : LookupSubTable
             // TODO: We're just choosing the first alternative here.
             // It looks like the choice is arbitrary and should be determined by
             // the client.
-            collection.Replace(index, this.alternateSetTables[offset].AlternateGlyphs[0], feature);
+            buffer.Replace(index, this.alternateSetTables[offset].AlternateGlyphs[0], feature);
             return true;
         }
 

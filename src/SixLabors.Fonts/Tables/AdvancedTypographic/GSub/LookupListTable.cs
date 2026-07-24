@@ -188,24 +188,24 @@ internal sealed class LookupTable
     }
 
     /// <summary>
-    /// Attempts to perform a glyph substitution at the specified index in the collection.
+    /// Attempts to perform a glyph substitution at the specified index in the buffer.
     /// </summary>
     /// <param name="fontMetrics">The font metrics.</param>
     /// <param name="table">The GSUB table.</param>
-    /// <param name="collection">The glyph substitution collection.</param>
+    /// <param name="buffer">The glyph substitution buffer.</param>
     /// <param name="feature">The feature tag to apply.</param>
-    /// <param name="index">The index in the collection at which to attempt substitution.</param>
+    /// <param name="index">The index in the buffer at which to attempt substitution.</param>
     /// <param name="count">The number of glyphs in the input sequence to consider.</param>
     /// <returns><see langword="true"/> if a substitution was performed; otherwise, <see langword="false"/>.</returns>
     public bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,
-        GlyphSubstitutionCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
         int index,
         int count)
     {
-        ushort glyphId = collection[index].GlyphId;
+        ushort glyphId = buffer[index].GlyphId;
         foreach (LookupSubTable subTable in this.LookupSubTables)
         {
             // A glyph outside the subtable's digest cannot match its coverage, so the
@@ -221,7 +221,7 @@ internal sealed class LookupTable
                 ShapingProbe.SubTableProbes++;
             }
 
-            if (subTable.TrySubstitution(fontMetrics, table, collection, feature, index, count))
+            if (subTable.TrySubstitution(fontMetrics, table, buffer, feature, index, count))
             {
                 // A lookup is finished for a glyph after the client locates the target
                 // glyph or glyph context and performs a substitution, if specified.
@@ -304,19 +304,19 @@ internal abstract class LookupSubTable
     public virtual void CollectDigest(ref GlyphSetDigest digest) => digest.AddAll();
 
     /// <summary>
-    /// Attempts to perform a glyph substitution at the specified index in the collection.
+    /// Attempts to perform a glyph substitution at the specified index in the buffer.
     /// </summary>
     /// <param name="fontMetrics">The font metrics.</param>
     /// <param name="table">The GSUB table.</param>
-    /// <param name="collection">The glyph substitution collection.</param>
+    /// <param name="buffer">The glyph substitution buffer.</param>
     /// <param name="feature">The feature tag to apply.</param>
-    /// <param name="index">The index in the collection at which to attempt substitution.</param>
+    /// <param name="index">The index in the buffer at which to attempt substitution.</param>
     /// <param name="count">The number of glyphs in the input sequence to consider.</param>
     /// <returns><see langword="true"/> if a substitution was performed; otherwise, <see langword="false"/>.</returns>
     public abstract bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,
-        GlyphSubstitutionCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
         int index,
         int count);

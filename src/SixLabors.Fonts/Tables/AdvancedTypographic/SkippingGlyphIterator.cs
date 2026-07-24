@@ -4,7 +4,7 @@
 namespace SixLabors.Fonts.Tables.AdvancedTypographic;
 
 /// <summary>
-/// An iterator over a glyph shaping collection that respects OpenType lookup flags,
+/// An iterator over a glyph shaping buffer that respects OpenType lookup flags,
 /// skipping glyphs that should be ignored (marks, base glyphs, ligatures) based on the flags.
 /// </summary>
 internal struct SkippingGlyphIterator
@@ -31,19 +31,19 @@ internal struct SkippingGlyphIterator
     /// Initializes a new instance of the <see cref="SkippingGlyphIterator"/> struct.
     /// </summary>
     /// <param name="fontMetrics">The font metrics for glyph class lookups.</param>
-    /// <param name="collection">The glyph shaping collection to iterate over.</param>
-    /// <param name="index">The starting index in the collection.</param>
+    /// <param name="buffer">The glyph shaping buffer to iterate over.</param>
+    /// <param name="index">The starting index in the buffer.</param>
     /// <param name="lookupFlags">The lookup flags that control which glyphs to skip.</param>
     /// <param name="markFilteringSet">The mark filtering set index, used when <see cref="LookupFlags.UseMarkFilteringSet"/> is set.</param>
     public SkippingGlyphIterator(
         FontMetrics fontMetrics,
-        GlyphShapingCollection collection,
+        ShapingBuffer buffer,
         int index,
         LookupFlags lookupFlags,
         ushort markFilteringSet)
     {
         this.fontMetrics = fontMetrics;
-        this.Collection = collection;
+        this.Collection = buffer;
         this.Index = index;
         this.ignoreClassMask = (ushort)(((lookupFlags & LookupFlags.IgnoreBaseGlyphs) != 0 ? GlyphShapingClass.BaseProp : 0)
             | ((lookupFlags & LookupFlags.IgnoreLigatures) != 0 ? GlyphShapingClass.LigatureProp : 0)
@@ -55,12 +55,12 @@ internal struct SkippingGlyphIterator
     }
 
     /// <summary>
-    /// Gets the glyph shaping collection being iterated.
+    /// Gets the glyph shaping buffer being iterated.
     /// </summary>
-    public GlyphShapingCollection Collection { get; }
+    public ShapingBuffer Collection { get; }
 
     /// <summary>
-    /// Gets or sets the current index in the collection.
+    /// Gets or sets the current index in the buffer.
     /// </summary>
     public int Index { get; set; }
 
@@ -158,13 +158,13 @@ internal struct SkippingGlyphIterator
     /// <returns><see langword="true"/> if the glyph should be skipped; otherwise, <see langword="false"/>.</returns>
     private readonly bool ShouldIgnore(int index)
     {
-        GlyphShapingData data = this.Collection[index];
+        ref GlyphShapingData data = ref this.Collection[index];
 
         // The shaping class is cached on the glyph keyed by glyph id; test the cache
         // inline so the common hit path avoids the classification call entirely.
         ushort props = data.ShapingClassCacheKey == data.GlyphId
             ? data.CachedShapingClass.Props
-            : AdvancedTypographicUtils.GetGlyphShapingClass(this.fontMetrics, data.GlyphId, data).Props;
+            : AdvancedTypographicUtils.GetGlyphShapingClass(this.fontMetrics, data.GlyphId, ref data).Props;
 
         if ((props & this.ignoreClassMask) != 0)
         {

@@ -86,12 +86,12 @@ internal sealed class LookupType5Format1SubTable : LookupSubTable
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,
-        GlyphSubstitutionCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
         int index,
         int count)
     {
-        ushort glyphId = collection[index].GlyphId;
+        ushort glyphId = buffer[index].GlyphId;
         if (glyphId == 0)
         {
             return false;
@@ -106,7 +106,7 @@ internal sealed class LookupType5Format1SubTable : LookupSubTable
         // TODO: Check this.
         // https://docs.microsoft.com/en-us/typography/opentype/spec/gsub#example-7-contextual-substitution-format-1
         SequenceRuleSetTable ruleSetTable = this.seqRuleSetTables[offset];
-        SkippingGlyphIterator iterator = new(fontMetrics, collection, index, this.LookupFlags, this.MarkFilteringSet);
+        SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
         foreach (SequenceRuleTable ruleTable in ruleSetTable.SequenceRuleTables)
         {
             int remaining = count - 1;
@@ -129,7 +129,7 @@ internal sealed class LookupType5Format1SubTable : LookupSubTable
                 this.LookupFlags,
                 this.MarkFilteringSet,
                 ruleTable.SequenceLookupRecords,
-                collection,
+                buffer,
                 index,
                 count);
         }
@@ -203,12 +203,12 @@ internal sealed class LookupType5Format2SubTable : LookupSubTable
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,
-        GlyphSubstitutionCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
         int index,
         int count)
     {
-        ushort glyphId = collection[index].GlyphId;
+        ushort glyphId = buffer[index].GlyphId;
         if (glyphId == 0)
         {
             return false;
@@ -233,7 +233,7 @@ internal sealed class LookupType5Format2SubTable : LookupSubTable
             return false;
         }
 
-        SkippingGlyphIterator iterator = new(fontMetrics, collection, index, this.LookupFlags, this.MarkFilteringSet);
+        SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
         foreach (ClassSequenceRuleTable ruleTable in ruleSetTable.SequenceRuleTables)
         {
             int remaining = count - 1;
@@ -256,7 +256,7 @@ internal sealed class LookupType5Format2SubTable : LookupSubTable
                 this.LookupFlags,
                 this.MarkFilteringSet,
                 ruleTable.SequenceLookupRecords,
-                collection,
+                buffer,
                 index,
                 count);
         }
@@ -333,19 +333,19 @@ internal sealed class LookupType5Format3SubTable : LookupSubTable
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,
-        GlyphSubstitutionCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
         int index,
         int count)
     {
-        ushort glyphId = collection[index].GlyphId;
+        ushort glyphId = buffer[index].GlyphId;
         if (glyphId == 0)
         {
             return false;
         }
 
         // https://docs.microsoft.com/en-us/typography/opentype/spec/gsub#53-context-substitution-format-3-coverage-based-glyph-contexts
-        SkippingGlyphIterator iterator = new(fontMetrics, collection, index, this.LookupFlags, this.MarkFilteringSet);
+        SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
         if (!AdvancedTypographicUtils.MatchCoverageSequence(iterator, this.coverageTables, index, index + count))
         {
             return false;
@@ -359,7 +359,7 @@ internal sealed class LookupType5Format3SubTable : LookupSubTable
             this.LookupFlags,
             this.MarkFilteringSet,
             this.sequenceLookupRecords,
-            collection,
+            buffer,
             index,
             count);
     }

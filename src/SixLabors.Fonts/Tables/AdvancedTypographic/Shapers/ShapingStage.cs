@@ -13,10 +13,10 @@ namespace SixLabors.Fonts.Tables.AdvancedTypographic.Shapers;
 internal readonly struct ShapingStage : IEquatable<ShapingStage>
 {
     /// <summary>The optional action to invoke before the feature is applied.</summary>
-    private readonly Action<GlyphShapingCollection, int, int>? preAction;
+    private readonly Action<ShapingBuffer, int, int>? preAction;
 
     /// <summary>The optional action to invoke after the feature is applied.</summary>
-    private readonly Action<GlyphShapingCollection, int, int>? postAction;
+    private readonly Action<ShapingBuffer, int, int>? postAction;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ShapingStage"/> struct.
@@ -24,7 +24,7 @@ internal readonly struct ShapingStage : IEquatable<ShapingStage>
     /// <param name="featureTag">The OpenType feature tag for this stage.</param>
     /// <param name="preAction">An optional action to invoke before the feature is applied.</param>
     /// <param name="postAction">An optional action to invoke after the feature is applied.</param>
-    public ShapingStage(Tag featureTag, Action<GlyphShapingCollection, int, int>? preAction, Action<GlyphShapingCollection, int, int>? postAction)
+    public ShapingStage(Tag featureTag, Action<ShapingBuffer, int, int>? preAction, Action<ShapingBuffer, int, int>? postAction)
     {
         this.FeatureTag = featureTag;
         this.preAction = preAction;
@@ -39,20 +39,20 @@ internal readonly struct ShapingStage : IEquatable<ShapingStage>
     /// <summary>
     /// Invokes the pre-processing action for this shaping stage, if one was provided.
     /// </summary>
-    /// <param name="collection">The glyph shaping collection.</param>
+    /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based index of the first element.</param>
     /// <param name="count">The number of elements.</param>
-    public void PreProcessFeature(GlyphShapingCollection collection, int index, int count)
-        => this.preAction?.Invoke(collection, index, count);
+    public void PreProcessFeature(ShapingBuffer buffer, int index, int count)
+        => this.preAction?.Invoke(buffer, index, count);
 
     /// <summary>
     /// Invokes the post-processing action for this shaping stage, if one was provided.
     /// </summary>
-    /// <param name="collection">The glyph shaping collection.</param>
+    /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based index of the first element.</param>
     /// <param name="count">The number of elements.</param>
-    public void PostProcessFeature(GlyphShapingCollection collection, int index, int count)
-        => this.postAction?.Invoke(collection, index, count);
+    public void PostProcessFeature(ShapingBuffer buffer, int index, int count)
+        => this.postAction?.Invoke(buffer, index, count);
 
     /// <inheritdoc />
     public override bool Equals(object? obj)

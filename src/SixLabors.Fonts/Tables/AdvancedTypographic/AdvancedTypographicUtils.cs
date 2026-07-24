@@ -19,17 +19,17 @@ internal static class AdvancedTypographicUtils
     public const int MaxContextLength = 64;
 
     /// <summary>
-    /// The maximum length factor multiplied by collection count to compute max allowable collection size.
+    /// The maximum length factor multiplied by buffer count to compute max allowable buffer size.
     /// </summary>
     private const int MaxLengthFactor = 64;
 
     /// <summary>
-    /// The minimum value for the max allowable collection size.
+    /// The minimum value for the max allowable buffer size.
     /// </summary>
     private const int MaxLengthMinimum = 16384;
 
     /// <summary>
-    /// The maximum operations factor multiplied by collection count to compute max allowable operations.
+    /// The maximum operations factor multiplied by buffer count to compute max allowable operations.
     /// </summary>
     private const int MaxOperationsFactor = 1024;
 
@@ -77,9 +77,9 @@ internal static class AdvancedTypographicUtils
     }
 
     /// <summary>
-    /// Gets the maximum allowable shaping collection count for the given input length.
+    /// Gets the maximum allowable shaping buffer count for the given input length.
     /// </summary>
-    /// <param name="length">The input collection length.</param>
+    /// <param name="length">The input buffer length.</param>
     /// <returns>The maximum allowable count.</returns>
     public static int GetMaxAllowableShapingCollectionCount(int length)
         => (int)Math.Min(Math.Max((long)length * MaxLengthFactor, MaxLengthMinimum), MaxShapingCharsLength);
@@ -87,7 +87,7 @@ internal static class AdvancedTypographicUtils
     /// <summary>
     /// Gets the maximum allowable shaping operations count for the given input length.
     /// </summary>
-    /// <param name="length">The input collection length.</param>
+    /// <param name="length">The input buffer length.</param>
     /// <returns>The maximum allowable operations count.</returns>
     public static int GetMaxAllowableShapingOperationsCount(int length)
         => (int)Math.Min(Math.Max((long)length * MaxOperationsFactor, MaxOperationsMinimum), MaxShapingCharsLength);
@@ -101,8 +101,8 @@ internal static class AdvancedTypographicUtils
     /// <param name="lookupFlags">The lookup flags for glyph filtering.</param>
     /// <param name="markFilteringSet">The mark filtering set index.</param>
     /// <param name="records">The sequence lookup records specifying which lookups to apply at which positions.</param>
-    /// <param name="collection">The glyph substitution collection.</param>
-    /// <param name="index">The starting index in the collection.</param>
+    /// <param name="buffer">The glyph substitution buffer.</param>
+    /// <param name="index">The starting index in the buffer.</param>
     /// <param name="count">The number of glyphs in the input sequence.</param>
     /// <returns><see langword="true"/> if the lookups were applied.</returns>
     public static bool ApplyLookupList(
@@ -112,17 +112,17 @@ internal static class AdvancedTypographicUtils
         LookupFlags lookupFlags,
         ushort markFilteringSet,
         SequenceLookupRecord[] records,
-        GlyphSubstitutionCollection collection,
+        ShapingBuffer buffer,
         int index,
         int count)
     {
-        SkippingGlyphIterator iterator = new(fontMetrics, collection, index, lookupFlags, markFilteringSet);
+        SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, lookupFlags, markFilteringSet);
         if (ShapingProbe.Enabled)
         {
             ShapingProbe.ContextIterators++;
         }
 
-        int currentCount = collection.Count;
+        int currentCount = buffer.Count;
 
         foreach (SequenceLookupRecord lookupRecord in records)
         {
@@ -131,13 +131,13 @@ internal static class AdvancedTypographicUtils
             iterator.Index = index;
             iterator.Increment(sequenceIndex);
             GSub.LookupTable lookup = table.LookupList.LookupTables[lookupIndex];
-            _ = lookup.TrySubstitution(fontMetrics, table, collection, feature, iterator.Index, count - (iterator.Index - index));
+            _ = lookup.TrySubstitution(fontMetrics, table, buffer, feature, iterator.Index, count - (iterator.Index - index));
 
-            // Account for substitutions changing the length of the collection.
-            if (collection.Count != currentCount)
+            // Account for substitutions changing the length of the buffer.
+            if (buffer.Count != currentCount)
             {
-                count -= currentCount - collection.Count;
-                currentCount = collection.Count;
+                count -= currentCount - buffer.Count;
+                currentCount = buffer.Count;
             }
         }
 
@@ -153,8 +153,8 @@ internal static class AdvancedTypographicUtils
     /// <param name="lookupFlags">The lookup flags for glyph filtering.</param>
     /// <param name="markFilteringSet">The mark filtering set index.</param>
     /// <param name="records">The sequence lookup records specifying which lookups to apply at which positions.</param>
-    /// <param name="collection">The glyph positioning collection.</param>
-    /// <param name="index">The starting index in the collection.</param>
+    /// <param name="buffer">The glyph positioning buffer.</param>
+    /// <param name="index">The starting index in the buffer.</param>
     /// <param name="count">The number of glyphs in the input sequence.</param>
     /// <returns><see langword="true"/> if the lookups were applied.</returns>
     public static bool ApplyLookupList(
@@ -164,11 +164,11 @@ internal static class AdvancedTypographicUtils
         LookupFlags lookupFlags,
         ushort markFilteringSet,
         SequenceLookupRecord[] records,
-        GlyphPositioningCollection collection,
+        ShapingBuffer buffer,
         int index,
         int count)
     {
-        SkippingGlyphIterator iterator = new(fontMetrics, collection, index, lookupFlags, markFilteringSet);
+        SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, lookupFlags, markFilteringSet);
         if (ShapingProbe.Enabled)
         {
             ShapingProbe.ContextIterators++;
@@ -181,7 +181,7 @@ internal static class AdvancedTypographicUtils
             iterator.Index = index;
             iterator.Increment(sequenceIndex);
             LookupTable lookup = table.LookupList.LookupTables[lookupIndex];
-            _ = lookup.TryUpdatePosition(fontMetrics, table, collection, feature, iterator.Index, count - (iterator.Index - index));
+            _ = lookup.TryUpdatePosition(fontMetrics, table, buffer, feature, iterator.Index, count - (iterator.Index - index));
         }
 
         return true;
@@ -264,8 +264,8 @@ internal static class AdvancedTypographicUtils
     /// </summary>
     /// <param name="iterator">The skipping glyph iterator.</param>
     /// <param name="coverageTable">The array of coverage tables to match against.</param>
-    /// <param name="startIndex">The starting index in the collection.</param>
-    /// <param name="endExclusive">The exclusive end index in the collection.</param>
+    /// <param name="startIndex">The starting index in the buffer.</param>
+    /// <param name="endExclusive">The exclusive end index in the buffer.</param>
     /// <returns><see langword="true"/> if all coverage tables matched; otherwise, <see langword="false"/>.</returns>
     public static bool MatchCoverageSequence(
         SkippingGlyphIterator iterator,
@@ -287,8 +287,8 @@ internal static class AdvancedTypographicUtils
     /// </summary>
     /// <param name="iterator">The skipping glyph iterator.</param>
     /// <param name="backtrack">The array of backtrack coverage tables to match against.</param>
-    /// <param name="startIndex">The starting index in the collection (the first backtrack position).</param>
-    /// <param name="endExclusive">The exclusive end index in the collection.</param>
+    /// <param name="startIndex">The starting index in the buffer (the first backtrack position).</param>
+    /// <param name="endExclusive">The exclusive end index in the buffer.</param>
     /// <returns><see langword="true"/> if all backtrack coverage tables matched; otherwise, <see langword="false"/>.</returns>
     public static bool MatchBacktrackCoverageSequence(
         SkippingGlyphIterator iterator,
@@ -376,7 +376,7 @@ internal static class AdvancedTypographicUtils
     /// <param name="fontMetrics">The font metrics.</param>
     /// <param name="lookupFlags">The lookup flags for glyph filtering.</param>
     /// <param name="markFilteringSet">The mark filtering set index.</param>
-    /// <param name="collection">The glyph shaping collection.</param>
+    /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The starting index of the input sequence.</param>
     /// <param name="count">The number of glyphs available from the starting index.</param>
     /// <param name="input">The array of input coverage tables.</param>
@@ -387,7 +387,7 @@ internal static class AdvancedTypographicUtils
         FontMetrics fontMetrics,
         LookupFlags lookupFlags,
         ushort markFilteringSet,
-        GlyphShapingCollection collection,
+        ShapingBuffer buffer,
         int index,
         int count,
         CoverageTable[] input,
@@ -396,7 +396,7 @@ internal static class AdvancedTypographicUtils
     {
         int endExclusive = index + count;
 
-        SkippingGlyphIterator iterator = new(fontMetrics, collection, index, lookupFlags, markFilteringSet);
+        SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, lookupFlags, markFilteringSet);
         if (ShapingProbe.Enabled)
         {
             ShapingProbe.ContextIterators++;
@@ -445,15 +445,15 @@ internal static class AdvancedTypographicUtils
     /// Applies anchor-based positioning for mark-to-base, mark-to-ligature, or mark-to-mark attachment.
     /// </summary>
     /// <param name="fontMetrics">The font metrics.</param>
-    /// <param name="collection">The glyph positioning collection.</param>
-    /// <param name="index">The index of the mark glyph in the collection.</param>
+    /// <param name="buffer">The glyph positioning buffer.</param>
+    /// <param name="index">The index of the mark glyph in the buffer.</param>
     /// <param name="baseAnchor">The anchor table for the base glyph, or <see langword="null"/> if no anchor is defined.</param>
     /// <param name="markRecord">The mark record containing the mark anchor table and class.</param>
-    /// <param name="baseGlyphIndex">The index of the base glyph in the collection.</param>
+    /// <param name="baseGlyphIndex">The index of the base glyph in the buffer.</param>
     /// <param name="feature">The feature tag being applied.</param>
     public static void ApplyAnchor(
         FontMetrics fontMetrics,
-        GlyphPositioningCollection collection,
+        ShapingBuffer buffer,
         int index,
         AnchorTable? baseAnchor,
         MarkRecord markRecord,
@@ -468,34 +468,34 @@ internal static class AdvancedTypographicUtils
             return;
         }
 
-        GlyphShapingData baseData = collection[baseGlyphIndex];
-        AnchorXY baseXY = baseAnchor.GetAnchor(fontMetrics, baseData, collection);
+        ref GlyphShapingData baseData = ref buffer[baseGlyphIndex];
+        AnchorXY baseXY = baseAnchor.GetAnchor(fontMetrics, ref baseData, buffer);
 
-        GlyphShapingData markData = collection[index];
-        AnchorXY markXY = markRecord.MarkAnchorTable.GetAnchor(fontMetrics, markData, collection);
+        ref GlyphShapingData markData = ref buffer[index];
+        AnchorXY markXY = markRecord.MarkAnchorTable.GetAnchor(fontMetrics, ref markData, buffer);
 
         markData.Bounds.X = baseXY.XCoordinate - markXY.XCoordinate;
         markData.Bounds.Y = baseXY.YCoordinate - markXY.YCoordinate;
         markData.MarkAttachment = baseGlyphIndex;
-        markData.AppliedFeatureMask |= collection.FeatureMap.GetOrAddMask(feature);
+        markData.AppliedFeatureMask |= buffer.FeatureMap.GetOrAddMask(feature);
     }
 
     /// <summary>
-    /// Applies a value record's positioning adjustments to a glyph in the collection.
+    /// Applies a value record's positioning adjustments to a glyph in the buffer.
     /// </summary>
     /// <param name="fontMetrics">The font metrics.</param>
-    /// <param name="collection">The glyph positioning collection.</param>
-    /// <param name="index">The index of the glyph in the collection.</param>
+    /// <param name="buffer">The glyph positioning buffer.</param>
+    /// <param name="index">The index of the glyph in the buffer.</param>
     /// <param name="record">The value record containing positioning adjustments.</param>
     /// <param name="feature">The feature tag being applied.</param>
     public static void ApplyPosition(
         FontMetrics fontMetrics,
-        GlyphPositioningCollection collection,
+        ShapingBuffer buffer,
         int index,
         ValueRecord record,
         Tag feature)
     {
-        GlyphShapingData current = collection[index];
+        ref GlyphShapingData current = ref buffer[index];
         current.Bounds.Width += record.XAdvance;
         current.Bounds.Height += record.YAdvance;
         current.Bounds.X += record.XPlacement;
@@ -510,7 +510,7 @@ internal static class AdvancedTypographicUtils
             current.Bounds.Height += (short)MathF.Round(fontMetrics.GetGDefVariationDelta(record.YAdvanceVariation));
         }
 
-        current.AppliedFeatureMask |= collection.FeatureMap.GetOrAddMask(feature);
+        current.AppliedFeatureMask |= buffer.FeatureMap.GetOrAddMask(feature);
     }
 
     /// <summary>
@@ -520,7 +520,7 @@ internal static class AdvancedTypographicUtils
     /// <param name="glyphId">The glyph identifier.</param>
     /// <param name="shapingData">The glyph shaping data.</param>
     /// <returns><see langword="true"/> if the glyph is a mark; otherwise, <see langword="false"/>.</returns>
-    public static bool IsMarkGlyph(FontMetrics fontMetrics, ushort glyphId, GlyphShapingData shapingData)
+    public static bool IsMarkGlyph(FontMetrics fontMetrics, ushort glyphId, ref GlyphShapingData shapingData)
     {
         if (!fontMetrics.TryGetGlyphClass(glyphId, out GlyphClassDef? glyphClass) &&
             !CodePoint.IsMark(shapingData.CodePoint))
@@ -545,7 +545,7 @@ internal static class AdvancedTypographicUtils
     /// <param name="glyphId">The glyph identifier.</param>
     /// <param name="shapingData">The glyph shaping data, used for caching and Unicode fallback.</param>
     /// <returns>The <see cref="GlyphShapingClass"/>.</returns>
-    public static GlyphShapingClass GetGlyphShapingClass(FontMetrics fontMetrics, ushort glyphId, GlyphShapingData shapingData)
+    public static GlyphShapingClass GetGlyphShapingClass(FontMetrics fontMetrics, ushort glyphId, ref GlyphShapingData shapingData)
     {
         // Cache the shaping class on the GlyphShapingData to avoid repeated GDEF lookups.
         // The cache key stores the glyph id; -1 means "not cached".
@@ -626,7 +626,7 @@ internal static class AdvancedTypographicUtils
     {
         int position = iterator.Index;
         int offset = iterator.Increment(increment);
-        GlyphShapingCollection collection = iterator.Collection;
+        ShapingBuffer buffer = iterator.Collection;
 
         if (offset < 0)
         {
@@ -634,9 +634,9 @@ internal static class AdvancedTypographicUtils
         }
 
         int i = 0;
-        while (i < sequence.Length && i < MaxContextLength && offset < collection.Count)
+        while (i < sequence.Length && i < MaxContextLength && offset < buffer.Count)
         {
-            if (!condition(sequence[i], collection[offset], state))
+            if (!condition(sequence[i], buffer[offset], state))
             {
                 break;
             }
@@ -673,7 +673,7 @@ internal static class AdvancedTypographicUtils
     {
         int position = iterator.Index;
         int offset = iterator.Increment(increment);
-        GlyphShapingCollection collection = iterator.Collection;
+        ShapingBuffer buffer = iterator.Collection;
 
         if (offset < 0)
         {
@@ -681,9 +681,9 @@ internal static class AdvancedTypographicUtils
         }
 
         int i = 0;
-        while (i < sequence.Length && i < MaxContextLength && offset < collection.Count)
+        while (i < sequence.Length && i < MaxContextLength && offset < buffer.Count)
         {
-            if (!condition(sequence[i], collection[offset]))
+            if (!condition(sequence[i], buffer[offset]))
             {
                 break;
             }
@@ -706,10 +706,10 @@ internal static class AdvancedTypographicUtils
     /// </summary>
     /// <typeparam name="T">The type of sequence elements to match.</typeparam>
     /// <param name="iterator">The skipping glyph iterator.</param>
-    /// <param name="startIndex">The starting index in the collection.</param>
+    /// <param name="startIndex">The starting index in the buffer.</param>
     /// <param name="sequence">The array of elements to match.</param>
     /// <param name="direction">The direction to iterate (forward or backward).</param>
-    /// <param name="endExclusive">The exclusive end index in the collection.</param>
+    /// <param name="endExclusive">The exclusive end index in the buffer.</param>
     /// <param name="condition">The condition function to test each element against glyph data.</param>
     /// <param name="matches">A span to store matched glyph indices, or default if not needed.</param>
     /// <returns><see langword="true"/> if all elements in the sequence were matched; otherwise, <see langword="false"/>.</returns>
@@ -730,8 +730,8 @@ internal static class AdvancedTypographicUtils
         int saved = iterator.Index;
         iterator.Index = startIndex;
 
-        GlyphShapingCollection collection = iterator.Collection;
-        int limit = Math.Min(endExclusive, collection.Count);
+        ShapingBuffer buffer = iterator.Collection;
+        int limit = Math.Min(endExclusive, buffer.Count);
 
         for (int i = 0; i < sequence.Length && i < MaxContextLength; i++)
         {
@@ -741,7 +741,7 @@ internal static class AdvancedTypographicUtils
                 return false;
             }
 
-            GlyphShapingData data = collection[iterator.Index];
+            ref GlyphShapingData data = ref buffer[iterator.Index];
             if (!condition(sequence[i], data))
             {
                 iterator.Index = saved;

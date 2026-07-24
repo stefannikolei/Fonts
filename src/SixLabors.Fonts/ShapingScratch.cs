@@ -6,10 +6,10 @@ using SixLabors.Fonts.Tables.AdvancedTypographic;
 namespace SixLabors.Fonts;
 
 /// <summary>
-/// Reusable shaping pipeline state: the substitution and positioning collections, their
-/// shared feature map, and the pool of retired glyph data instances. Storage grows to
-/// the workload's high-water mark and is reused across calls, so steady-state shaping
-/// performs no per-call allocation for pipeline state.
+/// Reusable shaping pipeline state: the per-font-run workspace buffer, the accumulated
+/// result buffer, and their shared feature map. Buffer storage grows to the workload's
+/// high-water mark and is reused across calls, so steady-state shaping performs no
+/// per-call allocation for pipeline state.
 /// </summary>
 /// <remarks>
 /// A scratch is exclusively owned by one shaping call at a time, enforced by
@@ -19,47 +19,41 @@ namespace SixLabors.Fonts;
 /// </remarks>
 internal sealed class ShapingScratch
 {
-    /// <summary>The pass-wide feature bit assignment, reset per call.</summary>
+    /// <summary>
+    /// The pass-wide feature bit assignment, reset per call.
+    /// </summary>
     private ShapingFeatureMap? featureMap;
 
-    /// <summary>The reusable substitution collection.</summary>
-    private GlyphSubstitutionCollection? substitutions;
-
-    /// <summary>The reusable positioning collection.</summary>
-    private GlyphPositioningCollection? positionings;
-
     /// <summary>
-    /// Retired <see cref="GlyphShapingData"/> instances awaiting reuse. Filled from the
-    /// positioning collection at reset time, drained by the substitution collection as
-    /// glyphs are added.
+    /// The per-font-run workspace buffer glyphs are substituted in.
     /// </summary>
-    private readonly List<GlyphShapingData> dataPool = [];
+    private ShapingBuffer? workspace;
 
     /// <summary>
-    /// Gets the reusable shaping collections, reset for a new pass over the given
-    /// options. The positioning collection's retired glyph data instances are returned
-    /// to the pool before the substitution collection begins renting.
+    /// The accumulated result buffer glyphs are seeded and positioned in.
+    /// </summary>
+    private ShapingBuffer? result;
+
+    /// <summary>
+    /// Gets the reusable shaping buffers, reset for a new pass over the given options.
     /// </summary>
     /// <param name="options">The text options for the pass.</param>
-    /// <returns>The reusable collections, sharing one feature map.</returns>
-    internal (GlyphSubstitutionCollection Substitutions, GlyphPositioningCollection Positionings) Prepare(TextOptions options)
+    /// <returns>The reusable buffers, sharing one feature map.</returns>
+    internal (ShapingBuffer Workspace, ShapingBuffer Result) Prepare(TextOptions options)
     {
         if (this.featureMap is null)
         {
             this.featureMap = new();
-            this.substitutions = new(options, this.featureMap)
-            {
-                ReusePool = this.dataPool,
-            };
-            this.positionings = new(options, this.featureMap);
+            this.workspace = new(options, this.featureMap, ShapingBufferRole.Substitution);
+            this.result = new(options, this.featureMap, ShapingBufferRole.Positioning);
         }
         else
         {
             this.featureMap.Reset();
-            this.positionings!.ResetForReuse(options, this.dataPool);
-            this.substitutions!.ResetForReuse(options);
+            this.workspace!.Reset(options);
+            this.result!.Reset(options);
         }
 
-        return (this.substitutions!, this.positionings!);
+        return (this.workspace!, this.result!);
     }
 }

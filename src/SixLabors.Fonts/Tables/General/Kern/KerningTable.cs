@@ -89,17 +89,17 @@ internal sealed class KerningTable : Table
     /// Updates glyph positions by applying kerning adjustments for the specified glyph pair.
     /// </summary>
     /// <param name="fontMetrics">The font metrics used for position calculations.</param>
-    /// <param name="collection">The glyph positioning collection to update.</param>
-    /// <param name="left">The index of the left glyph in the collection.</param>
-    /// <param name="right">The index of the right glyph in the collection.</param>
-    public void UpdatePositions(FontMetrics fontMetrics, GlyphPositioningCollection collection, int left, int right)
+    /// <param name="buffer">The glyph positioning buffer to update.</param>
+    /// <param name="left">The index of the left glyph in the buffer.</param>
+    /// <param name="right">The index of the right glyph in the buffer.</param>
+    public void UpdatePositions(FontMetrics fontMetrics, ShapingBuffer buffer, int left, int right)
     {
-        if (this.Count == 0 || collection.Count == 0)
+        if (this.Count == 0 || buffer.Count == 0)
         {
             return;
         }
 
-        GlyphShapingData current = collection[left];
+        ref GlyphShapingData current = ref buffer[left];
         if (current.IsKerned)
         {
             // Already kerned via previous processing.
@@ -107,11 +107,11 @@ internal sealed class KerningTable : Table
         }
 
         ushort currentId = current.GlyphId;
-        ushort nextId = collection[right].GlyphId;
+        ushort nextId = buffer[right].GlyphId;
 
         if (this.TryGetKerningOffset(currentId, nextId, out Vector2 result))
         {
-            collection.Advance(fontMetrics, left, currentId, (short)result.X, (short)result.Y);
+            buffer.Advance(fontMetrics, left, currentId, (short)result.X, (short)result.Y);
             current.IsKerned = true;
         }
     }

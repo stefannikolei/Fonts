@@ -108,7 +108,7 @@ internal static class LookupType3SubTable
         public override bool TryUpdatePosition(
             FontMetrics fontMetrics,
             GPosTable table,
-            GlyphPositioningCollection collection,
+            ShapingBuffer buffer,
             Tag feature,
             int index,
             int count)
@@ -120,14 +120,14 @@ internal static class LookupType3SubTable
 
             // Implements Cursive Attachment Positioning Subtable:
             // https://docs.microsoft.com/en-us/typography/opentype/spec/gpos#lookup-type-3-cursive-attachment-positioning-subtable
-            ushort glyphId = collection[index].GlyphId;
+            ushort glyphId = buffer[index].GlyphId;
             if (glyphId == 0)
             {
                 return false;
             }
 
             int nextIndex = index + 1;
-            ushort nextGlyphId = collection[nextIndex].GlyphId;
+            ushort nextGlyphId = buffer[nextIndex].GlyphId;
             if (nextGlyphId == 0)
             {
                 return false;
@@ -159,13 +159,13 @@ internal static class LookupType3SubTable
                 return false;
             }
 
-            GlyphShapingData current = collection[index];
-            GlyphShapingData next = collection[nextIndex];
+            ref GlyphShapingData current = ref buffer[index];
+            ref GlyphShapingData next = ref buffer[nextIndex];
 
-            AnchorXY exitXY = exit.GetAnchor(fontMetrics, current, collection);
-            AnchorXY entryXY = entry.GetAnchor(fontMetrics, next, collection);
+            AnchorXY exitXY = exit.GetAnchor(fontMetrics, ref current, buffer);
+            AnchorXY entryXY = entry.GetAnchor(fontMetrics, ref next, buffer);
 
-            bool isVerticalLayout = AdvancedTypographicUtils.IsVerticalGlyph(current.CodePoint, collection.TextOptions.LayoutMode);
+            bool isVerticalLayout = AdvancedTypographicUtils.IsVerticalGlyph(current.CodePoint, buffer.TextOptions.LayoutMode);
             if (!isVerticalLayout)
             {
                 // Horizontal
@@ -213,9 +213,9 @@ internal static class LookupType3SubTable
             // previous connection now attaches to new parent.Watch out for case
             // where new parent is on the path from old chain...
             bool horizontal = !isVerticalLayout;
-            ReverseCursiveMinorOffset(collection, index, child, horizontal, parent);
+            ReverseCursiveMinorOffset(buffer, index, child, horizontal, parent);
 
-            GlyphShapingData c = collection[child];
+            ref GlyphShapingData c = ref buffer[child];
             c.CursiveAttachment = parent - child;
             if (horizontal)
             {
@@ -228,7 +228,7 @@ internal static class LookupType3SubTable
 
             // If parent was attached to child, separate them.
             // https://github.com/harfbuzz/harfbuzz/issues/2469
-            GlyphShapingData p = collection[parent];
+            ref GlyphShapingData p = ref buffer[parent];
             if (p.CursiveAttachment == -c.CursiveAttachment)
             {
                 p.CursiveAttachment = 0;
@@ -252,19 +252,19 @@ internal static class LookupType3SubTable
         /// Recursively reverses the cursive minor offset chain so that the entire tree
         /// of a previous connection attaches to the new parent.
         /// </summary>
-        /// <param name="collection">The glyph positioning collection.</param>
+        /// <param name="buffer">The glyph positioning buffer.</param>
         /// <param name="position">The original glyph position that initiated the chain reversal.</param>
         /// <param name="i">The current index in the chain being reversed.</param>
         /// <param name="horizontal">Whether the layout is horizontal.</param>
         /// <param name="parent">The new parent index to stop at.</param>
         private static void ReverseCursiveMinorOffset(
-            GlyphPositioningCollection collection,
+            ShapingBuffer buffer,
             int position,
             int i,
             bool horizontal,
             int parent)
         {
-            GlyphShapingData c = collection[i];
+            ref GlyphShapingData c = ref buffer[i];
             int chain = c.CursiveAttachment;
             if (chain <= 0)
             {
@@ -281,9 +281,9 @@ internal static class LookupType3SubTable
                 return;
             }
 
-            ReverseCursiveMinorOffset(collection, position, j, horizontal, parent);
+            ReverseCursiveMinorOffset(buffer, position, j, horizontal, parent);
 
-            GlyphShapingData p = collection[j];
+            ref GlyphShapingData p = ref buffer[j];
             if (horizontal)
             {
                 p.Bounds.Y = -c.Bounds.Y;

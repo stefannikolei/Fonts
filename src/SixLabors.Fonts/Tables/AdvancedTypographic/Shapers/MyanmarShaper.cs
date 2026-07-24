@@ -73,31 +73,31 @@ internal sealed class MyanmarShaper : DefaultShaper
     }
 
     /// <inheritdoc />
-    protected override void PlanFeatures(GlyphShapingCollection collection, int index, int count)
+    protected override void PlanFeatures(ShapingBuffer buffer, int index, int count)
     {
-        this.AddFeature(collection, index, count, LoclTag, preAction: this.SetupSyllables);
-        this.AddFeature(collection, index, count, CcmpTag);
+        this.AddFeature(buffer, index, count, LoclTag, preAction: this.SetupSyllables);
+        this.AddFeature(buffer, index, count, CcmpTag);
 
-        this.AddFeature(collection, index, count, RphfTag, preAction: this.InitialReorder);
-        this.AddFeature(collection, index, count, PrefTag);
-        this.AddFeature(collection, index, count, BlwfTag);
-        this.AddFeature(collection, index, count, PstfTag);
+        this.AddFeature(buffer, index, count, RphfTag, preAction: this.InitialReorder);
+        this.AddFeature(buffer, index, count, PrefTag);
+        this.AddFeature(buffer, index, count, BlwfTag);
+        this.AddFeature(buffer, index, count, PstfTag);
 
-        this.AddFeature(collection, index, count, PresTag);
-        this.AddFeature(collection, index, count, AbvsTag);
-        this.AddFeature(collection, index, count, BlwsTag);
-        this.AddFeature(collection, index, count, PstsTag);
+        this.AddFeature(buffer, index, count, PresTag);
+        this.AddFeature(buffer, index, count, AbvsTag);
+        this.AddFeature(buffer, index, count, BlwsTag);
+        this.AddFeature(buffer, index, count, PstsTag);
     }
 
     /// <summary>
     /// Identifies Myanmar syllables using the state machine and assigns shaping info to each glyph.
     /// </summary>
-    /// <param name="collection">The glyph shaping collection.</param>
+    /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private void SetupSyllables(GlyphShapingCollection collection, int index, int count)
+    private void SetupSyllables(ShapingBuffer buffer, int index, int count)
     {
-        if (collection is not GlyphSubstitutionCollection substitutionCollection)
+        if (buffer.Role != ShapingBufferRole.Substitution)
         {
             return;
         }
@@ -119,7 +119,7 @@ internal sealed class MyanmarShaper : DefaultShaper
             // CategoryToSymbolId[(int)my] performs this mapping, ensuring that
             // every codepoint is presented to the DFA using the correct compact
             // symbol index.
-            CodePoint codePoint = substitutionCollection[i].CodePoint;
+            CodePoint codePoint = buffer[i].CodePoint;
             MyanmarCategories my = (MyanmarCategories)IndicShapingCategory(codePoint);
             values[i - index] = CategoryToSymbolId[(int)my];
         }
@@ -133,7 +133,7 @@ internal sealed class MyanmarShaper : DefaultShaper
                 ++syllable;
                 for (int i = last; i < match.StartIndex; i++)
                 {
-                    GlyphShapingData data = substitutionCollection[i + index];
+                    ref GlyphShapingData data = ref buffer[i + index];
                     data.IndicShapingEngineInfo = new(Categories.X, Positions.End, "non_indic_cluster", syllable);
                 }
             }
@@ -143,7 +143,7 @@ internal sealed class MyanmarShaper : DefaultShaper
             // Create shaper info.
             for (int i = match.StartIndex; i <= match.EndIndex; i++)
             {
-                GlyphShapingData data = substitutionCollection[i + index];
+                ref GlyphShapingData data = ref buffer[i + index];
                 CodePoint codePoint = data.CodePoint;
 
                 string syllableType = match.Tags[0];
@@ -168,7 +168,7 @@ internal sealed class MyanmarShaper : DefaultShaper
             ++syllable;
             for (int i = last; i < count; i++)
             {
-                GlyphShapingData data = substitutionCollection[i + index];
+                ref GlyphShapingData data = ref buffer[i + index];
                 data.IndicShapingEngineInfo = new(Categories.X, Positions.End, "non_indic_cluster", syllable);
             }
         }
@@ -178,12 +178,12 @@ internal sealed class MyanmarShaper : DefaultShaper
     /// Performs the initial reordering pass for Myanmar consonant syllables, including
     /// dotted circle insertion for broken clusters.
     /// </summary>
-    /// <param name="collection">The glyph shaping collection.</param>
+    /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private void InitialReorder(GlyphShapingCollection collection, int index, int count)
+    private void InitialReorder(ShapingBuffer buffer, int index, int count)
     {
-        if (collection is not GlyphSubstitutionCollection substitutionCollection)
+        if (buffer.Role != ShapingBufferRole.Substitution)
         {
             return;
         }
@@ -191,7 +191,7 @@ internal sealed class MyanmarShaper : DefaultShaper
         FontMetrics fontMetrics = this.fontMetrics;
         int max = index + count;
         int start = index;
-        int end = NextSyllable(substitutionCollection, index, max);
+        int end = NextSyllable(buffer, index, max);
 
         if (this.hasBrokenClusters)
         {
@@ -200,7 +200,7 @@ internal sealed class MyanmarShaper : DefaultShaper
                 Span<ushort> glyphs = stackalloc ushort[2];
                 while (start < max)
                 {
-                    GlyphShapingData data = substitutionCollection[start];
+                    ref GlyphShapingData data = ref buffer[start];
                     IndicShapingEngineInfo? dataInfo = data.IndicShapingEngineInfo;
                     string? type = dataInfo?.SyllableType;
 
@@ -210,20 +210,20 @@ internal sealed class MyanmarShaper : DefaultShaper
                         int i = start;
                         for (i = start; i < end; i++)
                         {
-                            if (substitutionCollection[i].IndicShapingEngineInfo?.Category != Categories.Repha)
+                            if (buffer[i].IndicShapingEngineInfo?.Category != Categories.Repha)
                             {
                                 break;
                             }
                         }
 
-                        GlyphShapingData current = substitutionCollection[i];
+                        ref GlyphShapingData current = ref buffer[i];
                         glyphs[0] = current.GlyphId;
                         glyphs[1] = circleId;
 
-                        substitutionCollection.Replace(i, glyphs, KnownFeatureTags.GlyphCompositionDecomposition);
+                        buffer.Replace(i, glyphs, KnownFeatureTags.GlyphCompositionDecomposition);
 
                         // Update shaping info for newly inserted data.
-                        GlyphShapingData dotted = substitutionCollection[i + 1];
+                        ref GlyphShapingData dotted = ref buffer[i + 1];
                         dotted.IndicShapingEngineInfo!.Category = Categories.Dotted_Circle;
 
                         end++;
@@ -231,17 +231,17 @@ internal sealed class MyanmarShaper : DefaultShaper
                     }
 
                     start = end;
-                    end = NextSyllable(substitutionCollection, start, max);
+                    end = NextSyllable(buffer, start, max);
                 }
 
                 start = index;
-                end = NextSyllable(substitutionCollection, index, max);
+                end = NextSyllable(buffer, index, max);
             }
         }
 
         while (start < max)
         {
-            GlyphShapingData data = substitutionCollection[start];
+            ref GlyphShapingData data = ref buffer[start];
             IndicShapingEngineInfo? dataInfo = data.IndicShapingEngineInfo;
             string? type = dataInfo?.SyllableType;
 
@@ -250,33 +250,33 @@ internal sealed class MyanmarShaper : DefaultShaper
                 // We already inserted dotted-circles, so just call the consonant_syllable.
                 case "broken_cluster":
                 case "consonant_syllable":
-                    ReorderConsonantSyllable(substitutionCollection, start, end);
+                    ReorderConsonantSyllable(buffer, start, end);
                     break;
                 default:
                     break;
             }
 
             start = end;
-            end = NextSyllable(substitutionCollection, start, max);
+            end = NextSyllable(buffer, start, max);
         }
     }
 
     /// <summary>
     /// Reorders glyphs within a single Myanmar consonant syllable according to the Myanmar shaping spec.
     /// </summary>
-    /// <param name="substitutionCollection">The glyph substitution collection.</param>
+    /// <param name="buffer">The glyph substitution buffer.</param>
     /// <param name="start">The start index of the syllable.</param>
     /// <param name="end">The exclusive end index of the syllable.</param>
-    private static void ReorderConsonantSyllable(GlyphSubstitutionCollection substitutionCollection, int start, int end)
+    private static void ReorderConsonantSyllable(ShapingBuffer buffer, int start, int end)
     {
         int basePosition = end;
         bool hasReph = false;
         {
             int limit = start;
             if (start + 3 <= end &&
-                substitutionCollection[start].IndicShapingEngineInfo?.MyanmarCategory == MyanmarCategories.Ra &&
-                substitutionCollection[start + 1].IndicShapingEngineInfo?.MyanmarCategory == MyanmarCategories.As &&
-                substitutionCollection[start + 2].IndicShapingEngineInfo?.MyanmarCategory == MyanmarCategories.H)
+                buffer[start].IndicShapingEngineInfo?.MyanmarCategory == MyanmarCategories.Ra &&
+                buffer[start + 1].IndicShapingEngineInfo?.MyanmarCategory == MyanmarCategories.As &&
+                buffer[start + 2].IndicShapingEngineInfo?.MyanmarCategory == MyanmarCategories.H)
             {
                 limit += 3;
                 basePosition = start;
@@ -291,7 +291,7 @@ internal sealed class MyanmarShaper : DefaultShaper
 
                 for (int i = limit; i < end; i++)
                 {
-                    if (IsConsonant(substitutionCollection[i]))
+                    if (IsConsonant(ref buffer[i]))
                     {
                         basePosition = i;
                         break;
@@ -305,17 +305,17 @@ internal sealed class MyanmarShaper : DefaultShaper
             int i = start;
             for (; i < start + (hasReph ? 3 : 0); i++)
             {
-                substitutionCollection[i].IndicShapingEngineInfo!.Position = Positions.After_Main;
+                buffer[i].IndicShapingEngineInfo!.Position = Positions.After_Main;
             }
 
             for (; i < basePosition; i++)
             {
-                substitutionCollection[i].IndicShapingEngineInfo!.Position = Positions.Pre_C;
+                buffer[i].IndicShapingEngineInfo!.Position = Positions.Pre_C;
             }
 
             if (i < end)
             {
-                substitutionCollection[i].IndicShapingEngineInfo!.Position = Positions.Base_C;
+                buffer[i].IndicShapingEngineInfo!.Position = Positions.Base_C;
                 i++;
             }
 
@@ -324,7 +324,7 @@ internal sealed class MyanmarShaper : DefaultShaper
             // The following loop may be ugly, but it implements all of Myanmar reordering!
             for (; i < end; i++)
             {
-                GlyphShapingData data = substitutionCollection[i];
+                ref GlyphShapingData data = ref buffer[i];
                 IndicShapingEngineInfo info = data.IndicShapingEngineInfo!;
 
                 // Pre-base reordering
@@ -343,7 +343,7 @@ internal sealed class MyanmarShaper : DefaultShaper
 
                 if (info.MyanmarCategory == MyanmarCategories.VS)
                 {
-                    info.Position = substitutionCollection[i - 1].IndicShapingEngineInfo!.Position;
+                    info.Position = buffer[i - 1].IndicShapingEngineInfo!.Position;
                     continue;
                 }
 
@@ -377,7 +377,7 @@ internal sealed class MyanmarShaper : DefaultShaper
             }
         }
 
-        substitutionCollection.Sort(start, end, (a, b) =>
+        buffer.Sort(start, end, (a, b) =>
         {
             int pa = a.IndicShapingEngineInfo?.Position != null ? (int)a.IndicShapingEngineInfo.Position : 0;
             int pb = b.IndicShapingEngineInfo?.Position != null ? (int)b.IndicShapingEngineInfo.Position : 0;
@@ -390,7 +390,7 @@ internal sealed class MyanmarShaper : DefaultShaper
 
         for (int i = start; i < end; i++)
         {
-            if (substitutionCollection[i].IndicShapingEngineInfo?.Position == Positions.Pre_M)
+            if (buffer[i].IndicShapingEngineInfo?.Position == Positions.Pre_M)
             {
                 if (firstLeftMatra == end)
                 {
@@ -405,15 +405,15 @@ internal sealed class MyanmarShaper : DefaultShaper
         if (firstLeftMatra < lastLeftMatra)
         {
             // No need to merge clusters, done already?
-            substitutionCollection.ReverseRange(firstLeftMatra, lastLeftMatra + 1);
+            buffer.ReverseRange(firstLeftMatra, lastLeftMatra + 1);
 
             // Reverse back VS, etc.
             int i = firstLeftMatra;
             for (int j = i; j <= lastLeftMatra; j++)
             {
-                if (substitutionCollection[j].IndicShapingEngineInfo?.MyanmarCategory == MyanmarCategories.VPre)
+                if (buffer[j].IndicShapingEngineInfo?.MyanmarCategory == MyanmarCategories.VPre)
                 {
-                    substitutionCollection.ReverseRange(i, j + 1);
+                    buffer.ReverseRange(i, j + 1);
                     i = j + 1;
                 }
             }
@@ -425,27 +425,27 @@ internal sealed class MyanmarShaper : DefaultShaper
     /// </summary>
     /// <param name="data">The glyph shaping data.</param>
     /// <returns><see langword="true"/> if the glyph is a consonant.</returns>
-    private static bool IsConsonant(GlyphShapingData data)
+    private static bool IsConsonant(ref GlyphShapingData data)
         => data.IndicShapingEngineInfo != null && (FlagUnsafe(data.IndicShapingEngineInfo.MyanmarCategory) & MyanmarConsonantFlags) != 0;
 
     /// <summary>
-    /// Finds the start index of the next syllable in the collection.
+    /// Finds the start index of the next syllable in the buffer.
     /// </summary>
-    /// <param name="collection">The glyph substitution collection.</param>
+    /// <param name="buffer">The glyph substitution buffer.</param>
     /// <param name="index">The current index.</param>
     /// <param name="count">The maximum index bound.</param>
     /// <returns>The start index of the next syllable.</returns>
-    private static int NextSyllable(GlyphSubstitutionCollection collection, int index, int count)
+    private static int NextSyllable(ShapingBuffer buffer, int index, int count)
     {
         if (index >= count)
         {
             return index;
         }
 
-        int? syllable = collection[index].IndicShapingEngineInfo?.Syllable;
+        int? syllable = buffer[index].IndicShapingEngineInfo?.Syllable;
         while (++index < count)
         {
-            if (collection[index].IndicShapingEngineInfo?.Syllable != syllable)
+            if (buffer[index].IndicShapingEngineInfo?.Syllable != syllable)
             {
                 break;
             }

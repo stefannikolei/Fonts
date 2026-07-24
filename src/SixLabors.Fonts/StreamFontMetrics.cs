@@ -451,11 +451,11 @@ internal partial class StreamFontMetrics : FontMetrics
     }
 
     /// <inheritdoc/>
-    internal override void ApplySubstitution(GlyphSubstitutionCollection collection)
+    internal override void ApplySubstitution(ShapingBuffer buffer)
     {
         if (this.TryGetGSubTable(out GSubTable? gSubTable))
         {
-            gSubTable.ApplySubstitution(this, collection);
+            gSubTable.ApplySubstitution(this, buffer);
         }
     }
 
@@ -477,7 +477,7 @@ internal partial class StreamFontMetrics : FontMetrics
     }
 
     /// <inheritdoc/>
-    internal override void UpdatePositions(GlyphPositioningCollection collection)
+    internal override void UpdatePositions(ShapingBuffer buffer)
     {
         bool isTTF = this.outlineType == OutlineType.TrueType;
         GPosTable? gpos = isTTF
@@ -485,9 +485,9 @@ internal partial class StreamFontMetrics : FontMetrics
             : this.compactFontTables!.GPos;
 
         bool kerned = false;
-        KerningMode kerningMode = collection.TextOptions.KerningMode;
+        KerningMode kerningMode = buffer.TextOptions.KerningMode;
 
-        gpos?.TryUpdatePositions(this, collection, out kerned);
+        gpos?.TryUpdatePositions(this, buffer, out kerned);
 
         // TODO: I don't think we should disable kerning here.
         if (!kerned && kerningMode != KerningMode.None)
@@ -499,15 +499,15 @@ internal partial class StreamFontMetrics : FontMetrics
             if (kern?.Count > 0)
             {
                 // Set max constraints to prevent OutOfMemoryException or infinite loops from attacks.
-                int maxCount = AdvancedTypographicUtils.GetMaxAllowableShapingCollectionCount(collection.Count);
-                for (int index = 0; index < collection.Count - 1; index++)
+                int maxCount = AdvancedTypographicUtils.GetMaxAllowableShapingCollectionCount(buffer.Count);
+                for (int index = 0; index < buffer.Count - 1; index++)
                 {
                     if (index >= maxCount)
                     {
                         break;
                     }
 
-                    kern.UpdatePositions(this, collection, index, index + 1);
+                    kern.UpdatePositions(this, buffer, index, index + 1);
                 }
             }
         }

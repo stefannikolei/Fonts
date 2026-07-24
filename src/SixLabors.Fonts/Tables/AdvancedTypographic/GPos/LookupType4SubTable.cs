@@ -116,14 +116,14 @@ internal static class LookupType4SubTable
         public override bool TryUpdatePosition(
             FontMetrics fontMetrics,
             GPosTable table,
-            GlyphPositioningCollection collection,
+            ShapingBuffer buffer,
             Tag feature,
             int index,
             int count)
         {
             // Mark-to-Base Attachment Positioning Subtable.
             // Implements: https://docs.microsoft.com/en-us/typography/opentype/spec/gpos#lookup-type-4-mark-to-base-attachment-positioning-subtable
-            ushort glyphId = collection[index].GlyphId;
+            ushort glyphId = buffer[index].GlyphId;
             if (glyphId == 0)
             {
                 return false;
@@ -139,8 +139,8 @@ internal static class LookupType4SubTable
             int baseGlyphIndex = index;
             while (--baseGlyphIndex >= 0)
             {
-                GlyphShapingData data = collection[baseGlyphIndex];
-                if (!AdvancedTypographicUtils.IsMarkGlyph(fontMetrics, data.GlyphId, data) && data.LigatureComponent <= 0)
+                ref GlyphShapingData data = ref buffer[baseGlyphIndex];
+                if (!AdvancedTypographicUtils.IsMarkGlyph(fontMetrics, data.GlyphId, ref data) && data.LigatureComponent <= 0)
                 {
                     break;
                 }
@@ -151,7 +151,7 @@ internal static class LookupType4SubTable
                 return false;
             }
 
-            ushort baseGlyphId = collection[baseGlyphIndex].GlyphId;
+            ushort baseGlyphId = buffer[baseGlyphIndex].GlyphId;
             int baseIndex = this.baseCoverage.CoverageIndexOf(baseGlyphId);
             if (baseIndex < 0 || baseIndex >= this.baseArrayTable.BaseRecords.Length)
             {
@@ -160,7 +160,7 @@ internal static class LookupType4SubTable
 
             MarkRecord markRecord = this.markArrayTable.MarkRecords[markIndex];
             AnchorTable baseAnchor = this.baseArrayTable.BaseRecords[baseIndex].BaseAnchorTables[markRecord.MarkClass];
-            AdvancedTypographicUtils.ApplyAnchor(fontMetrics, collection, index, baseAnchor, markRecord, baseGlyphIndex, feature);
+            AdvancedTypographicUtils.ApplyAnchor(fontMetrics, buffer, index, baseAnchor, markRecord, baseGlyphIndex, feature);
 
             return true;
         }

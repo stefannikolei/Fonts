@@ -147,31 +147,31 @@ internal class GSubTable : Table
     }
 
     /// <summary>
-    /// Applies glyph substitution to the collection using GSUB lookup rules.
+    /// Applies glyph substitution to the buffer using GSUB lookup rules.
     /// </summary>
     /// <param name="fontMetrics">The font metrics.</param>
-    /// <param name="collection">The glyph substitution collection.</param>
-    public void ApplySubstitution(FontMetrics fontMetrics, GlyphSubstitutionCollection collection)
+    /// <param name="buffer">The glyph substitution buffer.</param>
+    public void ApplySubstitution(FontMetrics fontMetrics, ShapingBuffer buffer)
     {
         // Set max constraints to prevent OutOfMemoryException or infinite loops from attacks.
-        int maxCount = AdvancedTypographicUtils.GetMaxAllowableShapingCollectionCount(collection.Count);
-        int maxOperationsCount = AdvancedTypographicUtils.GetMaxAllowableShapingOperationsCount(collection.Count);
+        int maxCount = AdvancedTypographicUtils.GetMaxAllowableShapingCollectionCount(buffer.Count);
+        int maxOperationsCount = AdvancedTypographicUtils.GetMaxAllowableShapingOperationsCount(buffer.Count);
         int currentOperations = 0;
 
-        for (int i = 0; i < collection.Count; i++)
+        for (int i = 0; i < buffer.Count; i++)
         {
             // Choose a shaper based on the script.
             // This determines which features to apply to which glyphs.
-            ScriptClass current = this.GetScriptClass(CodePoint.GetScriptClass(collection[i].CodePoint));
+            ScriptClass current = this.GetScriptClass(CodePoint.GetScriptClass(buffer[i].CodePoint));
 
             int index = i;
             int count = 1;
-            while (i < collection.Count - 1)
+            while (i < buffer.Count - 1)
             {
                 // We want to assign the same feature lookups to individual sections of the text rather
                 // than the text as a whole to ensure that different language shapers do not interfere
                 // with each other when the text contains multiple languages.
-                ScriptClass next = this.GetScriptClass(CodePoint.GetScriptClass(collection[i + 1].CodePoint));
+                ScriptClass next = this.GetScriptClass(CodePoint.GetScriptClass(buffer[i + 1].CodePoint));
                 if (next != current &&
                     current is not ScriptClass.Common and not ScriptClass.Unknown and not ScriptClass.Inherited &&
                     next is not ScriptClass.Common and not ScriptClass.Unknown and not ScriptClass.Inherited)
@@ -194,26 +194,26 @@ internal class GSubTable : Table
             }
 
             Tag unicodeScriptTag = this.GetUnicodeScriptTag(current);
-            BaseShaper shaper = ShaperFactory.Create(current, unicodeScriptTag, fontMetrics, collection.TextOptions);
+            BaseShaper shaper = ShaperFactory.Create(current, unicodeScriptTag, fontMetrics, buffer.TextOptions);
 
             // Plan substitution features for each glyph.
             // Shapers can adjust the count during initialization and feature processing so we must capture
             // the current count to allow resetting indexes and processing counts.
-            int collectionCount = collection.Count;
-            shaper.Plan(collection, index, count);
-            int delta = collection.Count - collectionCount;
+            int collectionCount = buffer.Count;
+            shaper.Plan(buffer, index, count);
+            int delta = buffer.Count - collectionCount;
             i += delta;
             count += delta;
 
             List<ShapingStage> stages = shaper.GetShapingStages();
-            SkippingGlyphIterator iterator = new(fontMetrics, collection, index, default, 0);
+            SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, default, 0);
             foreach (ShapingStage stage in stages)
             {
-                collectionCount = collection.Count;
-                stage.PreProcessFeature(collection, index, count);
+                collectionCount = buffer.Count;
+                stage.PreProcessFeature(buffer, index, count);
 
-                // Account for substitutions changing the length of the collection.
-                delta = collection.Count - collectionCount;
+                // Account for substitutions changing the length of the buffer.
+                delta = buffer.Count - collectionCount;
                 count += delta;
                 i += delta;
 
@@ -221,7 +221,7 @@ internal class GSubTable : Table
 
                 this.ApplyFeature(
                     fontMetrics,
-                    collection,
+                    buffer,
                     ref iterator,
                     in featureTag,
                     current,
@@ -233,11 +233,11 @@ internal class GSubTable : Table
                     maxOperationsCount,
                     ref currentOperations);
 
-                collectionCount = collection.Count;
-                stage.PostProcessFeature(collection, index, count);
+                collectionCount = buffer.Count;
+                stage.PostProcessFeature(buffer, index, count);
 
-                // Account for substitutions changing the length of the collection.
-                delta = collection.Count - collectionCount;
+                // Account for substitutions changing the length of the buffer.
+                delta = buffer.Count - collectionCount;
                 count += delta;
                 i += delta;
             }
@@ -245,23 +245,23 @@ internal class GSubTable : Table
     }
 
     /// <summary>
-    /// Applies a specific feature's lookups to the glyph substitution collection.
+    /// Applies a specific feature's lookups to the glyph substitution buffer.
     /// </summary>
     /// <param name="fontMetrics">The font metrics.</param>
-    /// <param name="collection">The glyph substitution collection.</param>
+    /// <param name="buffer">The glyph substitution buffer.</param>
     /// <param name="iterator">The skipping glyph iterator.</param>
     /// <param name="featureTag">The feature tag to apply.</param>
     /// <param name="current">The current script class.</param>
-    /// <param name="index">The starting index in the collection.</param>
+    /// <param name="index">The starting index in the buffer.</param>
     /// <param name="count">The number of glyphs to process (updated by substitutions).</param>
     /// <param name="i">The outer loop index (updated by substitutions).</param>
-    /// <param name="collectionCount">The tracked collection count (updated by substitutions).</param>
-    /// <param name="maxCount">The maximum allowable collection count.</param>
+    /// <param name="collectionCount">The tracked buffer count (updated by substitutions).</param>
+    /// <param name="maxCount">The maximum allowable buffer count.</param>
     /// <param name="maxOperationsCount">The maximum allowable operations count.</param>
     /// <param name="currentOperations">The current operations counter.</param>
     internal void ApplyFeature(
         FontMetrics fontMetrics,
-        GlyphSubstitutionCollection collection,
+        ShapingBuffer buffer,
         ref SkippingGlyphIterator iterator,
         in Tag featureTag,
         ScriptClass current,
@@ -274,7 +274,7 @@ internal class GSubTable : Table
         ref int currentOperations)
     {
         var lookupProbe = ShapingProbe.Enter();
-        bool found = this.TryGetFeatureLookups(fontMetrics, in featureTag, current, collection.LanguageTags, out List<(Tag Feature, ushort Index, LookupTable LookupTable)>? lookups);
+        bool found = this.TryGetFeatureLookups(fontMetrics, in featureTag, current, buffer.LanguageTags, out List<(Tag Feature, ushort Index, LookupTable LookupTable)>? lookups);
         ShapingProbe.Exit(ShapingProbe.LookupResolve, lookupProbe);
         if (found && lookups is not null)
         {
@@ -284,14 +284,14 @@ internal class GSubTable : Table
                 Tag feature = featureLookup.Feature;
 
                 // Skip the whole lookup when its coverage cannot intersect any glyph id
-                // the collection has ever contained; most fonts carry many lookups for
+                // the buffer has ever contained; most fonts carry many lookups for
                 // glyphs a given text never produces.
                 if (ShapingProbe.Enabled)
                 {
                     ShapingProbe.LookupsConsidered++;
                 }
 
-                if (!featureLookup.LookupTable.Digest.MightIntersect(collection.GlyphDigest))
+                if (!featureLookup.LookupTable.Digest.MightIntersect(buffer.GlyphDigest))
                 {
                     if (ShapingProbe.Enabled)
                     {
@@ -303,7 +303,7 @@ internal class GSubTable : Table
 
                 // Resolve the feature's mask bit once per lookup; the per-glyph gate
                 // below is then a single bitwise AND against the glyph's enabled mask.
-                ulong featureMask = collection.FeatureMap.GetMask(feature);
+                ulong featureMask = buffer.FeatureMap.GetMask(feature);
                 LookupTable featureLookupTable = featureLookup.LookupTable;
                 iterator.Reset(index, featureLookupTable.LookupFlags, featureLookupTable.MarkFilteringSet);
                 long featureStart = ShapingProbe.Timestamp();
@@ -311,7 +311,7 @@ internal class GSubTable : Table
 
                 while (iterator.Index < index + count)
                 {
-                    if (collection.Count >= maxCount || currentOperations++ >= maxOperationsCount)
+                    if (buffer.Count >= maxCount || currentOperations++ >= maxOperationsCount)
                     {
                         return;
                     }
@@ -323,7 +323,7 @@ internal class GSubTable : Table
 
                     // The digest cheaply rejects glyphs no subtable of this lookup can
                     // affect; a maybe falls through to the exact coverage test inside.
-                    GlyphShapingData glyphData = collection[iterator.Index];
+                    ref GlyphShapingData glyphData = ref buffer[iterator.Index];
                     if ((glyphData.FeatureMask & featureMask) == 0 || !featureLookupTable.Digest.MightContain(glyphData.GlyphId))
                     {
                         iterator.Next();
@@ -335,13 +335,13 @@ internal class GSubTable : Table
                         ShapingProbe.SubstitutionAttempts++;
                     }
 
-                    collectionCount = collection.Count;
-                    featureLookup.LookupTable.TrySubstitution(fontMetrics, this, collection, featureLookup.Feature, iterator.Index, count - (iterator.Index - index));
+                    collectionCount = buffer.Count;
+                    featureLookup.LookupTable.TrySubstitution(fontMetrics, this, buffer, featureLookup.Feature, iterator.Index, count - (iterator.Index - index));
                     featureApplies++;
                     iterator.Next();
 
-                    // Account for substitutions changing the length of the collection.
-                    int delta = collection.Count - collectionCount;
+                    // Account for substitutions changing the length of the buffer.
+                    int delta = buffer.Count - collectionCount;
                     count += delta;
                     i += delta;
                 }

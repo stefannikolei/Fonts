@@ -211,11 +211,11 @@ internal sealed class LookupTable
         };
 
     /// <summary>
-    /// Attempts to update the position of glyphs in the collection at the specified index.
+    /// Attempts to update the position of glyphs in the buffer at the specified index.
     /// </summary>
     /// <param name="fontMetrics">The font metrics.</param>
     /// <param name="table">The GPOS table.</param>
-    /// <param name="collection">The glyph positioning collection.</param>
+    /// <param name="buffer">The glyph positioning buffer.</param>
     /// <param name="feature">The feature tag.</param>
     /// <param name="index">The zero-based index of the glyph to position.</param>
     /// <param name="count">The number of glyphs remaining in the sequence.</param>
@@ -223,12 +223,12 @@ internal sealed class LookupTable
     public bool TryUpdatePosition(
         FontMetrics fontMetrics,
         GPosTable table,
-        GlyphPositioningCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
         int index,
         int count)
     {
-        ushort glyphId = collection[index].GlyphId;
+        ushort glyphId = buffer[index].GlyphId;
         foreach (LookupSubTable subTable in this.LookupSubTables)
         {
             // A glyph outside the subtable's digest cannot match its coverage, so the
@@ -246,7 +246,7 @@ internal sealed class LookupTable
 
             // A lookup is finished for a glyph after the client locates the target
             // glyph or glyph context and performs a positioning action, if specified.
-            if (subTable.TryUpdatePosition(fontMetrics, table, collection, feature, index, count))
+            if (subTable.TryUpdatePosition(fontMetrics, table, buffer, feature, index, count))
             {
                 return true;
             }
@@ -297,11 +297,11 @@ internal abstract class LookupSubTable
     public virtual void CollectDigest(ref GlyphSetDigest digest) => digest.AddAll();
 
     /// <summary>
-    /// Attempts to update the position of glyphs in the collection at the specified index.
+    /// Attempts to update the position of glyphs in the buffer at the specified index.
     /// </summary>
     /// <param name="fontMetrics">The font metrics.</param>
     /// <param name="table">The GPOS table.</param>
-    /// <param name="collection">The glyph positioning collection.</param>
+    /// <param name="buffer">The glyph positioning buffer.</param>
     /// <param name="feature">The feature tag.</param>
     /// <param name="index">The zero-based index of the glyph to position.</param>
     /// <param name="count">The number of glyphs remaining in the sequence.</param>
@@ -309,7 +309,7 @@ internal abstract class LookupSubTable
     public abstract bool TryUpdatePosition(
         FontMetrics fontMetrics,
         GPosTable table,
-        GlyphPositioningCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
         int index,
         int count);

@@ -68,11 +68,11 @@ internal class HebrewShaper : DefaultShaper
     }
 
     /// <inheritdoc/>
-    protected override void AssignFeatures(GlyphShapingCollection collection, int index, int count)
+    protected override void AssignFeatures(ShapingBuffer buffer, int index, int count)
     {
-        base.AssignFeatures(collection, index, count);
+        base.AssignFeatures(buffer, index, count);
 
-        if (collection is not GlyphSubstitutionCollection substitutionCollection)
+        if (buffer.Role != ShapingBufferRole.Substitution)
         {
             return;
         }
@@ -80,13 +80,13 @@ internal class HebrewShaper : DefaultShaper
         // Step 1: Reorder Hebrew marks.
         // Swap SHEVA/HIRIQ with following METEG when preceded by PATAH/QAMATS.
         // https://bugzilla.mozilla.org/show_bug.cgi?id=728866
-        ReorderMarks(substitutionCollection, index, count);
+        ReorderMarks(buffer, index, count);
 
         // Step 2: Compose Hebrew presentation forms for legacy fonts.
         // Only applied when the font lacks GSUB features (proxy for lacking GPOS mark).
         if (!this.hasGsub)
         {
-            ComposeHebrewForms(substitutionCollection, this.fontMetrics, index, count);
+            ComposeHebrewForms(buffer, this.fontMetrics, index, count);
         }
     }
 
@@ -98,17 +98,17 @@ internal class HebrewShaper : DefaultShaper
     /// and the meteg stress mark.
     /// </para>
     /// </summary>
-    /// <param name="collection">The glyph substitution collection.</param>
+    /// <param name="buffer">The glyph substitution buffer.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private static void ReorderMarks(GlyphSubstitutionCollection collection, int index, int count)
+    private static void ReorderMarks(ShapingBuffer buffer, int index, int count)
     {
         int end = index + count;
         for (int i = index + 2; i < end; i++)
         {
-            int c0 = collection[i - 2].CodePoint.Value;
-            int c1 = collection[i - 1].CodePoint.Value;
-            int c2 = collection[i].CodePoint.Value;
+            int c0 = buffer[i - 2].CodePoint.Value;
+            int c1 = buffer[i - 1].CodePoint.Value;
+            int c2 = buffer[i].CodePoint.Value;
 
             // c0: PATAH (U+05B7) or QAMATS (U+05B8)
             // c1: SHEVA (U+05B0) or HIRIQ (U+05B4)
@@ -116,12 +116,12 @@ internal class HebrewShaper : DefaultShaper
             if (IsPatahOrQamats(c0) && IsShevaOrHiriq(c1) && IsMetegOrBelow(c2))
             {
                 // Swap positions i-1 and i.
-                GlyphShapingData data1 = collection[i - 1];
-                GlyphShapingData data2 = collection[i];
+                ref GlyphShapingData data1 = ref buffer[i - 1];
+                ref GlyphShapingData data2 = ref buffer[i];
 
                 // Swap codepoints and glyph IDs.
-                (collection[i - 1].CodePoint, collection[i].CodePoint) = (data2.CodePoint, data1.CodePoint);
-                (collection[i - 1].GlyphId, collection[i].GlyphId) = (data2.GlyphId, data1.GlyphId);
+                (buffer[i - 1].CodePoint, buffer[i].CodePoint) = (data2.CodePoint, data1.CodePoint);
+                (buffer[i - 1].GlyphId, buffer[i].GlyphId) = (data2.GlyphId, data1.GlyphId);
                 break;
             }
         }
@@ -131,23 +131,23 @@ internal class HebrewShaper : DefaultShaper
     /// Composes Hebrew base + mark sequences into precomposed presentation forms.
     /// This is a fallback for legacy fonts that lack GPOS mark-to-base positioning.
     /// </summary>
-    /// <param name="collection">The glyph substitution collection.</param>
+    /// <param name="buffer">The glyph substitution buffer.</param>
     /// <param name="fontMetrics">The font metrics for glyph lookups.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private static void ComposeHebrewForms(GlyphSubstitutionCollection collection, FontMetrics fontMetrics, int index, int count)
+    private static void ComposeHebrewForms(ShapingBuffer buffer, FontMetrics fontMetrics, int index, int count)
     {
         int end = index + count;
         for (int i = index + 1; i < end; i++)
         {
-            int a = collection[i - 1].CodePoint.Value;
-            int b = collection[i].CodePoint.Value;
+            int a = buffer[i - 1].CodePoint.Value;
+            int b = buffer[i].CodePoint.Value;
 
             int composed = TryCompose(a, b);
             if (composed != 0 && fontMetrics.TryGetGlyphId(new CodePoint(composed), out ushort composedGlyphId))
             {
                 // Replace the two glyphs with the composed form.
-                collection.Replace(i - 1, 2, composedGlyphId, KnownFeatureTags.GlyphCompositionDecomposition);
+                buffer.Replace(i - 1, 2, composedGlyphId, KnownFeatureTags.GlyphCompositionDecomposition);
                 end--;
                 i--;
             }

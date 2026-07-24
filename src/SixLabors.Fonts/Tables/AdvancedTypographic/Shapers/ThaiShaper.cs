@@ -172,24 +172,24 @@ internal class ThaiShaper : DefaultShaper
     }
 
     /// <inheritdoc/>
-    protected override void AssignFeatures(GlyphShapingCollection collection, int index, int count)
+    protected override void AssignFeatures(ShapingBuffer buffer, int index, int count)
     {
-        base.AssignFeatures(collection, index, count);
+        base.AssignFeatures(buffer, index, count);
 
-        if (collection is not GlyphSubstitutionCollection substitutionCollection)
+        if (buffer.Role != ShapingBufferRole.Substitution)
         {
             return;
         }
 
         // Step 1: Always decompose SARA AM -> NIKHAHIT + SARA AA and reorder.
         // This is needed even when the font has Thai/Lao GSUB tables.
-        count = PreprocessSaraAm(substitutionCollection, this.fontMetrics, index, count);
+        count = PreprocessSaraAm(buffer, this.fontMetrics, index, count);
 
         // Step 2: PUA-based fallback mark positioning.
         // Only applied for Thai (not Lao) when the font lacks Thai GSUB features.
         if (this.ScriptClass == ScriptClass.Thai && !this.hasGsub)
         {
-            DoThaiPuaShaping(substitutionCollection, this.fontMetrics, index, count);
+            DoThaiPuaShaping(buffer, this.fontMetrics, index, count);
         }
     }
 
@@ -201,12 +201,12 @@ internal class ThaiShaper : DefaultShaper
     /// </para>
     /// <see href="https://linux.thai.net/~thep/th-otf/shaping.html"/>
     /// </summary>
-    /// <param name="collection">The glyph substitution collection.</param>
+    /// <param name="buffer">The glyph substitution buffer.</param>
     /// <param name="fontMetrics">The font metrics for glyph lookups.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
     /// <returns>The updated count after decomposition.</returns>
-    private static int PreprocessSaraAm(GlyphSubstitutionCollection collection, FontMetrics fontMetrics, int index, int count)
+    private static int PreprocessSaraAm(ShapingBuffer buffer, FontMetrics fontMetrics, int index, int count)
     {
         // Characters of significance:
         //
@@ -222,7 +222,7 @@ internal class ThaiShaper : DefaultShaper
         int end = index + count;
         for (int i = index; i < end; i++)
         {
-            GlyphShapingData data = collection[i];
+            ref GlyphShapingData data = ref buffer[i];
             int codepoint = data.CodePoint.Value;
 
             if (!IsSaraAm(codepoint))
@@ -241,21 +241,21 @@ internal class ThaiShaper : DefaultShaper
 
             // Decompose SARA AM into [NIKHAHIT, SARA AA].
             // Replace puts NIKHAHIT at index i, SARA AA at index i+1.
-            collection.Replace(i, [nikhahitId, saraAAId], KnownFeatureTags.GlyphCompositionDecomposition);
-            collection[i].CodePoint = new CodePoint(nikhahitCodepoint);
-            collection[i + 1].CodePoint = new CodePoint(saraAACodepoint);
+            buffer.Replace(i, [nikhahitId, saraAAId], KnownFeatureTags.GlyphCompositionDecomposition);
+            buffer[i].CodePoint = new CodePoint(nikhahitCodepoint);
+            buffer[i + 1].CodePoint = new CodePoint(saraAACodepoint);
             end++;
 
             // Move NIKHAHIT backward over any above-base marks.
             int target = i;
-            while (target > index && IsAboveBaseMark(collection[target - 1].CodePoint.Value))
+            while (target > index && IsAboveBaseMark(buffer[target - 1].CodePoint.Value))
             {
                 target--;
             }
 
             if (target < i)
             {
-                collection.MoveGlyph(i, target);
+                buffer.MoveGlyph(i, target);
             }
 
             // Skip past SARA AA.
@@ -269,11 +269,11 @@ internal class ThaiShaper : DefaultShaper
     /// Applies PUA-based fallback mark positioning using state machines.
     /// Only used for Thai fonts that lack GSUB features.
     /// </summary>
-    /// <param name="collection">The glyph substitution collection.</param>
+    /// <param name="buffer">The glyph substitution buffer.</param>
     /// <param name="fontMetrics">The font metrics for glyph lookups.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private static void DoThaiPuaShaping(GlyphSubstitutionCollection collection, FontMetrics fontMetrics, int index, int count)
+    private static void DoThaiPuaShaping(ShapingBuffer buffer, FontMetrics fontMetrics, int index, int count)
     {
         int aboveState = AboveStartState[(int)ConsonantType.NotConsonant];
         int belowState = BelowStartState[(int)ConsonantType.NotConsonant];
@@ -282,7 +282,7 @@ internal class ThaiShaper : DefaultShaper
         int end = index + count;
         for (int i = index; i < end; i++)
         {
-            int codepoint = collection[i].CodePoint.Value;
+            int codepoint = buffer[i].CodePoint.Value;
             MarkType mt = GetMarkType(codepoint);
 
             if (mt == MarkType.NotMark)
@@ -304,12 +304,12 @@ internal class ThaiShaper : DefaultShaper
 
             if (action == PuaAction.RD)
             {
-                int baseCp = collection[baseIndex].CodePoint.Value;
+                int baseCp = buffer[baseIndex].CodePoint.Value;
                 int puaCp = ThaiPuaShape(baseCp, action, fontMetrics);
                 if (puaCp != baseCp && fontMetrics.TryGetGlyphId(new CodePoint(puaCp), out ushort puaId))
                 {
-                    collection[baseIndex].CodePoint = new CodePoint(puaCp);
-                    collection.SetGlyphId(baseIndex, puaId);
+                    buffer[baseIndex].CodePoint = new CodePoint(puaCp);
+                    buffer.SetGlyphId(baseIndex, puaId);
                 }
             }
             else if (action != PuaAction.NOP)
@@ -317,8 +317,8 @@ internal class ThaiShaper : DefaultShaper
                 int puaCp = ThaiPuaShape(codepoint, action, fontMetrics);
                 if (puaCp != codepoint && fontMetrics.TryGetGlyphId(new CodePoint(puaCp), out ushort puaId))
                 {
-                    collection[i].CodePoint = new CodePoint(puaCp);
-                    collection.SetGlyphId(i, puaId);
+                    buffer[i].CodePoint = new CodePoint(puaCp);
+                    buffer.SetGlyphId(i, puaId);
                 }
             }
         }

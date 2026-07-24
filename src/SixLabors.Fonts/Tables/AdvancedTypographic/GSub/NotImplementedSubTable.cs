@@ -21,7 +21,7 @@ internal class NotImplementedSubTable : LookupSubTable
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,
-        GlyphSubstitutionCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
         int index,
         int count)

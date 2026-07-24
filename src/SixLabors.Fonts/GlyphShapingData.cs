@@ -9,32 +9,38 @@ using static SixLabors.Fonts.Unicode.Resources.IndicShapingData;
 namespace SixLabors.Fonts;
 
 /// <summary>
-/// Contains supplementary data that allows the shaping of glyphs.
+/// Contains supplementary data that allows the shaping of glyphs. Stored by value in
+/// the shaping buffer's flat storage; call sites mutate through the buffer indexer so
+/// writes land in place.
 /// </summary>
 [DebuggerDisplay("{DebuggerDisplay,nq}")]
-internal class GlyphShapingData
+internal struct GlyphShapingData
 {
+#pragma warning disable SA1401 // Field exposed so positioning mutates the embedded bounds in place.
+    /// <summary>
+    /// The shaping bounds. A field rather than a property so positioning lookups
+    /// mutate the embedded value in place and re-seeding is plain value assignment.
+    /// </summary>
+    public GlyphShapingBounds Bounds;
+#pragma warning restore SA1401
+
     private ushort glyphId;
 
     /// <summary>
-    /// The shaping bounds. Backing storage for <see cref="Bounds"/>.
-    /// </summary>
-    private GlyphShapingBounds bounds;
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="GlyphShapingData"/> class.
+    /// Initializes a new instance of the <see cref="GlyphShapingData"/> struct.
     /// </summary>
     /// <param name="textRun">The text run.</param>
     public GlyphShapingData(TextRun textRun) => this.TextRun = textRun;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="GlyphShapingData"/> class.
+    /// Initializes a new instance of the <see cref="GlyphShapingData"/> struct.
     /// </summary>
     /// <param name="data">The data to copy properties from.</param>
     /// <param name="clearFeatures">Whether to clear features.</param>
     public GlyphShapingData(GlyphShapingData data, bool clearFeatures = false)
     {
         this.GlyphId = data.GlyphId;
+        this.CodePointIndex = data.CodePointIndex;
         this.CodePoint = data.CodePoint;
         this.CodePointCount = data.CodePointCount;
         this.Direction = data.Direction;
@@ -76,7 +82,7 @@ internal class GlyphShapingData
 
         this.AppliedFeatureMask = data.AppliedFeatureMask;
 
-        this.bounds = data.bounds;
+        this.Bounds = data.Bounds;
         this.CachedShapingClass = data.CachedShapingClass;
         this.ShapingClassCacheKey = data.ShapingClassCacheKey;
     }
@@ -107,6 +113,12 @@ internal class GlyphShapingData
     /// A value of <c>-1</c> indicates the cache is invalid. Valid entries store the glyph id.
     /// </summary>
     internal int ShapingClassCacheKey { get; set; } = -1;
+
+    /// <summary>
+    /// Gets or sets the zero-based index within the input codepoint collection of the
+    /// leading codepoint this glyph represents.
+    /// </summary>
+    public int CodePointIndex { get; set; }
 
     /// <summary>
     /// Gets or sets the leading codepoint.
@@ -178,12 +190,6 @@ internal class GlyphShapingData
     public ulong AppliedFeatureMask { get; set; }
 
     /// <summary>
-    /// Gets a reference to the shaping bounds, so positioning lookups mutate the
-    /// embedded value in place and re-seeding is plain value assignment.
-    /// </summary>
-    public ref GlyphShapingBounds Bounds => ref this.bounds;
-
-    /// <summary>
     /// Gets or sets a value indicating whether this glyph is the result of a substitution.
     /// </summary>
     public bool IsSubstituted { get; set; }
@@ -226,40 +232,6 @@ internal class GlyphShapingData
     private string DebuggerDisplay
         => FormattableString
         .Invariant($" {this.GlyphId} : {this.CodePoint.ToDebuggerDisplay()} : {CodePoint.GetScriptClass(this.CodePoint)} : {this.Direction} : {this.TextRun.TextAttributes} : {this.LigatureId} : {this.LigatureComponent} : {this.IsDecomposed}");
-
-    /// <summary>
-    /// Resets the instance to its freshly constructed state for reuse by a pooled
-    /// shaping pass. Every mutable member must be reset here; a missed member leaks
-    /// state between shaping calls.
-    /// </summary>
-    /// <param name="textRun">The text run.</param>
-    public void Reset(TextRun textRun)
-    {
-        this.glyphId = 0;
-        this.bounds = default;
-        this.CachedShapingClass = default;
-        this.ShapingClassCacheKey = -1;
-        this.CodePoint = default;
-        this.CodePointCount = 1;
-        this.Direction = default;
-        this.TextRun = textRun;
-        this.LigatureId = 0;
-        this.IsLigated = false;
-        this.LigatureComponent = -1;
-        this.MarkAttachment = -1;
-        this.CursiveAttachment = -1;
-        this.RegisteredFeatureMask = 0;
-        this.FeatureMask = 0;
-        this.AppliedFeatureMask = 0;
-        this.IsSubstituted = false;
-        this.IsDecomposed = false;
-        this.IsPlaceholder = false;
-        this.BidiRun = default;
-        this.IsPositioned = false;
-        this.IsKerned = false;
-        this.UniversalShapingEngineInfo = null;
-        this.IndicShapingEngineInfo = null;
-    }
 
     /// <summary>
     /// Clears the registered and enabled feature masks while preserving the applied

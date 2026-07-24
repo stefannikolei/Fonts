@@ -100,36 +100,36 @@ internal sealed class ArabicShaper : DefaultShaper
     }
 
     /// <inheritdoc/>
-    protected override void PlanFeatures(GlyphShapingCollection collection, int index, int count)
+    protected override void PlanFeatures(ShapingBuffer buffer, int index, int count)
     {
-        this.AddFeature(collection, index, count, CcmpTag);
-        this.AddFeature(collection, index, count, LoclTag);
+        this.AddFeature(buffer, index, count, CcmpTag);
+        this.AddFeature(buffer, index, count, LoclTag);
 
-        this.AddFeature(collection, index, count, IsolTag, false);
-        this.AddFeature(collection, index, count, FinaTag, false);
-        this.AddFeature(collection, index, count, Fin2Tag, false);
-        this.AddFeature(collection, index, count, Fin3Tag, false);
-        this.AddFeature(collection, index, count, MediTag, false);
-        this.AddFeature(collection, index, count, Med2Tag, false);
-        this.AddFeature(collection, index, count, InitTag, false);
+        this.AddFeature(buffer, index, count, IsolTag, false);
+        this.AddFeature(buffer, index, count, FinaTag, false);
+        this.AddFeature(buffer, index, count, Fin2Tag, false);
+        this.AddFeature(buffer, index, count, Fin3Tag, false);
+        this.AddFeature(buffer, index, count, MediTag, false);
+        this.AddFeature(buffer, index, count, Med2Tag, false);
+        this.AddFeature(buffer, index, count, InitTag, false);
 
         // HarfBuzz plans these as Arabic-script features, independently of the
         // generic horizontal feature list. Horizontal runs already get them from
         // DefaultShaper; forced vertical Arabic needs them here as well.
-        if (collection.TextOptions.LayoutMode.IsVertical())
+        if (buffer.TextOptions.LayoutMode.IsVertical())
         {
-            this.AddFeature(collection, index, count, CaltTag);
-            this.AddFeature(collection, index, count, LigaTag);
-            this.AddFeature(collection, index, count, CligTag);
+            this.AddFeature(buffer, index, count, CaltTag);
+            this.AddFeature(buffer, index, count, LigaTag);
+            this.AddFeature(buffer, index, count, CligTag);
         }
 
-        this.AddFeature(collection, index, count, MsetTag);
+        this.AddFeature(buffer, index, count, MsetTag);
     }
 
     /// <inheritdoc/>
-    protected override void AssignFeatures(GlyphShapingCollection collection, int index, int count)
+    protected override void AssignFeatures(ShapingBuffer buffer, int index, int count)
     {
-        base.AssignFeatures(collection, index, count);
+        base.AssignFeatures(buffer, index, count);
 
         int prev = -1;
         int state = 0;
@@ -138,7 +138,7 @@ internal sealed class ArabicShaper : DefaultShaper
         // Apply the state machine to map glyphs to features.
         for (int i = 0; i < count; i++)
         {
-            GlyphShapingData data = collection[i + index];
+            ref GlyphShapingData data = ref buffer[i + index];
             ArabicJoiningClass joiningClass = CodePoint.GetArabicJoiningClass(data.CodePoint);
             ArabicJoiningType joiningType = joiningClass.JoiningType;
             if (joiningType == ArabicJoiningType.Transparent)
@@ -168,25 +168,25 @@ internal sealed class ArabicShaper : DefaultShaper
             switch (actions[i])
             {
                 case Fina:
-                    collection.EnableShapingFeature(i + index, FinaTag);
+                    buffer.EnableShapingFeature(i + index, FinaTag);
                     break;
                 case Fin2:
-                    collection.EnableShapingFeature(i + index, Fin2Tag);
+                    buffer.EnableShapingFeature(i + index, Fin2Tag);
                     break;
                 case Fin3:
-                    collection.EnableShapingFeature(i + index, Fin3Tag);
+                    buffer.EnableShapingFeature(i + index, Fin3Tag);
                     break;
                 case Isol:
-                    collection.EnableShapingFeature(i + index, IsolTag);
+                    buffer.EnableShapingFeature(i + index, IsolTag);
                     break;
                 case Init:
-                    collection.EnableShapingFeature(i + index, InitTag);
+                    buffer.EnableShapingFeature(i + index, InitTag);
                     break;
                 case Medi:
-                    collection.EnableShapingFeature(i + index, MediTag);
+                    buffer.EnableShapingFeature(i + index, MediTag);
                     break;
                 case Med2:
-                    collection.EnableShapingFeature(i + index, Med2Tag);
+                    buffer.EnableShapingFeature(i + index, Med2Tag);
                     break;
             }
         }

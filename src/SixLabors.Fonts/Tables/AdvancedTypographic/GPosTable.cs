@@ -157,41 +157,41 @@ internal class GPosTable : Table
     }
 
     /// <summary>
-    /// Tries to update the positions of glyphs in the collection using GPOS lookup rules.
+    /// Tries to update the positions of glyphs in the buffer using GPOS lookup rules.
     /// </summary>
     /// <param name="fontMetrics">The font metrics.</param>
-    /// <param name="collection">The glyph positioning collection.</param>
+    /// <param name="buffer">The glyph positioning buffer.</param>
     /// <param name="kerned">When this method returns, indicates whether kerning was applied.</param>
     /// <returns><see langword="true"/> if any positioning was updated; otherwise, <see langword="false"/>.</returns>
-    public bool TryUpdatePositions(FontMetrics fontMetrics, GlyphPositioningCollection collection, out bool kerned)
+    public bool TryUpdatePositions(FontMetrics fontMetrics, ShapingBuffer buffer, out bool kerned)
     {
         // Set max constraints to prevent OutOfMemoryException or infinite loops from attacks.
-        int maxCount = AdvancedTypographicUtils.GetMaxAllowableShapingCollectionCount(collection.Count);
-        int maxOperationsCount = AdvancedTypographicUtils.GetMaxAllowableShapingOperationsCount(collection.Count);
+        int maxCount = AdvancedTypographicUtils.GetMaxAllowableShapingCollectionCount(buffer.Count);
+        int maxOperationsCount = AdvancedTypographicUtils.GetMaxAllowableShapingOperationsCount(buffer.Count);
         int currentOperations = 0;
         bool maxOperationsReached = false;
 
         kerned = false;
         bool updated = false;
-        for (int i = 0; i < collection.Count; i++)
+        for (int i = 0; i < buffer.Count; i++)
         {
-            if (!collection.ShouldProcess(fontMetrics, i))
+            if (!buffer.ShouldProcess(fontMetrics, i))
             {
                 continue;
             }
 
-            ScriptClass current = this.GetScriptClass(CodePoint.GetScriptClass(collection[i].CodePoint));
+            ScriptClass current = this.GetScriptClass(CodePoint.GetScriptClass(buffer[i].CodePoint));
 
             int index = i;
             int count = 1;
-            while (i < collection.Count - 1)
+            while (i < buffer.Count - 1)
             {
                 // We want to assign the same feature lookups to individual sections of the text rather
                 // than the text as a whole to ensure that different language shapers do not interfere
                 // with each other when the text contains multiple languages.
                 int ni = i + 1;
-                GlyphShapingData nextData = collection[ni];
-                if (!collection.ShouldProcess(fontMetrics, ni))
+                ref GlyphShapingData nextData = ref buffer[ni];
+                if (!buffer.ShouldProcess(fontMetrics, ni))
                 {
                     break;
                 }
@@ -219,24 +219,24 @@ internal class GPosTable : Table
             }
 
             Tag unicodeScriptTag = this.GetUnicodeScriptTag(current);
-            BaseShaper shaper = ShaperFactory.Create(current, unicodeScriptTag, fontMetrics, collection.TextOptions);
+            BaseShaper shaper = ShaperFactory.Create(current, unicodeScriptTag, fontMetrics, buffer.TextOptions);
 
             if (shaper.MarkZeroingMode == MarkZeroingMode.PreGPos)
             {
-                ZeroMarkAdvances(fontMetrics, collection, index, count);
+                ZeroMarkAdvances(fontMetrics, buffer, index, count);
             }
 
             // Plan positioning features for each glyph.
-            shaper.Plan(collection, index, count);
+            shaper.Plan(buffer, index, count);
             List<ShapingStage> shapingStages = shaper.GetShapingStages();
-            SkippingGlyphIterator iterator = new(fontMetrics, collection, index, default, 0);
+            SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, default, 0);
             foreach (ShapingStage stage in shapingStages)
             {
-                stage.PreProcessFeature(collection, index, count);
+                stage.PreProcessFeature(buffer, index, count);
 
                 Tag featureTag = stage.FeatureTag;
                 var lookupProbe = ShapingProbe.Enter();
-                bool found = this.TryGetFeatureLookups(fontMetrics, in featureTag, current, collection.LanguageTags, out List<(Tag Feature, ushort Index, LookupTable LookupTable)>? lookups);
+                bool found = this.TryGetFeatureLookups(fontMetrics, in featureTag, current, buffer.LanguageTags, out List<(Tag Feature, ushort Index, LookupTable LookupTable)>? lookups);
                 ShapingProbe.Exit(ShapingProbe.LookupResolve, lookupProbe);
                 if (found && lookups is not null)
                 {
@@ -246,9 +246,9 @@ internal class GPosTable : Table
                         Tag feature = featureLookup.Feature;
 
                         // Skip the whole lookup when its coverage cannot intersect any
-                        // glyph id the collection has ever contained; most fonts carry
+                        // glyph id the buffer has ever contained; most fonts carry
                         // many lookups for glyphs a given text never produces.
-                        if (!featureLookup.LookupTable.Digest.MightIntersect(collection.GlyphDigest))
+                        if (!featureLookup.LookupTable.Digest.MightIntersect(buffer.GlyphDigest))
                         {
                             continue;
                         }
@@ -256,7 +256,7 @@ internal class GPosTable : Table
                         // Resolve the feature's mask bit once per lookup; the per-glyph
                         // gate below is then a single bitwise AND against the glyph's
                         // enabled mask.
-                        ulong featureMask = collection.FeatureMap.GetMask(feature);
+                        ulong featureMask = buffer.FeatureMap.GetMask(feature);
                         LookupTable featureLookupTable = featureLookup.LookupTable;
                         iterator.Reset(index, featureLookupTable.LookupFlags, featureLookupTable.MarkFilteringSet);
                         long featureStart = ShapingProbe.Timestamp();
@@ -273,14 +273,14 @@ internal class GPosTable : Table
                             // The digest cheaply rejects glyphs no subtable of this
                             // lookup can affect; a maybe falls through to the exact
                             // coverage test inside.
-                            GlyphShapingData glyphData = collection[iterator.Index];
+                            ref GlyphShapingData glyphData = ref buffer[iterator.Index];
                             if ((glyphData.FeatureMask & featureMask) == 0 || !featureLookupTable.Digest.MightContain(glyphData.GlyphId))
                             {
                                 iterator.Next();
                                 continue;
                             }
 
-                            bool success = featureLookup.LookupTable.TryUpdatePosition(fontMetrics, this, collection, featureLookup.Feature, iterator.Index, count - (iterator.Index - index));
+                            bool success = featureLookup.LookupTable.TryUpdatePosition(fontMetrics, this, buffer, featureLookup.Feature, iterator.Index, count - (iterator.Index - index));
                             featureApplies++;
                             kerned |= success && (feature == KernTag || feature == VKernTag);
                             updated |= success;
@@ -291,18 +291,18 @@ internal class GPosTable : Table
                     }
                 }
 
-                stage.PostProcessFeature(collection, index, count);
+                stage.PostProcessFeature(buffer, index, count);
             }
 
             EndLookups:
             if (shaper.MarkZeroingMode == MarkZeroingMode.PostGpos)
             {
-                ZeroMarkAdvances(fontMetrics, collection, index, count);
+                ZeroMarkAdvances(fontMetrics, buffer, index, count);
             }
 
-            FixCursiveAttachment(collection, index, count);
-            FixMarkAttachment(collection, index, count);
-            UpdatePositions(collection, index, count);
+            FixCursiveAttachment(buffer, index, count);
+            FixMarkAttachment(buffer, index, count);
+            UpdatePositions(buffer, index, count);
 
             if (i >= maxCount || maxOperationsReached)
             {
@@ -568,16 +568,16 @@ internal class GPosTable : Table
     /// <summary>
     /// Fixes cursive attachment positioning by propagating Y (or X for vertical) offsets.
     /// </summary>
-    /// <param name="collection">The glyph positioning collection.</param>
+    /// <param name="buffer">The glyph positioning buffer.</param>
     /// <param name="index">The starting index.</param>
     /// <param name="count">The number of glyphs to process.</param>
-    private static void FixCursiveAttachment(GlyphPositioningCollection collection, int index, int count)
+    private static void FixCursiveAttachment(ShapingBuffer buffer, int index, int count)
     {
-        LayoutMode layoutMode = collection.TextOptions.LayoutMode;
+        LayoutMode layoutMode = buffer.TextOptions.LayoutMode;
         for (int i = 0; i < count; i++)
         {
             int currentIndex = i + index;
-            GlyphShapingData data = collection[currentIndex];
+            ref GlyphShapingData data = ref buffer[currentIndex];
             if (data.CursiveAttachment != -1)
             {
                 int j = data.CursiveAttachment + currentIndex;
@@ -586,7 +586,7 @@ internal class GPosTable : Table
                     return;
                 }
 
-                GlyphShapingData cursiveData = collection[j];
+                ref GlyphShapingData cursiveData = ref buffer[j];
                 if (!AdvancedTypographicUtils.IsVerticalGlyph(data.CodePoint, layoutMode))
                 {
                     data.Bounds.Y += cursiveData.Bounds.Y;
@@ -602,38 +602,35 @@ internal class GPosTable : Table
     /// <summary>
     /// Fixes mark attachment positioning by propagating offsets from base glyphs.
     /// </summary>
-    /// <param name="collection">The glyph positioning collection.</param>
+    /// <param name="buffer">The glyph positioning buffer.</param>
     /// <param name="index">The starting index.</param>
     /// <param name="count">The number of glyphs to process.</param>
-    private static void FixMarkAttachment(GlyphPositioningCollection collection, int index, int count)
+    private static void FixMarkAttachment(ShapingBuffer buffer, int index, int count)
     {
         for (int i = 0; i < count; i++)
         {
             int currentIndex = i + index;
-            GlyphShapingData data = collection[currentIndex];
+            ref GlyphShapingData data = ref buffer[currentIndex];
             if (data.MarkAttachment != -1)
             {
                 int j = data.MarkAttachment;
-                GlyphShapingData markData = collection[j];
-                data.Bounds.X += markData.Bounds.X;
-                data.Bounds.Y += markData.Bounds.Y;
+                data.Bounds.X += buffer[j].Bounds.X;
+                data.Bounds.Y += buffer[j].Bounds.Y;
 
                 if (data.Direction == TextDirection.LeftToRight)
                 {
                     for (int k = j; k < currentIndex; k++)
                     {
-                        markData = collection[k];
-                        data.Bounds.X -= markData.Bounds.Width;
-                        data.Bounds.Y -= markData.Bounds.Height;
+                        data.Bounds.X -= buffer[k].Bounds.Width;
+                        data.Bounds.Y -= buffer[k].Bounds.Height;
                     }
                 }
                 else
                 {
                     for (int k = j + 1; k < currentIndex + 1; k++)
                     {
-                        markData = collection[k];
-                        data.Bounds.X += markData.Bounds.Width;
-                        data.Bounds.Y += markData.Bounds.Height;
+                        data.Bounds.X += buffer[k].Bounds.Width;
+                        data.Bounds.Y += buffer[k].Bounds.Height;
                     }
                 }
             }
@@ -644,16 +641,16 @@ internal class GPosTable : Table
     /// Zeros the advance widths and heights for mark glyphs within the specified range.
     /// </summary>
     /// <param name="fontMetrics">The font metrics.</param>
-    /// <param name="collection">The glyph positioning collection.</param>
+    /// <param name="buffer">The glyph positioning buffer.</param>
     /// <param name="index">The starting index.</param>
     /// <param name="count">The number of glyphs to process.</param>
-    private static void ZeroMarkAdvances(FontMetrics fontMetrics, GlyphPositioningCollection collection, int index, int count)
+    private static void ZeroMarkAdvances(FontMetrics fontMetrics, ShapingBuffer buffer, int index, int count)
     {
         for (int i = 0; i < count; i++)
         {
             int currentIndex = i + index;
-            GlyphShapingData data = collection[currentIndex];
-            if (AdvancedTypographicUtils.IsMarkGlyph(fontMetrics, data.GlyphId, data))
+            ref GlyphShapingData data = ref buffer[currentIndex];
+            if (AdvancedTypographicUtils.IsMarkGlyph(fontMetrics, data.GlyphId, ref data))
             {
                 data.Bounds.Width = 0;
                 data.Bounds.Height = 0;
@@ -662,16 +659,16 @@ internal class GPosTable : Table
     }
 
     /// <summary>
-    /// Updates glyph positions in the collection for the specified range.
+    /// Updates glyph positions in the buffer for the specified range.
     /// </summary>
-    /// <param name="collection">The glyph positioning collection.</param>
+    /// <param name="buffer">The glyph positioning buffer.</param>
     /// <param name="index">The starting index.</param>
     /// <param name="count">The number of glyphs to process.</param>
-    private static void UpdatePositions(GlyphPositioningCollection collection, int index, int count)
+    private static void UpdatePositions(ShapingBuffer buffer, int index, int count)
     {
         for (int i = 0; i < count; i++)
         {
-            collection.UpdatePosition(i + index);
+            buffer.UpdatePosition(i + index);
         }
     }
 }

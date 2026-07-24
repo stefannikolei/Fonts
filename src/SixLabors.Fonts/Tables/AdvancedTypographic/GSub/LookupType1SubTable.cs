@@ -100,12 +100,12 @@ internal sealed class LookupType1Format1SubTable : LookupSubTable
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,
-        GlyphSubstitutionCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
         int index,
         int count)
     {
-        ushort glyphId = collection[index].GlyphId;
+        ushort glyphId = buffer[index].GlyphId;
         if (glyphId == 0)
         {
             return false;
@@ -113,7 +113,7 @@ internal sealed class LookupType1Format1SubTable : LookupSubTable
 
         if (this.coverageTable.CoverageIndexOf(glyphId) > -1)
         {
-            collection.Replace(index, (ushort)(glyphId + this.deltaGlyphId), feature);
+            buffer.Replace(index, (ushort)(glyphId + this.deltaGlyphId), feature);
             return true;
         }
 
@@ -190,12 +190,12 @@ internal sealed class LookupType1Format2SubTable : LookupSubTable
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,
-        GlyphSubstitutionCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
         int index,
         int count)
     {
-        ushort glyphId = collection[index].GlyphId;
+        ushort glyphId = buffer[index].GlyphId;
         if (glyphId == 0)
         {
             return false;
@@ -205,7 +205,7 @@ internal sealed class LookupType1Format2SubTable : LookupSubTable
 
         if (offset > -1 && offset < this.substituteGlyphs.Length)
         {
-            collection.Replace(index, this.substituteGlyphs[offset], feature);
+            buffer.Replace(index, this.substituteGlyphs[offset], feature);
             return true;
         }
 

@@ -201,16 +201,16 @@ internal sealed class MemoryFontMetrics : FontMetrics
         => this.fontMetrics.Value.TryGetBaselineCoordinate(baselineTag, isVerticalLayout, out coordinate);
 
     /// <inheritdoc/>
-    internal override void ApplySubstitution(GlyphSubstitutionCollection collection)
-        => this.fontMetrics.Value.ApplySubstitution(collection);
+    internal override void ApplySubstitution(ShapingBuffer buffer)
+        => this.fontMetrics.Value.ApplySubstitution(buffer);
 
     /// <inheritdoc/>
     internal override bool TryGetKerningOffset(ushort currentId, ushort nextId, out Vector2 vector)
         => this.fontMetrics.Value.TryGetKerningOffset(currentId, nextId, out vector);
 
     /// <inheritdoc/>
-    internal override void UpdatePositions(GlyphPositioningCollection collection)
-        => this.fontMetrics.Value.UpdatePositions(collection);
+    internal override void UpdatePositions(ShapingBuffer buffer)
+        => this.fontMetrics.Value.UpdatePositions(buffer);
 
     /// <inheritdoc/>
     internal override float GetGDefVariationDelta(uint packedVariationIndex)
@@ -221,7 +221,7 @@ internal sealed class MemoryFontMetrics : FontMetrics
         => this.fontMetrics.Value.GetNormalizedCoordinates();
 
     /// <summary>
-    /// Reads a collection of <see cref="MemoryFontMetrics"/> instances from the specified stream.
+    /// Reads a buffer of <see cref="MemoryFontMetrics"/> instances from the specified stream.
     /// </summary>
     /// <param name="stream">The source stream.</param>
     /// <returns>A read-only memory region containing the font metrics.</returns>

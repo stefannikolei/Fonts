@@ -1,6 +1,7 @@
 // Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
+using System.Numerics;
 using SixLabors.Fonts.Tables.AdvancedTypographic;
 using SixLabors.Fonts.Unicode;
 
@@ -113,7 +114,7 @@ public static partial class TextShaper
     /// </summary>
     /// <remarks>
     /// Performs the font-run build, bidi analysis, GSUB/GPOS shaping (including fallback font
-    /// resolution for unmapped codepoints). The result contains the positioned glyph collection
+    /// resolution for unmapped codepoints). The result contains the positioned glyph buffer
     /// and bidi state used by logical line composition.
     /// </remarks>
     /// <param name="text">The text to process.</param>
@@ -128,7 +129,7 @@ public static partial class TextShaper
         ShapingScratch scratch = ScratchPool.Get();
         try
         {
-            (GlyphSubstitutionCollection substitutions, GlyphPositioningCollection positionings) = scratch.Prepare(options);
+            (ShapingBuffer substitutions, ShapingBuffer positionings) = scratch.Prepare(options);
             return ShapeText(text, options, substitutions, positionings);
         }
         finally
@@ -144,14 +145,14 @@ public static partial class TextShaper
     /// </summary>
     /// <param name="text">The text to process.</param>
     /// <param name="options">The text options used while shaping.</param>
-    /// <param name="substitutions">The substitution collection to shape into.</param>
-    /// <param name="positionings">The positioning collection to shape into.</param>
+    /// <param name="substitutions">The substitution buffer to shape into.</param>
+    /// <param name="positionings">The positioning buffer to shape into.</param>
     /// <returns>The wrapping-independent shaping state.</returns>
     private static ShapedText ShapeText(
         ReadOnlySpan<char> text,
         TextOptions options,
-        GlyphSubstitutionCollection substitutions,
-        GlyphPositioningCollection positionings)
+        ShapingBuffer substitutions,
+        ShapingBuffer positionings)
     {
         // Gather the font and fallbacks.
         Font[] fallbackFonts = (options.FallbackFontFamilies?.Count > 0)
@@ -220,7 +221,7 @@ public static partial class TextShaper
 
         probe = ShapingProbe.Enter();
 
-        // Incrementally build out collection of glyphs.
+        // Incrementally build out buffer of glyphs.
         IReadOnlyList<TextRun> textRuns = BuildTextRuns(text, options);
         ShapingProbe.Exit(ShapingProbe.BuildTextRuns, probe);
 
@@ -281,7 +282,7 @@ public static partial class TextShaper
         if (!complete)
         {
             // Finally try our fallback fonts.
-            // We do a complete run here across the whole collection.
+            // We do a complete run here across the whole buffer.
             foreach (Font font in fallbackFonts)
             {
                 textRunIndex = 0;
@@ -306,9 +307,9 @@ public static partial class TextShaper
             }
         }
 
-        // Update the positions of the glyphs in the completed collection.
+        // Update the positions of the glyphs in the completed buffer.
         // Each set of metrics is associated with single font and will only be updated
-        // by that font so it's safe to use a single collection.
+        // by that font so it's safe to use a single buffer.
         probe = ShapingProbe.Enter();
         Font? lastFont = null;
         for (int i = 0; i < textRuns.Count; i++)
@@ -347,18 +348,18 @@ public static partial class TextShaper
         BidiRun runBidiRun = default;
         for (int i = 0; i < count; i++)
         {
-            GlyphPositioningCollection.GlyphPositioningData data = positionings.GetPositioningData(i);
-            GlyphShapingData shaping = data.Data;
+            ref GlyphShapingData shaping = ref positionings[i];
+            ref ShapingBuffer.GlyphMetricsEntry entry = ref positionings.MetricsAt(i);
 
             // Placeholders carry a bidi run of their own, so they always cut a run.
-            if (data.Font != runFont
+            if (entry.Font != runFont
                 || shaping.TextRun != runTextRun
                 || (shaping.IsPlaceholder && !shaping.BidiRun.Equals(runBidiRun)))
             {
-                runFont = data.Font;
+                runFont = entry.Font;
                 runTextRun = shaping.TextRun;
                 runBidiRun = shaping.BidiRun;
-                runs.Add(new(data.Font, data.PointSize, shaping.TextRun, shaping.BidiRun));
+                runs.Add(new(entry.Font, entry.PointSize, shaping.TextRun, shaping.BidiRun));
             }
 
             ShapedGlyphFlags flags = ShapedGlyphFlags.None;
@@ -383,18 +384,18 @@ public static partial class TextShaper
             }
 
             infos[i] = new(
-                data.Offset,
+                shaping.CodePointIndex,
                 shaping.CodePoint,
                 shaping.CodePointCount,
-                data.Metrics.GlyphId,
+                entry.Metrics.GlyphId,
                 (ushort)(runs.Count - 1),
                 flags);
 
             positions[i] = new(
-                data.AdvanceWidth,
-                data.AdvanceHeight,
-                data.PositionOffset,
-                data.Metrics.Offset);
+                entry.GetAdvanceWidth(in shaping),
+                entry.GetAdvanceHeight(in shaping),
+                new Vector2(shaping.Bounds.X, shaping.Bounds.Y),
+                entry.Metrics.Offset);
         }
 
         return new ShapedText([.. runs], infos, positions, bidiRuns, bidiMap, layoutMode);
@@ -418,8 +419,8 @@ public static partial class TextShaper
     /// <param name="font">The font to shape with.</param>
     /// <param name="bidiRuns">The resolved bidi runs covering the whole input.</param>
     /// <param name="bidiMap">A codepoint → bidi-run mapping accumulated across shaping passes.</param>
-    /// <param name="substitutions">The GSUB substitution collection to write into.</param>
-    /// <param name="positionings">The GPOS positioning collection to write into.</param>
+    /// <param name="substitutions">The GSUB substitution buffer to write into.</param>
+    /// <param name="positionings">The GPOS positioning buffer to write into.</param>
     /// <returns>
     /// <see langword="true"/> if every codepoint mapped successfully; <see langword="false"/> if any
     /// codepoint remains unmapped (so a fallback-font pass is needed).
@@ -435,10 +436,10 @@ public static partial class TextShaper
         Font font,
         BidiRun[] bidiRuns,
         int[] bidiMap,
-        GlyphSubstitutionCollection substitutions,
-        GlyphPositioningCollection positionings)
+        ShapingBuffer substitutions,
+        ShapingBuffer positionings)
     {
-        // For each run we start with a fresh substitution collection to avoid
+        // For each run we start with a fresh substitution buffer to avoid
         // overwriting the glyph ids.
         substitutions.Clear();
 
@@ -487,7 +488,7 @@ public static partial class TextShaper
 
                 charIndex += charsConsumed;
 
-                // Get the glyph id for the codepoint and add to the collection.
+                // Get the glyph id for the codepoint and add to the buffer.
                 bool hasGlyph = font.FontMetrics.TryGetGlyphId(current, next, out ushort glyphId, out skipNextCodePoint);
 
                 // Unsupported default-ignorable code points such as FE0F should not block
@@ -538,12 +539,12 @@ public static partial class TextShaper
     /// feature when available and falls back to the Unicode mirror table otherwise.
     /// </summary>
     /// <param name="fontMetrics">The font metrics used to look up mirrored glyph ids.</param>
-    /// <param name="collection">The substitution collection whose glyphs will be rewritten in place.</param>
-    private static void SubstituteBidiMirrors(FontMetrics fontMetrics, GlyphSubstitutionCollection collection)
+    /// <param name="buffer">The substitution buffer whose glyphs will be rewritten in place.</param>
+    private static void SubstituteBidiMirrors(FontMetrics fontMetrics, ShapingBuffer buffer)
     {
-        for (int i = 0; i < collection.Count; i++)
+        for (int i = 0; i < buffer.Count; i++)
         {
-            GlyphShapingData data = collection[i];
+            ref GlyphShapingData data = ref buffer[i];
 
             if (data.Direction != TextDirection.RightToLeft)
             {
@@ -557,20 +558,20 @@ public static partial class TextShaper
 
             if (fontMetrics.TryGetGlyphId(mirror, out ushort glyphId))
             {
-                collection.Replace(i, glyphId, KnownFeatureTags.RightToLeftMirroredForms);
+                buffer.Replace(i, glyphId, KnownFeatureTags.RightToLeftMirroredForms);
             }
         }
 
         // TODO: This only replaces certain glyphs. We should investigate the specification further.
         // https://www.unicode.org/reports/tr50/#vertical_alternates
-        if (collection.TextOptions.LayoutMode.IsHorizontal())
+        if (buffer.TextOptions.LayoutMode.IsHorizontal())
         {
             return;
         }
 
-        for (int i = 0; i < collection.Count; i++)
+        for (int i = 0; i < buffer.Count; i++)
         {
-            GlyphShapingData data = collection[i];
+            ref GlyphShapingData data = ref buffer[i];
             if (CodePoint.GetVerticalOrientationType(data.CodePoint) is VerticalOrientationType.Upright or VerticalOrientationType.TransformUpright)
             {
                 continue;
@@ -583,7 +584,7 @@ public static partial class TextShaper
 
             if (fontMetrics.TryGetGlyphId(mirror, out ushort glyphId))
             {
-                collection.Replace(i, glyphId, KnownFeatureTags.VerticalAlternates);
+                buffer.Replace(i, glyphId, KnownFeatureTags.VerticalAlternates);
             }
         }
     }

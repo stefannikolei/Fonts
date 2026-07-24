@@ -155,13 +155,13 @@ internal sealed class LookupType8Format1SubTable : LookupSubTable
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,
-        GlyphSubstitutionCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
         int index,
         int count)
     {
         // https://docs.microsoft.com/en-us/typography/opentype/spec/gsub#81-reverse-chaining-contextual-single-substitution-format-1-coverage-based-glyph-contexts
-        ushort glyphId = collection[index].GlyphId;
+        ushort glyphId = buffer[index].GlyphId;
         if (glyphId == 0)
         {
             return false;
@@ -175,7 +175,7 @@ internal sealed class LookupType8Format1SubTable : LookupSubTable
 
         for (int i = 0; i < this.backtrackCoverageTables.Length; ++i)
         {
-            ushort id = collection[index - 1 - i].GlyphId;
+            ushort id = buffer[index - 1 - i].GlyphId;
             if (id == 0 || this.backtrackCoverageTables[i].CoverageIndexOf(id) < 0)
             {
                 return false;
@@ -184,7 +184,7 @@ internal sealed class LookupType8Format1SubTable : LookupSubTable
 
         for (int i = 0; i < this.lookaheadCoverageTables.Length; ++i)
         {
-            ushort id = collection[index + i].GlyphId;
+            ushort id = buffer[index + i].GlyphId;
             if (id == 0 || this.lookaheadCoverageTables[i].CoverageIndexOf(id) < 0)
             {
                 return false;
@@ -195,7 +195,7 @@ internal sealed class LookupType8Format1SubTable : LookupSubTable
         bool hasChanged = false;
         for (int i = 0; i < this.substituteGlyphIds.Length; i++)
         {
-            collection.Replace(index + i, this.substituteGlyphIds[i], feature);
+            buffer.Replace(index + i, this.substituteGlyphIds[i], feature);
             hasChanged = true;
         }
 

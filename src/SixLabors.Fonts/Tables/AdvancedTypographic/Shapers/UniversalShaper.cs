@@ -92,63 +92,63 @@ internal sealed class UniversalShaper : DefaultShaper
         => this.fontMetrics = fontMetrics;
 
     /// <inheritdoc/>
-    protected override void PlanFeatures(GlyphShapingCollection collection, int index, int count)
+    protected override void PlanFeatures(ShapingBuffer buffer, int index, int count)
     {
         // Default glyph pre-processing group
-        this.AddFeature(collection, index, count, LoclTag, preAction: this.SetupSyllables);
-        this.AddFeature(collection, index, count, CcmpTag);
-        this.AddFeature(collection, index, count, NuktTag);
-        this.AddFeature(collection, index, count, AkhnTag);
+        this.AddFeature(buffer, index, count, LoclTag, preAction: this.SetupSyllables);
+        this.AddFeature(buffer, index, count, CcmpTag);
+        this.AddFeature(buffer, index, count, NuktTag);
+        this.AddFeature(buffer, index, count, AkhnTag);
 
         // Reordering group
-        this.AddFeature(collection, index, count, RphfTag, true, ClearSubstitutionFlags, RecordRhpf);
-        this.AddFeature(collection, index, count, PrefTag, true, ClearSubstitutionFlags, RecordPref);
+        this.AddFeature(buffer, index, count, RphfTag, true, ClearSubstitutionFlags, RecordRhpf);
+        this.AddFeature(buffer, index, count, PrefTag, true, ClearSubstitutionFlags, RecordPref);
 
         // Orthographic unit shaping group
-        this.AddFeature(collection, index, count, RkrfTag);
-        this.AddFeature(collection, index, count, AbvfTag);
-        this.AddFeature(collection, index, count, BlwfTag);
-        this.AddFeature(collection, index, count, HalfTag);
-        this.AddFeature(collection, index, count, PstfTag);
-        this.AddFeature(collection, index, count, VatuTag);
-        this.AddFeature(collection, index, count, CjctTag, postAction: this.Reorder);
+        this.AddFeature(buffer, index, count, RkrfTag);
+        this.AddFeature(buffer, index, count, AbvfTag);
+        this.AddFeature(buffer, index, count, BlwfTag);
+        this.AddFeature(buffer, index, count, HalfTag);
+        this.AddFeature(buffer, index, count, PstfTag);
+        this.AddFeature(buffer, index, count, VatuTag);
+        this.AddFeature(buffer, index, count, CjctTag, postAction: this.Reorder);
 
         // Standard topographic presentation and positional feature application
-        this.AddFeature(collection, index, count, AbvsTag);
-        this.AddFeature(collection, index, count, BlwsTag);
-        this.AddFeature(collection, index, count, PresTag);
-        this.AddFeature(collection, index, count, PstsTag);
-        this.AddFeature(collection, index, count, DistTag);
-        this.AddFeature(collection, index, count, AbvmTag);
-        this.AddFeature(collection, index, count, BlwmTag);
+        this.AddFeature(buffer, index, count, AbvsTag);
+        this.AddFeature(buffer, index, count, BlwsTag);
+        this.AddFeature(buffer, index, count, PresTag);
+        this.AddFeature(buffer, index, count, PstsTag);
+        this.AddFeature(buffer, index, count, DistTag);
+        this.AddFeature(buffer, index, count, AbvmTag);
+        this.AddFeature(buffer, index, count, BlwmTag);
     }
 
     /// <inheritdoc/>
-    protected override void AssignFeatures(GlyphShapingCollection collection, int index, int count)
-        => this.DecomposeSplitVowels(collection, index, count);
+    protected override void AssignFeatures(ShapingBuffer buffer, int index, int count)
+        => this.DecomposeSplitVowels(buffer, index, count);
 
     /// <summary>
     /// Decomposes split vowels into their constituent parts if supported by the font.
     /// </summary>
-    /// <param name="collection">The glyph shaping collection.</param>
+    /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private void DecomposeSplitVowels(GlyphShapingCollection collection, int index, int count)
+    private void DecomposeSplitVowels(ShapingBuffer buffer, int index, int count)
     {
-        if (collection is not GlyphSubstitutionCollection substitutionCollection)
+        if (buffer.Role != ShapingBufferRole.Substitution)
         {
             return;
         }
 
         FontMetrics fontMetrics = this.fontMetrics;
-        Span<ushort> buffer = stackalloc ushort[16];
+        Span<ushort> decompositionIds = stackalloc ushort[16];
         int end = index + count;
         for (int i = end - 1; i >= index; i--)
         {
-            GlyphShapingData data = substitutionCollection[i];
+            ref GlyphShapingData data = ref buffer[i];
             if (UniversalShapingData.Decompositions.TryGetValue(data.CodePoint.Value, out int[]? decompositions) && decompositions != null)
             {
-                Span<ushort> ids = buffer[..decompositions.Length];
+                Span<ushort> ids = decompositionIds[..decompositions.Length];
                 bool shouldDecompose = true;
                 for (int j = 0; j < decompositions.Length; j++)
                 {
@@ -163,10 +163,10 @@ internal sealed class UniversalShaper : DefaultShaper
 
                 if (shouldDecompose)
                 {
-                    substitutionCollection.Replace(i, ids, KnownFeatureTags.GlyphCompositionDecomposition);
+                    buffer.Replace(i, ids, KnownFeatureTags.GlyphCompositionDecomposition);
                     for (int j = 0; j < decompositions.Length; j++)
                     {
-                        substitutionCollection[i + j].CodePoint = new(decompositions[j]);
+                        buffer[i + j].CodePoint = new(decompositions[j]);
                     }
                 }
             }
@@ -176,12 +176,12 @@ internal sealed class UniversalShaper : DefaultShaper
     /// <summary>
     /// Identifies syllables using the Universal Shaping Engine state machine and assigns shaping info to each glyph.
     /// </summary>
-    /// <param name="collection">The glyph shaping collection.</param>
+    /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private void SetupSyllables(GlyphShapingCollection collection, int index, int count)
+    private void SetupSyllables(ShapingBuffer buffer, int index, int count)
     {
-        if (collection is not GlyphSubstitutionCollection substitutionCollection)
+        if (buffer.Role != ShapingBufferRole.Substitution)
         {
             return;
         }
@@ -191,7 +191,7 @@ internal sealed class UniversalShaper : DefaultShaper
         Span<int> values = count <= 64 ? stackalloc int[count] : new int[count];
         for (int i = index; i < index + count; i++)
         {
-            CodePoint codePoint = substitutionCollection[i].CodePoint;
+            CodePoint codePoint = buffer[i].CodePoint;
             values[i - index] = UnicodeData.GetUniversalShapingSymbolCount((uint)codePoint.Value);
         }
 
@@ -203,7 +203,7 @@ internal sealed class UniversalShaper : DefaultShaper
             // Create shaper info
             for (int i = match.StartIndex; i <= match.EndIndex; i++)
             {
-                GlyphShapingData data = substitutionCollection[i + index];
+                ref GlyphShapingData data = ref buffer[i + index];
                 CodePoint codePoint = data.CodePoint;
                 string category = UniversalShapingData.Categories[UnicodeData.GetUniversalShapingSymbolCount((uint)codePoint.Value)];
 
@@ -218,13 +218,13 @@ internal sealed class UniversalShaper : DefaultShaper
             }
 
             // Assign rphf feature
-            int limit = substitutionCollection[match.StartIndex + index].UniversalShapingEngineInfo!.Category == "R"
+            int limit = buffer[match.StartIndex + index].UniversalShapingEngineInfo!.Category == "R"
                 ? 1
                 : Math.Min(3, match.EndIndex - match.StartIndex);
 
             for (int i = match.StartIndex; i < match.StartIndex + limit; i++)
             {
-                substitutionCollection.AddShapingFeature(i + index, new TagEntry(RcltTag, true));
+                buffer.AddShapingFeature(i + index, new TagEntry(RcltTag, true));
             }
         }
     }
@@ -232,12 +232,12 @@ internal sealed class UniversalShaper : DefaultShaper
     /// <summary>
     /// Clears substitution flags on all glyphs in the range, preparing for the next substitution pass.
     /// </summary>
-    /// <param name="collection">The glyph shaping collection.</param>
+    /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private static void ClearSubstitutionFlags(GlyphShapingCollection collection, int index, int count)
+    private static void ClearSubstitutionFlags(ShapingBuffer buffer, int index, int count)
     {
-        if (collection is not GlyphSubstitutionCollection substitutionCollection)
+        if (buffer.Role != ShapingBufferRole.Substitution)
         {
             return;
         }
@@ -245,7 +245,7 @@ internal sealed class UniversalShaper : DefaultShaper
         int end = index + count;
         for (int i = index; i < end; i++)
         {
-            GlyphShapingData data = substitutionCollection[i];
+            ref GlyphShapingData data = ref buffer[i];
             data.IsSubstituted = false;
         }
     }
@@ -253,21 +253,21 @@ internal sealed class UniversalShaper : DefaultShaper
     /// <summary>
     /// Records glyphs substituted by the 'rphf' feature by marking their category as repha ("R").
     /// </summary>
-    /// <param name="collection">The glyph shaping collection.</param>
+    /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private static void RecordRhpf(GlyphShapingCollection collection, int index, int count)
+    private static void RecordRhpf(ShapingBuffer buffer, int index, int count)
     {
-        if (collection is not GlyphSubstitutionCollection substitutionCollection)
+        if (buffer.Role != ShapingBufferRole.Substitution)
         {
             return;
         }
 
         int end = index + count;
-        ulong rphfMask = substitutionCollection.FeatureMap.GetMask(RphfTag);
+        ulong rphfMask = buffer.FeatureMap.GetMask(RphfTag);
         for (int i = index; i < end; i++)
         {
-            GlyphShapingData data = substitutionCollection[i];
+            ref GlyphShapingData data = ref buffer[i];
             if (data.IsSubstituted && (data.RegisteredFeatureMask & rphfMask) != 0)
             {
                 // Mark a substituted repha.
@@ -282,12 +282,12 @@ internal sealed class UniversalShaper : DefaultShaper
     /// <summary>
     /// Records glyphs substituted by the 'pref' feature by marking their category as pre-base vowel ("VPre").
     /// </summary>
-    /// <param name="collection">The glyph shaping collection.</param>
+    /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private static void RecordPref(GlyphShapingCollection collection, int index, int count)
+    private static void RecordPref(ShapingBuffer buffer, int index, int count)
     {
-        if (collection is not GlyphSubstitutionCollection substitutionCollection)
+        if (buffer.Role != ShapingBufferRole.Substitution)
         {
             return;
         }
@@ -295,7 +295,7 @@ internal sealed class UniversalShaper : DefaultShaper
         int end = index + count;
         for (int i = index; i < end; i++)
         {
-            GlyphShapingData data = substitutionCollection[i];
+            ref GlyphShapingData data = ref buffer[i];
             if (data.IsSubstituted)
             {
                 // Mark a substituted pref as VPre, as they behave the same way.
@@ -311,12 +311,12 @@ internal sealed class UniversalShaper : DefaultShaper
     /// Reorders glyphs within syllables, handling repha movement, pre-base vowel movement,
     /// and dotted circle insertion for broken clusters.
     /// </summary>
-    /// <param name="collection">The glyph shaping collection.</param>
+    /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private void Reorder(GlyphShapingCollection collection, int index, int count)
+    private void Reorder(ShapingBuffer buffer, int index, int count)
     {
-        if (collection is not GlyphSubstitutionCollection substitutionCollection)
+        if (buffer.Role != ShapingBufferRole.Substitution)
         {
             return;
         }
@@ -324,7 +324,7 @@ internal sealed class UniversalShaper : DefaultShaper
         FontMetrics fontMetrics = this.fontMetrics;
         int max = index + count;
         int start = index;
-        int end = NextSyllable(substitutionCollection, index, max);
+        int end = NextSyllable(buffer, index, max);
 
         if (this.hasBrokenClusters)
         {
@@ -333,7 +333,7 @@ internal sealed class UniversalShaper : DefaultShaper
                 Span<ushort> glyphs = stackalloc ushort[2];
                 while (start < max)
                 {
-                    GlyphShapingData data = substitutionCollection[start];
+                    ref GlyphShapingData data = ref buffer[start];
                     UniversalShapingEngineInfo? info = data.UniversalShapingEngineInfo;
                     string? type = info?.SyllableType;
 
@@ -343,21 +343,21 @@ internal sealed class UniversalShaper : DefaultShaper
                         int i = start;
                         for (i = start; i < end; i++)
                         {
-                            if (substitutionCollection[i].UniversalShapingEngineInfo?.Category != "R")
+                            if (buffer[i].UniversalShapingEngineInfo?.Category != "R")
                             {
                                 break;
                             }
                         }
 
-                        GlyphShapingData current = substitutionCollection[i];
+                        ref GlyphShapingData current = ref buffer[i];
                         UniversalShapingEngineInfo currentInfo = current.UniversalShapingEngineInfo!;
                         glyphs[0] = current.GlyphId;
                         glyphs[1] = circleId;
 
-                        substitutionCollection.Replace(i, glyphs, KnownFeatureTags.GlyphCompositionDecomposition);
+                        buffer.Replace(i, glyphs, KnownFeatureTags.GlyphCompositionDecomposition);
 
                         // Update shaping info for newly inserted data.
-                        GlyphShapingData dotted = substitutionCollection[i + 1];
+                        ref GlyphShapingData dotted = ref buffer[i + 1];
                         dotted.UniversalShapingEngineInfo!.Category = "B";
                         dotted.UniversalShapingEngineInfo.SyllableType = currentInfo.SyllableType;
                         dotted.UniversalShapingEngineInfo.Syllable = currentInfo.Syllable;
@@ -367,17 +367,17 @@ internal sealed class UniversalShaper : DefaultShaper
                     }
 
                     start = end;
-                    end = NextSyllable(substitutionCollection, start, max);
+                    end = NextSyllable(buffer, start, max);
                 }
 
                 start = index;
-                end = NextSyllable(substitutionCollection, index, max);
+                end = NextSyllable(buffer, index, max);
             }
         }
 
         while (start < max)
         {
-            GlyphShapingData data = substitutionCollection[start];
+            ref GlyphShapingData data = ref buffer[start];
             UniversalShapingEngineInfo? info = data.UniversalShapingEngineInfo;
             string? type = info?.SyllableType;
 
@@ -394,18 +394,18 @@ internal sealed class UniversalShaper : DefaultShaper
                 // Got a repha. Reorder it to after first base, before first halant.
                 for (int i = start + 1; i < end; i++)
                 {
-                    GlyphShapingData current = substitutionCollection[i];
+                    ref GlyphShapingData current = ref buffer[i];
                     info = current.UniversalShapingEngineInfo;
-                    if (IsBase(info) || IsHalant(current))
+                    if (IsBase(info) || IsHalant(ref current))
                     {
                         // If we hit a halant, move before it; otherwise it's a base: move to it's
                         // place, and shift things in between backward.
-                        if (IsHalant(current))
+                        if (IsHalant(ref current))
                         {
                             i--;
                         }
 
-                        substitutionCollection.MoveGlyph(start, i);
+                        buffer.MoveGlyph(start, i);
                         break;
                     }
                 }
@@ -414,14 +414,14 @@ internal sealed class UniversalShaper : DefaultShaper
             // Move things back
             for (int i = start, j = start; i < end; i++)
             {
-                GlyphShapingData current = substitutionCollection[i];
+                ref GlyphShapingData current = ref buffer[i];
                 info = current.UniversalShapingEngineInfo;
 
-                if (IsBase(info) || IsHalant(current))
+                if (IsBase(info) || IsHalant(ref current))
                 {
                     // If we hit a halant, move after it; otherwise move to the beginning, and
                     // shift things in between forward.
-                    if (IsHalant(current))
+                    if (IsHalant(ref current))
                     {
                         j = i + 1;
                     }
@@ -434,34 +434,34 @@ internal sealed class UniversalShaper : DefaultShaper
                     && current.LigatureComponent <= 0 // Only move the first component of a MultipleSubst
                     && j < i)
                 {
-                    substitutionCollection.MoveGlyph(i, j);
+                    buffer.MoveGlyph(i, j);
                 }
             }
 
             Increment:
             start = end;
-            end = NextSyllable(substitutionCollection, start, max);
+            end = NextSyllable(buffer, start, max);
         }
     }
 
     /// <summary>
-    /// Finds the start index of the next syllable in the collection.
+    /// Finds the start index of the next syllable in the buffer.
     /// </summary>
-    /// <param name="collection">The glyph substitution collection.</param>
+    /// <param name="buffer">The glyph substitution buffer.</param>
     /// <param name="index">The current index.</param>
     /// <param name="count">The maximum index bound.</param>
     /// <returns>The start index of the next syllable.</returns>
-    private static int NextSyllable(GlyphSubstitutionCollection collection, int index, int count)
+    private static int NextSyllable(ShapingBuffer buffer, int index, int count)
     {
         if (index >= count)
         {
             return index;
         }
 
-        int? syllable = collection[index].UniversalShapingEngineInfo?.Syllable;
+        int? syllable = buffer[index].UniversalShapingEngineInfo?.Syllable;
         while (++index < count)
         {
-            if (collection[index].UniversalShapingEngineInfo?.Syllable != syllable)
+            if (buffer[index].UniversalShapingEngineInfo?.Syllable != syllable)
             {
                 break;
             }
@@ -475,7 +475,7 @@ internal sealed class UniversalShaper : DefaultShaper
     /// </summary>
     /// <param name="data">The glyph shaping data.</param>
     /// <returns><see langword="true"/> if the glyph is a halant or equivalent.</returns>
-    private static bool IsHalant(GlyphShapingData data)
+    private static bool IsHalant(ref GlyphShapingData data)
         => (data.UniversalShapingEngineInfo?.Category is "H" or "HVM" or "IS") && !data.IsLigated;
 
     /// <summary>

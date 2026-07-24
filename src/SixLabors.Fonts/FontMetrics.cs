@@ -316,10 +316,10 @@ public abstract class FontMetrics
     internal abstract bool TryGetBaselineCoordinate(Tag baselineTag, bool isVerticalLayout, out short coordinate);
 
     /// <summary>
-    /// Applies any available substitutions to the collection of glyphs.
+    /// Applies any available substitutions to the buffer of glyphs.
     /// </summary>
-    /// <param name="collection">The glyph substitution collection.</param>
-    internal abstract void ApplySubstitution(GlyphSubstitutionCollection collection);
+    /// <param name="buffer">The glyph substitution buffer.</param>
+    internal abstract void ApplySubstitution(ShapingBuffer buffer);
 
     /// <summary>
     /// Gets the amount, in font units, the <paramref name="currentId"/> glyph should be offset if it is followed by
@@ -338,10 +338,10 @@ public abstract class FontMetrics
     internal abstract bool TryGetKerningOffset(ushort currentId, ushort nextId, out Vector2 vector);
 
     /// <summary>
-    /// Applies any available positioning updates to the collection of glyphs.
+    /// Applies any available positioning updates to the buffer of glyphs.
     /// </summary>
-    /// <param name="collection">The glyph positioning collection.</param>
-    internal abstract void UpdatePositions(GlyphPositioningCollection collection);
+    /// <param name="buffer">The glyph positioning buffer.</param>
+    internal abstract void UpdatePositions(ShapingBuffer buffer);
 
     /// <summary>
     /// Computes a GPOS/GSUB variation delta for the given packed VariationIndex.

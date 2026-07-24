@@ -152,12 +152,12 @@ internal sealed class LookupType4Format1SubTable : LookupSubTable
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,
-        GlyphSubstitutionCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
         int index,
         int count)
     {
-        ushort glyphId = collection[index].GlyphId;
+        ushort glyphId = buffer[index].GlyphId;
         if (glyphId == 0)
         {
             return false;
@@ -170,7 +170,7 @@ internal sealed class LookupType4Format1SubTable : LookupSubTable
         }
 
         LigatureSetTable ligatureSetTable = this.ligatureSetTables[offset];
-        SkippingGlyphIterator iterator = new(fontMetrics, collection, index, this.LookupFlags, this.MarkFilteringSet);
+        SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
         Span<int> matchBuffer = stackalloc int[AdvancedTypographicUtils.MaxContextLength];
         for (int i = 0; i < ligatureSetTable.Ligatures.Length; i++)
         {
@@ -211,16 +211,16 @@ internal sealed class LookupType4Format1SubTable : LookupSubTable
             //   the new ligature with a component value of 2.
             //
             //   This in fact happened to a font...  See https://bugzilla.gnome.org/show_bug.cgi?id=437633
-            GlyphShapingData data = collection[index];
-            GlyphShapingClass shapingClass = AdvancedTypographicUtils.GetGlyphShapingClass(fontMetrics, glyphId, data);
+            ref GlyphShapingData data = ref buffer[index];
+            GlyphShapingClass shapingClass = AdvancedTypographicUtils.GetGlyphShapingClass(fontMetrics, glyphId, ref data);
             bool isBaseLigature = shapingClass.IsBase;
             bool isMarkLigature = shapingClass.IsMark;
 
             Span<int> matches = matchBuffer[..Math.Min(ligatureTable.ComponentGlyphs.Length, matchBuffer.Length)];
             for (int j = 0; j < matches.Length && isMarkLigature; j++)
             {
-                GlyphShapingData match = collection[matches[j]];
-                if (!AdvancedTypographicUtils.IsMarkGlyph(fontMetrics, match.GlyphId, match))
+                ref GlyphShapingData match = ref buffer[matches[j]];
+                if (!AdvancedTypographicUtils.IsMarkGlyph(fontMetrics, match.GlyphId, ref match))
                 {
                     isBaseLigature = false;
                     isMarkLigature = false;
@@ -230,7 +230,7 @@ internal sealed class LookupType4Format1SubTable : LookupSubTable
 
             bool isLigature = !isBaseLigature && !isMarkLigature;
 
-            int ligatureId = isLigature ? 0 : collection.LigatureId++;
+            int ligatureId = isLigature ? 0 : buffer.LigatureId++;
             int lastLigatureId = data.LigatureId;
             int lastComponentCount = data.CodePointCount;
             int currentComponentCount = lastComponentCount;
@@ -249,7 +249,7 @@ internal sealed class LookupType4Format1SubTable : LookupSubTable
                 {
                     while (idx < matchIndex)
                     {
-                        GlyphShapingData current = collection[idx];
+                        ref GlyphShapingData current = ref buffer[idx];
                         int currentLC = current.LigatureComponent == -1 ? 1 : current.LigatureComponent;
                         int ligatureComponent = currentComponentCount - lastComponentCount + Math.Min(currentLC, lastComponentCount);
                         current.LigatureId = ligatureId;
@@ -259,7 +259,7 @@ internal sealed class LookupType4Format1SubTable : LookupSubTable
                     }
                 }
 
-                GlyphShapingData last = collection[idx];
+                ref GlyphShapingData last = ref buffer[idx];
                 lastLigatureId = last.LigatureId;
                 lastComponentCount = last.CodePointCount;
                 currentComponentCount += lastComponentCount;
@@ -273,7 +273,7 @@ internal sealed class LookupType4Format1SubTable : LookupSubTable
                 int followingCount = count - (idx - index);
                 for (int j = idx; j < followingCount; j++)
                 {
-                    GlyphShapingData current = collection[j];
+                    ref GlyphShapingData current = ref buffer[j];
                     if (current.LigatureId == lastLigatureId)
                     {
                         int currentLC = current.LigatureComponent == -1 ? 1 : current.LigatureComponent;
@@ -289,7 +289,7 @@ internal sealed class LookupType4Format1SubTable : LookupSubTable
             }
 
             // Delete the matched glyphs, and replace the current glyph with the ligature glyph
-            collection.Replace(index, matches, ligatureTable.GlyphId, ligatureId, feature);
+            buffer.Replace(index, matches, ligatureTable.GlyphId, ligatureId, feature);
             return true;
         }
 

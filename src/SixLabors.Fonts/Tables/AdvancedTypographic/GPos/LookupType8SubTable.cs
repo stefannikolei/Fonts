@@ -83,14 +83,14 @@ internal static class LookupType8SubTable
         public override bool TryUpdatePosition(
             FontMetrics fontMetrics,
             GPosTable table,
-            GlyphPositioningCollection collection,
+            ShapingBuffer buffer,
             Tag feature,
             int index,
             int count)
         {
             // Implements Chained Contexts Substitution, Format 1:
             // https://docs.microsoft.com/en-us/typography/opentype/spec/gsub#61-chained-contexts-substitution-format-1-simple-glyph-contexts
-            ushort glyphId = collection[index].GlyphId;
+            ushort glyphId = buffer[index].GlyphId;
             if (glyphId == 0)
             {
                 return false;
@@ -116,7 +116,7 @@ internal static class LookupType8SubTable
 
             // Apply ruleset for the given glyph id.
             ChainedSequenceRuleTable[] rules = seqRuleSet.SequenceRuleTables;
-            SkippingGlyphIterator iterator = new(fontMetrics, collection, index, this.LookupFlags, this.MarkFilteringSet);
+            SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
             for (int lookupIndex = 0; lookupIndex < rules.Length; lookupIndex++)
             {
                 ChainedSequenceRuleTable rule = rules[lookupIndex];
@@ -131,7 +131,7 @@ internal static class LookupType8SubTable
                     SequenceLookupRecord sequenceLookupRecord = rule.SequenceLookupRecords[j];
                     LookupTable lookup = table.LookupList.LookupTables[sequenceLookupRecord.LookupListIndex];
                     ushort sequenceIndex = sequenceLookupRecord.SequenceIndex;
-                    if (lookup.TryUpdatePosition(fontMetrics, table, collection, feature, index + sequenceIndex, 1))
+                    if (lookup.TryUpdatePosition(fontMetrics, table, buffer, feature, index + sequenceIndex, 1))
                     {
                         hasChanged = true;
                     }
@@ -217,14 +217,14 @@ internal static class LookupType8SubTable
         public override bool TryUpdatePosition(
             FontMetrics fontMetrics,
             GPosTable table,
-            GlyphPositioningCollection collection,
+            ShapingBuffer buffer,
             Tag feature,
             int index,
             int count)
         {
             // Implements Chained Contexts Substitution for Format 2:
             // https://docs.microsoft.com/en-us/typography/opentype/spec/gsub#62-chained-contexts-substitution-format-2-class-based-glyph-contexts
-            ushort glyphId = collection[index].GlyphId;
+            ushort glyphId = buffer[index].GlyphId;
             if (glyphId == 0)
             {
                 return false;
@@ -249,7 +249,7 @@ internal static class LookupType8SubTable
             }
 
             // Apply ruleset for the given glyph class id.
-            SkippingGlyphIterator iterator = new(fontMetrics, collection, index, this.LookupFlags, this.MarkFilteringSet);
+            SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
             for (int lookupIndex = 0; lookupIndex < rules.Length; lookupIndex++)
             {
                 ChainedClassSequenceRuleTable rule = rules[lookupIndex];
@@ -266,7 +266,7 @@ internal static class LookupType8SubTable
                     SequenceLookupRecord sequenceLookupRecord = rule.SequenceLookupRecords[j];
                     LookupTable lookup = table.LookupList.LookupTables[sequenceLookupRecord.LookupListIndex];
                     ushort sequenceIndex = sequenceLookupRecord.SequenceIndex;
-                    if (lookup.TryUpdatePosition(fontMetrics, table, collection, feature, index + sequenceIndex, 1))
+                    if (lookup.TryUpdatePosition(fontMetrics, table, buffer, feature, index + sequenceIndex, 1))
                     {
                         hasChanged = true;
                     }
@@ -357,18 +357,18 @@ internal static class LookupType8SubTable
         public override bool TryUpdatePosition(
             FontMetrics fontMetrics,
             GPosTable table,
-            GlyphPositioningCollection collection,
+            ShapingBuffer buffer,
             Tag feature,
             int index,
             int count)
         {
-            ushort glyphId = collection[index].GlyphId;
+            ushort glyphId = buffer[index].GlyphId;
             if (glyphId == 0)
             {
                 return false;
             }
 
-            if (!AdvancedTypographicUtils.CheckAllCoverages(fontMetrics, this.LookupFlags, this.MarkFilteringSet, collection, index, count, this.inputCoverageTables, this.backtrackCoverageTables, this.lookaheadCoverageTables))
+            if (!AdvancedTypographicUtils.CheckAllCoverages(fontMetrics, this.LookupFlags, this.MarkFilteringSet, buffer, index, count, this.inputCoverageTables, this.backtrackCoverageTables, this.lookaheadCoverageTables))
             {
                 return false;
             }
@@ -381,7 +381,7 @@ internal static class LookupType8SubTable
                 ushort lookupIndex = lookupRecord.LookupListIndex;
 
                 LookupTable lookup = table.LookupList.LookupTables[lookupIndex];
-                if (lookup.TryUpdatePosition(fontMetrics, table, collection, feature, index + sequenceIndex, count - sequenceIndex))
+                if (lookup.TryUpdatePosition(fontMetrics, table, buffer, feature, index + sequenceIndex, count - sequenceIndex))
                 {
                     hasChanged = true;
                 }

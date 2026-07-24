@@ -89,14 +89,14 @@ internal sealed class LookupType6Format1SubTable : LookupSubTable
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,
-        GlyphSubstitutionCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
         int index,
         int count)
     {
         // Implements Chained Contexts Substitution, Format 1:
         // https://docs.microsoft.com/en-us/typography/opentype/spec/gsub#61-chained-contexts-substitution-format-1-simple-glyph-contexts
-        ushort glyphId = collection[index].GlyphId;
+        ushort glyphId = buffer[index].GlyphId;
         if (glyphId == 0)
         {
             return false;
@@ -115,7 +115,7 @@ internal sealed class LookupType6Format1SubTable : LookupSubTable
         }
 
         // Apply ruleset for the given glyph id.
-        SkippingGlyphIterator iterator = new(fontMetrics, collection, index, this.LookupFlags, this.MarkFilteringSet);
+        SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
         ChainedSequenceRuleSetTable seqRuleSet = this.seqRuleSetTables[offset];
         ChainedSequenceRuleTable[] rules = seqRuleSet.SequenceRuleTables;
         for (int i = 0; i < rules.Length; i++)
@@ -133,7 +133,7 @@ internal sealed class LookupType6Format1SubTable : LookupSubTable
                 this.LookupFlags,
                 this.MarkFilteringSet,
                 ruleTable.SequenceLookupRecords,
-                collection,
+                buffer,
                 index,
                 count);
         }
@@ -236,14 +236,14 @@ internal sealed class LookupType6Format2SubTable : LookupSubTable
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,
-        GlyphSubstitutionCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
         int index,
         int count)
     {
         // Implements Chained Contexts Substitution for Format 2:
         // https://docs.microsoft.com/en-us/typography/opentype/spec/gsub#62-chained-contexts-substitution-format-2-class-based-glyph-contexts
-        ushort glyphId = collection[index].GlyphId;
+        ushort glyphId = buffer[index].GlyphId;
         if (glyphId == 0)
         {
             return false;
@@ -265,7 +265,7 @@ internal sealed class LookupType6Format2SubTable : LookupSubTable
         }
 
         // Apply ruleset for the given glyph class id.
-        SkippingGlyphIterator iterator = new(fontMetrics, collection, index, this.LookupFlags, this.MarkFilteringSet);
+        SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
         for (int lookupIndex = 0; lookupIndex < rules.Length; lookupIndex++)
         {
             ChainedClassSequenceRuleTable ruleTable = rules[lookupIndex];
@@ -282,7 +282,7 @@ internal sealed class LookupType6Format2SubTable : LookupSubTable
                 this.LookupFlags,
                 this.MarkFilteringSet,
                 ruleTable.SequenceLookupRecords,
-                collection,
+                buffer,
                 index,
                 count);
         }
@@ -386,12 +386,12 @@ internal sealed class LookupType6Format3SubTable : LookupSubTable
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,
-        GlyphSubstitutionCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
         int index,
         int count)
     {
-        ushort glyphId = collection[index].GlyphId;
+        ushort glyphId = buffer[index].GlyphId;
         if (glyphId == 0)
         {
             return false;
@@ -401,7 +401,7 @@ internal sealed class LookupType6Format3SubTable : LookupSubTable
             fontMetrics,
             this.LookupFlags,
             this.MarkFilteringSet,
-            collection,
+            buffer,
             index,
             count,
             this.inputCoverageTables,
@@ -419,7 +419,7 @@ internal sealed class LookupType6Format3SubTable : LookupSubTable
             this.LookupFlags,
             this.MarkFilteringSet,
             this.sequenceLookupRecords,
-            collection,
+            buffer,
             index,
             count);
     }

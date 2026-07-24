@@ -122,12 +122,12 @@ internal sealed class LookupType2Format1SubTable : LookupSubTable
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,
-        GlyphSubstitutionCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
         int index,
         int count)
     {
-        ushort glyphId = collection[index].GlyphId;
+        ushort glyphId = buffer[index].GlyphId;
         if (glyphId == 0)
         {
             return false;
@@ -137,7 +137,7 @@ internal sealed class LookupType2Format1SubTable : LookupSubTable
 
         if (offset > -1 && offset < this.sequenceTables.Length)
         {
-            collection.Replace(index, this.sequenceTables[offset].SubstituteGlyphs, feature);
+            buffer.Replace(index, this.sequenceTables[offset].SubstituteGlyphs, feature);
             return true;
         }
 

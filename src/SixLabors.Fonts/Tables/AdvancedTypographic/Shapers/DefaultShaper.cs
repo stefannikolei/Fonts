@@ -118,30 +118,30 @@ internal class DefaultShaper : BaseShaper
     }
 
     /// <inheritdoc />
-    protected override void PlanFeatures(GlyphShapingCollection collection, int index, int count)
+    protected override void PlanFeatures(ShapingBuffer buffer, int index, int count)
     {
     }
 
     /// <inheritdoc />
-    protected override void PlanPreprocessingFeatures(GlyphShapingCollection collection, int index, int count)
+    protected override void PlanPreprocessingFeatures(ShapingBuffer buffer, int index, int count)
     {
         // Add variation Features.
-        this.AddFeature(collection, index, count, RvnrTag);
+        this.AddFeature(buffer, index, count, RvnrTag);
 
         // Add directional features.
         for (int i = index; i < index + count; i++)
         {
-            GlyphShapingData shapingData = collection[i];
+            ref GlyphShapingData shapingData = ref buffer[i];
 
             if (shapingData.Direction == TextDirection.LeftToRight)
             {
-                this.AddFeature(collection, i, 1, LtraTag);
-                this.AddFeature(collection, i, 1, LtrmTag);
+                this.AddFeature(buffer, i, 1, LtraTag);
+                this.AddFeature(buffer, i, 1, LtrmTag);
             }
             else
             {
-                this.AddFeature(collection, i, 1, RtlaTag);
-                this.AddFeature(collection, i, 1, RtlmTag);
+                this.AddFeature(buffer, i, 1, RtlaTag);
+                this.AddFeature(buffer, i, 1, RtlmTag);
             }
         }
 
@@ -150,20 +150,20 @@ internal class DefaultShaper : BaseShaper
     }
 
     /// <inheritdoc />
-    protected override void PlanPostprocessingFeatures(GlyphShapingCollection collection, int index, int count)
+    protected override void PlanPostprocessingFeatures(ShapingBuffer buffer, int index, int count)
     {
         // Add common features.
-        this.AddFeature(collection, index, count, CcmpTag);
-        this.AddFeature(collection, index, count, LoclTag);
-        this.AddFeature(collection, index, count, RligTag);
-        this.AddFeature(collection, index, count, MarkTag);
-        this.AddFeature(collection, index, count, MkmkTag);
+        this.AddFeature(buffer, index, count, CcmpTag);
+        this.AddFeature(buffer, index, count, LoclTag);
+        this.AddFeature(buffer, index, count, RligTag);
+        this.AddFeature(buffer, index, count, MarkTag);
+        this.AddFeature(buffer, index, count, MkmkTag);
 
-        LayoutMode layoutMode = collection.TextOptions.LayoutMode;
+        LayoutMode layoutMode = buffer.TextOptions.LayoutMode;
         bool isVerticalLayout = false;
         for (int i = index; i < index + count; i++)
         {
-            GlyphShapingData shapingData = collection[i];
+            ref GlyphShapingData shapingData = ref buffer[i];
             isVerticalLayout |= AdvancedTypographicUtils.IsVerticalGlyph(shapingData.CodePoint, layoutMode);
         }
 
@@ -171,12 +171,12 @@ internal class DefaultShaper : BaseShaper
         if (!isVerticalLayout)
         {
             // Add horizontal features.
-            this.AddFeature(collection, index, count, CaltTag);
-            this.AddFeature(collection, index, count, CligTag);
-            this.AddFeature(collection, index, count, LigaTag);
-            this.AddFeature(collection, index, count, RcltTag);
-            this.AddFeature(collection, index, count, CursTag);
-            this.AddFeature(collection, index, count, KernTag);
+            this.AddFeature(buffer, index, count, CaltTag);
+            this.AddFeature(buffer, index, count, CligTag);
+            this.AddFeature(buffer, index, count, LigaTag);
+            this.AddFeature(buffer, index, count, RcltTag);
+            this.AddFeature(buffer, index, count, CursTag);
+            this.AddFeature(buffer, index, count, KernTag);
         }
         else
         {
@@ -188,7 +188,7 @@ internal class DefaultShaper : BaseShaper
             // matter which script/langsys it is listed (or not) under.
             // See various bugs referenced from:
             // https://github.com/harfbuzz/harfbuzz/issues/63
-            this.AddFeature(collection, index, count, VertTag);
+            this.AddFeature(buffer, index, count, VertTag);
         }
 
         // Add user defined features.
@@ -197,27 +197,27 @@ internal class DefaultShaper : BaseShaper
             // We've already dealt with fractional features.
             if (feature != FracTag && feature != NumrTag && feature != DnomTag)
             {
-                this.AddFeature(collection, index, count, feature);
+                this.AddFeature(buffer, index, count, feature);
             }
         }
     }
 
     /// <inheritdoc />
-    protected override void AssignFeatures(GlyphShapingCollection collection, int index, int count)
+    protected override void AssignFeatures(ShapingBuffer buffer, int index, int count)
     {
         // TODO: We shouldn't be relying on the feature list
         // User defined fractional features require special treatment.
         // https://docs.microsoft.com/en-us/typography/opentype/spec/features_fj#tag-frac
         if (this.HasFractions())
         {
-            this.AssignFractionalFeatures(collection, index, count);
+            this.AssignFractionalFeatures(buffer, index, count);
         }
     }
 
     /// <summary>
-    /// Adds a shaping feature to the specified range of glyphs in the collection and registers the corresponding shaping stage.
+    /// Adds a shaping feature to the specified range of glyphs in the buffer and registers the corresponding shaping stage.
     /// </summary>
-    /// <param name="collection">The glyph shaping collection.</param>
+    /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based index of the first element.</param>
     /// <param name="count">The number of elements.</param>
     /// <param name="feature">The feature tag to add.</param>
@@ -225,13 +225,13 @@ internal class DefaultShaper : BaseShaper
     /// <param name="preAction">An optional action to invoke before the feature is applied.</param>
     /// <param name="postAction">An optional action to invoke after the feature is applied.</param>
     protected void AddFeature(
-        GlyphShapingCollection collection,
+        ShapingBuffer buffer,
         int index,
         int count,
         Tag feature,
         bool enabled = true,
-        Action<GlyphShapingCollection, int, int>? preAction = null,
-        Action<GlyphShapingCollection, int, int>? postAction = null)
+        Action<ShapingBuffer, int, int>? preAction = null,
+        Action<ShapingBuffer, int, int>? postAction = null)
     {
         if (this.kerningMode == KerningMode.None)
         {
@@ -241,7 +241,7 @@ internal class DefaultShaper : BaseShaper
             }
         }
 
-        collection.AddShapingFeatureRange(index, count, new TagEntry(feature, enabled));
+        buffer.AddShapingFeatureRange(index, count, new TagEntry(feature, enabled));
 
         // First registration wins, matching the previous set semantics: a duplicate
         // tag keeps the originally supplied pre and post actions.
@@ -263,15 +263,15 @@ internal class DefaultShaper : BaseShaper
     /// <summary>
     /// Assigns fractional feature tags (numerator, denominator, fraction) to glyphs forming fraction sequences.
     /// </summary>
-    /// <param name="collection">The glyph shaping collection.</param>
+    /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based index of the first element.</param>
     /// <param name="count">The number of elements.</param>
-    private void AssignFractionalFeatures(GlyphShapingCollection collection, int index, int count)
+    private void AssignFractionalFeatures(ShapingBuffer buffer, int index, int count)
     {
         // Enable contextual fractions.
         for (int i = index; i < index + count; i++)
         {
-            GlyphShapingData shapingData = collection[i];
+            ref GlyphShapingData shapingData = ref buffer[i];
             if (shapingData.CodePoint == FractionSlash || shapingData.CodePoint == Slash)
             {
                 int start = i;
@@ -280,29 +280,29 @@ internal class DefaultShaper : BaseShaper
                 // Apply numerator.
                 if (start > 0)
                 {
-                    shapingData = collection[start - 1];
-                    while (start > 0 && CodePoint.IsDigit(shapingData.CodePoint))
+                    CodePoint numeratorCodePoint = buffer[start - 1].CodePoint;
+                    while (start > 0 && CodePoint.IsDigit(numeratorCodePoint))
                     {
-                        this.AddFeature(collection, start - 1, 1, NumrTag);
-                        this.AddFeature(collection, start - 1, 1, FracTag);
+                        this.AddFeature(buffer, start - 1, 1, NumrTag);
+                        this.AddFeature(buffer, start - 1, 1, FracTag);
                         start--;
                     }
                 }
 
                 // Apply denominator.
-                if (end < collection.Count)
+                if (end < buffer.Count)
                 {
-                    shapingData = collection[end];
-                    while (end < collection.Count && CodePoint.IsDigit(shapingData.CodePoint))
+                    CodePoint denominatorCodePoint = buffer[end].CodePoint;
+                    while (end < buffer.Count && CodePoint.IsDigit(denominatorCodePoint))
                     {
-                        this.AddFeature(collection, end, 1, DnomTag);
-                        this.AddFeature(collection, end, 1, FracTag);
+                        this.AddFeature(buffer, end, 1, DnomTag);
+                        this.AddFeature(buffer, end, 1, FracTag);
                         end++;
                     }
                 }
 
                 // Apply fraction slash.
-                this.AddFeature(collection, i, 1, FracTag);
+                this.AddFeature(buffer, i, 1, FracTag);
                 i = end - 1;
             }
         }

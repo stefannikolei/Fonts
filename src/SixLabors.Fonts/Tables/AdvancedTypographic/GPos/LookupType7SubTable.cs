@@ -81,12 +81,12 @@ internal static class LookupType7SubTable
         public override bool TryUpdatePosition(
             FontMetrics fontMetrics,
             GPosTable table,
-            GlyphPositioningCollection collection,
+            ShapingBuffer buffer,
             Tag feature,
             int index,
             int count)
         {
-            ushort glyphId = collection[index].GlyphId;
+            ushort glyphId = buffer[index].GlyphId;
             if (glyphId == 0)
             {
                 return false;
@@ -101,7 +101,7 @@ internal static class LookupType7SubTable
             // TODO: Check this.
             // https://docs.microsoft.com/en-us/typography/opentype/spec/gsub#example-7-contextual-substitution-format-1
             SequenceRuleSetTable ruleSetTable = this.seqRuleSetTables[offset];
-            SkippingGlyphIterator iterator = new(fontMetrics, collection, index, this.LookupFlags, this.MarkFilteringSet);
+            SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
             foreach (SequenceRuleTable ruleTable in ruleSetTable.SequenceRuleTables)
             {
                 int remaining = count - 1;
@@ -124,7 +124,7 @@ internal static class LookupType7SubTable
                     this.LookupFlags,
                     this.MarkFilteringSet,
                     ruleTable.SequenceLookupRecords,
-                    collection,
+                    buffer,
                     index,
                     count);
             }
@@ -190,12 +190,12 @@ internal static class LookupType7SubTable
         public override bool TryUpdatePosition(
             FontMetrics fontMetrics,
             GPosTable table,
-            GlyphPositioningCollection collection,
+            ShapingBuffer buffer,
             Tag feature,
             int index,
             int count)
         {
-            ushort glyphId = collection[index].GlyphId;
+            ushort glyphId = buffer[index].GlyphId;
             if (glyphId == 0)
             {
                 return false;
@@ -213,7 +213,7 @@ internal static class LookupType7SubTable
             }
 
             ClassSequenceRuleSetTable ruleSetTable = this.sequenceRuleSetTables[offset];
-            SkippingGlyphIterator iterator = new(fontMetrics, collection, index, this.LookupFlags, this.MarkFilteringSet);
+            SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
             foreach (ClassSequenceRuleTable ruleTable in ruleSetTable.SequenceRuleTables)
             {
                 int remaining = count - 1;
@@ -236,7 +236,7 @@ internal static class LookupType7SubTable
                     this.LookupFlags,
                     this.MarkFilteringSet,
                     ruleTable.SequenceLookupRecords,
-                    collection,
+                    buffer,
                     index,
                     count);
             }
@@ -305,18 +305,18 @@ internal static class LookupType7SubTable
         public override bool TryUpdatePosition(
             FontMetrics fontMetrics,
             GPosTable table,
-            GlyphPositioningCollection collection,
+            ShapingBuffer buffer,
             Tag feature,
             int index,
             int count)
         {
-            ushort glyphId = collection[index].GlyphId;
+            ushort glyphId = buffer[index].GlyphId;
             if (glyphId == 0)
             {
                 return false;
             }
 
-            SkippingGlyphIterator iterator = new(fontMetrics, collection, index, this.LookupFlags, this.MarkFilteringSet);
+            SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
             if (!AdvancedTypographicUtils.MatchCoverageSequence(iterator, this.coverageTables, index, index + count))
             {
                 return false;
@@ -329,7 +329,7 @@ internal static class LookupType7SubTable
                 this.LookupFlags,
                 this.MarkFilteringSet,
                 this.sequenceLookupRecords,
-                collection,
+                buffer,
                 index,
                 count);
         }

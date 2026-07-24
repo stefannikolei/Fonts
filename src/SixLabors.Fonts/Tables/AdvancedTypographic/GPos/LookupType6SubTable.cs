@@ -118,14 +118,14 @@ internal static class LookupType6SubTable
         public override bool TryUpdatePosition(
             FontMetrics fontMetrics,
             GPosTable table,
-            GlyphPositioningCollection collection,
+            ShapingBuffer buffer,
             Tag feature,
             int index,
             int count)
         {
             // Mark to mark positioning.
             // Implements: https://docs.microsoft.com/en-us/typography/opentype/spec/gpos#lookup-type-6-mark-to-mark-attachment-positioning-subtable
-            ushort glyphId = collection[index].GlyphId;
+            ushort glyphId = buffer[index].GlyphId;
             if (glyphId == 0)
             {
                 return false;
@@ -142,7 +142,7 @@ internal static class LookupType6SubTable
             // It clears ignore flags when searching, but keeps mark attachment / filtering behavior.
             LookupFlags searchFlags = this.LookupFlags & ~(LookupFlags.IgnoreMarks | LookupFlags.IgnoreBaseGlyphs | LookupFlags.IgnoreLigatures);
 
-            SkippingGlyphIterator it = new(fontMetrics, collection, index, searchFlags, this.MarkFilteringSet);
+            SkippingGlyphIterator it = new(fontMetrics, buffer, index, searchFlags, this.MarkFilteringSet);
 
             int j = it.Prev();
             if (j < 0)
@@ -150,13 +150,13 @@ internal static class LookupType6SubTable
                 return false;
             }
 
-            GlyphShapingData prevGlyph = collection[j];
-            if (!AdvancedTypographicUtils.IsMarkGlyph(fontMetrics, prevGlyph.GlyphId, prevGlyph))
+            ref GlyphShapingData prevGlyph = ref buffer[j];
+            if (!AdvancedTypographicUtils.IsMarkGlyph(fontMetrics, prevGlyph.GlyphId, ref prevGlyph))
             {
                 return false;
             }
 
-            GlyphShapingData curGlyph = collection[index];
+            ref GlyphShapingData curGlyph = ref buffer[index];
 
             bool good;
             int id1 = curGlyph.LigatureId;
@@ -196,7 +196,7 @@ internal static class LookupType6SubTable
 
             MarkRecord markRecord = this.mark1ArrayTable.MarkRecords[mark1Index];
             AnchorTable? baseAnchor = this.mark2ArrayTable.Mark2Records[mark2Index].MarkAnchorTable[markRecord.MarkClass];
-            AdvancedTypographicUtils.ApplyAnchor(fontMetrics, collection, index, baseAnchor, markRecord, j, feature);
+            AdvancedTypographicUtils.ApplyAnchor(fontMetrics, buffer, index, baseAnchor, markRecord, j, feature);
 
             return true;
         }

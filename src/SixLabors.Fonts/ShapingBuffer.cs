@@ -69,6 +69,52 @@ internal sealed class ShapingBuffer
     private FontMetrics? metricsCacheOwner;
 
     /// <summary>
+    /// The bit offset of the encoded following codepoint in a glyph id cache entry.
+    /// </summary>
+    private const int GlyphIdCacheNextShift = 21;
+
+    /// <summary>
+    /// The bit offset of the resolved glyph id in a glyph id cache entry.
+    /// </summary>
+    private const int GlyphIdCacheGlyphShift = 43;
+
+    /// <summary>
+    /// The glyph id cache entry bit recording that the lookup found a glyph.
+    /// </summary>
+    private const ulong GlyphIdCacheFoundFlag = 1UL << 59;
+
+    /// <summary>
+    /// The glyph id cache entry bit recording that the following codepoint was
+    /// consumed as part of a variation sequence.
+    /// </summary>
+    private const ulong GlyphIdCacheSkipFlag = 1UL << 60;
+
+    /// <summary>
+    /// The glyph id cache entry bit distinguishing a populated slot from an empty
+    /// one, since a zero entry could otherwise read as a valid all-zero lookup.
+    /// </summary>
+    private const ulong GlyphIdCacheMarkerFlag = 1UL << 63;
+
+    /// <summary>
+    /// The glyph id cache entry bits forming the lookup key: the marker, the
+    /// codepoint, and the encoded following codepoint.
+    /// </summary>
+    private const ulong GlyphIdCacheTagMask = GlyphIdCacheMarkerFlag | ((1UL << GlyphIdCacheGlyphShift) - 1);
+
+    /// <summary>
+    /// Direct-mapped codepoint-to-glyph cache: one word per slot packing the lookup
+    /// key alongside the found flag, skip flag, and glyph id, so a repeat lookup is
+    /// one load and one masked compare. Zero marks a slot empty.
+    /// </summary>
+    private readonly ulong[] glyphIdCacheEntries = new ulong[256];
+
+    /// <summary>
+    /// The font metrics instance the glyph id cache entries belong to. Populating
+    /// from a different font clears the cache before use.
+    /// </summary>
+    private FontMetrics? glyphIdCacheOwner;
+
+    /// <summary>
     /// The bidi runs recorded for inline placeholders, keyed by codepoint offset.
     /// Placeholder state lives here rather than on every glyph record because only
     /// placeholders carry a bidi run of their own, and only the copy-out reads it.
@@ -919,6 +965,47 @@ internal sealed class ShapingBuffer
         }
 
         return !hasFallBacks;
+    }
+
+    /// <summary>
+    /// Resolves a glyph id through a direct-mapped cache in front of the font's own
+    /// resolver, which hashes a dictionary per lookup. A hit is one load and one
+    /// masked compare. No synchronization is needed: a pooled buffer is exclusively
+    /// owned for the duration of a shaping pass.
+    /// </summary>
+    /// <param name="fontMetrics">The font metrics to resolve against.</param>
+    /// <param name="codePoint">The codepoint to look up.</param>
+    /// <param name="nextCodePoint">The optional following codepoint for variation sequence matching.</param>
+    /// <param name="glyphId">When this method returns, contains the glyph id if found.</param>
+    /// <param name="skipNextCodePoint">When this method returns, indicates whether the following codepoint was consumed.</param>
+    /// <returns><see langword="true"/> if a glyph was found.</returns>
+    public bool TryGetGlyphIdCached(FontMetrics fontMetrics, CodePoint codePoint, CodePoint? nextCodePoint, out ushort glyphId, out bool skipNextCodePoint)
+    {
+        if (!ReferenceEquals(this.glyphIdCacheOwner, fontMetrics))
+        {
+            Array.Clear(this.glyphIdCacheEntries);
+            this.glyphIdCacheOwner = fontMetrics;
+        }
+
+        ulong tag = GlyphIdCacheMarkerFlag
+            | (uint)codePoint.Value
+            | ((ulong)(uint)((nextCodePoint?.Value + 1) ?? 0) << GlyphIdCacheNextShift);
+
+        int slot = codePoint.Value & 0xFF;
+        ulong entry = this.glyphIdCacheEntries[slot];
+        if ((entry & GlyphIdCacheTagMask) == tag)
+        {
+            glyphId = (ushort)(entry >> GlyphIdCacheGlyphShift);
+            skipNextCodePoint = (entry & GlyphIdCacheSkipFlag) != 0;
+            return (entry & GlyphIdCacheFoundFlag) != 0;
+        }
+
+        bool found = fontMetrics.TryGetGlyphId(codePoint, nextCodePoint, out glyphId, out skipNextCodePoint);
+        this.glyphIdCacheEntries[slot] = tag
+            | ((ulong)glyphId << GlyphIdCacheGlyphShift)
+            | (found ? GlyphIdCacheFoundFlag : 0)
+            | (skipNextCodePoint ? GlyphIdCacheSkipFlag : 0);
+        return found;
     }
 
     /// <summary>

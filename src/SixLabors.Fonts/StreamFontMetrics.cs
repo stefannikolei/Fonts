@@ -182,6 +182,19 @@ internal partial class StreamFontMetrics : FontMetrics
     public override VerticalMetrics VerticalMetrics => this.verticalMetrics;
 
     /// <inheritdoc/>
+    internal override bool HasUnicodeVariationSequences
+    {
+        get
+        {
+            CMapTable cmap = this.outlineType == OutlineType.TrueType
+                ? this.trueTypeFontTables!.Cmap
+                : this.compactFontTables!.Cmap;
+
+            return cmap.HasVariationSequences;
+        }
+    }
+
+    /// <inheritdoc/>
     public override short SubscriptXSize => this.subscriptXSize;
 
     /// <inheritdoc/>

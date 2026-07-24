@@ -45,6 +45,13 @@ public abstract class FontMetrics
     public abstract VerticalMetrics VerticalMetrics { get; }
 
     /// <summary>
+    /// Gets a value indicating whether the font declares Unicode variation sequences.
+    /// When it does not, glyph lookup never consumes the following codepoint, so
+    /// shaping can skip decoding it. The conservative default reports support.
+    /// </summary>
+    internal virtual bool HasUnicodeVariationSequences => true;
+
+    /// <summary>
     /// Gets the recommended horizontal size in font design units for subscripts for this font.
     /// </summary>
     public abstract short SubscriptXSize { get; }

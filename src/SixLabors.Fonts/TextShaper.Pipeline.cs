@@ -545,6 +545,10 @@ public static partial class TextShaper
 
         var probe = ShapingProbe.Enter();
 
+        // A font without variation sequences never consumes the following codepoint
+        // during glyph lookup, so the per-codepoint lookahead decode is skipped.
+        bool hasVariationSequences = font.FontMetrics.HasUnicodeVariationSequences;
+
         // Enumerate through each grapheme in the text.
         int graphemeIndex = start;
         SpanGraphemeEnumerator graphemeEnumerator = new(text);
@@ -582,7 +586,7 @@ public static partial class TextShaper
                 int charsConsumed = 0;
                 CodePoint current = codePointEnumerator.Current;
                 charIndex += current.Utf16SequenceLength;
-                CodePoint? next = graphemeCodePointIndex < graphemeMax
+                CodePoint? next = hasVariationSequences && graphemeCodePointIndex < graphemeMax
                     ? CodePoint.DecodeFromUtf16At(grapheme, charIndex, out charsConsumed)
                     : null;
 

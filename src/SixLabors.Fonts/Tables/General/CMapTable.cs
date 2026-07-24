@@ -39,6 +39,13 @@ internal sealed class CMapTable : Table
     }
 
     /// <summary>
+    /// Gets a value indicating whether the font declares Unicode variation sequences.
+    /// When it does not, glyph lookup never needs the following codepoint, so callers
+    /// can skip decoding it entirely.
+    /// </summary>
+    public bool HasVariationSequences => this.format14SubTables.Length > 0;
+
+    /// <summary>
     /// Gets the subtables ordered by preferred platform.
     /// </summary>
     internal CMapSubTable[] Tables { get; }

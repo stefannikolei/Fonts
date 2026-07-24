@@ -80,6 +80,9 @@ internal sealed class FileFontMetrics : FontMetrics
     public override VerticalMetrics VerticalMetrics => this.fontMetrics.Value.VerticalMetrics;
 
     /// <inheritdoc/>
+    internal override bool HasUnicodeVariationSequences => this.fontMetrics.Value.HasUnicodeVariationSequences;
+
+    /// <inheritdoc/>
     public override short SubscriptXSize => this.fontMetrics.Value.SubscriptXSize;
 
     /// <inheritdoc/>

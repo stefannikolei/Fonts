@@ -69,6 +69,13 @@ internal sealed class ShapingBuffer
     private FontMetrics? metricsCacheOwner;
 
     /// <summary>
+    /// The bidi runs recorded for inline placeholders, keyed by codepoint offset.
+    /// Placeholder state lives here rather than on every glyph record because only
+    /// placeholders carry a bidi run of their own, and only the copy-out reads it.
+    /// </summary>
+    private readonly List<(int CodePointIndex, BidiRun Run)> placeholderBidiRuns = new();
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="ShapingBuffer"/> class.
     /// </summary>
     /// <param name="textOptions">The text options.</param>
@@ -174,6 +181,7 @@ internal sealed class ShapingBuffer
         this.count = 0;
         this.LigatureId = 1;
         this.glyphDigest = default;
+        this.placeholderBidiRuns.Clear();
         this.TextOptions = textOptions;
         this.LanguageTags = ResolveLanguageTags(textOptions);
     }
@@ -186,6 +194,7 @@ internal sealed class ShapingBuffer
     {
         this.count = 0;
         this.LigatureId = 1;
+        this.placeholderBidiRuns.Clear();
     }
 
     /// <summary>
@@ -325,9 +334,41 @@ internal sealed class ShapingBuffer
             Direction = (TextDirection)bidiRun.Direction,
             GlyphId = 0,
             IsPlaceholder = true,
-            BidiRun = bidiRun,
         };
+
+        this.placeholderBidiRuns.Add((offset, bidiRun));
     }
+
+    /// <summary>
+    /// Gets the bidi run recorded for the placeholder at the given codepoint offset.
+    /// Placeholders shape in isolated single-glyph runs, so their offsets are stable
+    /// for the lifetime of the pass.
+    /// </summary>
+    /// <param name="codePointIndex">The placeholder's zero-based codepoint offset.</param>
+    /// <returns>The recorded <see cref="BidiRun"/>, or the default when none was recorded.</returns>
+    public BidiRun GetPlaceholderBidiRun(int codePointIndex)
+    {
+        List<(int CodePointIndex, BidiRun Run)> runs = this.placeholderBidiRuns;
+        for (int i = 0; i < runs.Count; i++)
+        {
+            if (runs[i].CodePointIndex == codePointIndex)
+            {
+                return runs[i].Run;
+            }
+        }
+
+        return default;
+    }
+
+    /// <summary>
+    /// Copies the placeholder bidi run recorded at the given codepoint offset in
+    /// <paramref name="source"/> into this buffer, so seeding from a workspace
+    /// preserves placeholder bidi state without carrying it on every glyph record.
+    /// </summary>
+    /// <param name="source">The buffer to copy the recorded run from.</param>
+    /// <param name="codePointIndex">The placeholder's zero-based codepoint offset.</param>
+    public void CopyPlaceholderBidiRun(ShapingBuffer source, int codePointIndex)
+        => this.placeholderBidiRuns.Add((codePointIndex, source.GetPlaceholderBidiRun(codePointIndex)));
 
     /// <summary>
     /// Moves the specified glyph to the specified position. Codepoint offsets stay
@@ -661,6 +702,7 @@ internal sealed class ShapingBuffer
             {
                 // Placeholders are synthetic glyphs: they need layout metrics but must not
                 // go through font glyph lookup, fallback resolution, or GPOS positioning.
+                this.CopyPlaceholderBidiRun(workspace, source.CodePointIndex);
                 FontGlyphMetrics placeholderMetrics = PlaceholderGlyphMetrics.Create(font, source.TextRun, this.TextOptions.Dpi);
 
                 this.glyphDigest.Add(placeholderMetrics.GlyphId);

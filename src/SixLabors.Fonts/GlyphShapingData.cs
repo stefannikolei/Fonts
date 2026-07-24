@@ -60,7 +60,6 @@ internal struct GlyphShapingData
         this.IsSubstituted = data.IsSubstituted;
         this.IsDecomposed = data.IsDecomposed;
         this.IsPlaceholder = data.IsPlaceholder;
-        this.BidiRun = data.BidiRun;
         this.IsPositioned = data.IsPositioned;
         this.IsKerned = data.IsKerned;
 
@@ -193,13 +192,9 @@ internal struct GlyphShapingData
 
     /// <summary>
     /// Gets or sets a value indicating whether this glyph represents an inline placeholder.
+    /// A placeholder's bidi run lives on the buffer, keyed by codepoint offset.
     /// </summary>
     public bool IsPlaceholder { get; set; }
-
-    /// <summary>
-    /// Gets or sets the bidi run assigned to an inline placeholder.
-    /// </summary>
-    public BidiRun BidiRun { get; set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether this glyph has been positioned.

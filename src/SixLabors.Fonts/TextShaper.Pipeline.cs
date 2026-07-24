@@ -354,14 +354,17 @@ public static partial class TextShaper
             ref ShapingBuffer.GlyphMetricsEntry entry = ref positionings.MetricsAt(i);
 
             // Placeholders carry a bidi run of their own, so they always cut a run.
+            BidiRun shapingBidiRun = shaping.IsPlaceholder
+                ? positionings.GetPlaceholderBidiRun(shaping.CodePointIndex)
+                : default;
             if (entry.Font != runFont
                 || shaping.TextRun != runTextRun
-                || (shaping.IsPlaceholder && !shaping.BidiRun.Equals(runBidiRun)))
+                || (shaping.IsPlaceholder && !shapingBidiRun.Equals(runBidiRun)))
             {
                 runFont = entry.Font;
                 runTextRun = shaping.TextRun;
-                runBidiRun = shaping.BidiRun;
-                runs.Add(new(entry.Font, entry.PointSize, shaping.TextRun, shaping.BidiRun));
+                runBidiRun = shapingBidiRun;
+                runs.Add(new(entry.Font, entry.PointSize, shaping.TextRun, shapingBidiRun));
             }
 
             ShapedGlyphFlags flags = ShapedGlyphFlags.None;

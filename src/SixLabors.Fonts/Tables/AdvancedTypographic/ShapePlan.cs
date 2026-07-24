@@ -116,9 +116,10 @@ internal sealed class ShapePlan
     public Tag[] LanguageTags { get; }
 
     /// <summary>
-    /// Gets the plan's feature bit assignment, shared with the shaper that created
-    /// it. Bits are assigned in stage-list order when the groups are built and
-    /// append-only afterwards, so plans of the same identity assign identical bits.
+    /// Gets the plan's feature classification and bit assignment, shared with the
+    /// shaper that created it. Global features share one reserved bit; varying
+    /// features gain distinct bits in registration order, append-only, so plans of
+    /// the same identity assign identical layouts.
     /// </summary>
     public ShapePlanFeatures Features => this.Shaper.Features;
 
@@ -210,15 +211,6 @@ internal sealed class ShapePlan
         this.builtStageCount = this.Stages.Count;
         this.gposStageGroups = null;
         this.resolvedGsubFeatures.Clear();
-
-        // Assign every stage feature its mask bit in stage-list order before any
-        // group is resolved. This single assignment point keeps layouts identical
-        // between plans of the same identity, which keeps applied masks portable
-        // across the pass's buffers.
-        for (int s = 0; s < this.Stages.Count; s++)
-        {
-            _ = this.Features.GetOrAddMask(this.Stages[s].FeatureTag);
-        }
 
         List<ShapePlanStageGroup<GSub.LookupTable>> groups = new();
         GSubTable? gsubTable = this.gsubTable;
@@ -344,21 +336,27 @@ internal sealed class ShapePlan
 
             // Resolve each stage feature in the group to its lookups and fold
             // them into one list ordered by lookup index, freezing each entry's
-            // combined mask from the plan's assignments. The scan below runs
-            // backwards from the tail because resolved lookups arrive mostly
-            // ascending, so the insertion point is almost always at or near the
-            // end.
+            // combined mask from the classification recorded at registration. A
+            // zero mask means the feature is disabled for the plan or has no bit,
+            // so its lookups are never collected. The scan below runs backwards
+            // from the tail because resolved lookups arrive mostly ascending, so
+            // the insertion point is almost always at or near the end.
             ShapePlanStageGroup<TLookup> group = new(stageIndex, groupEnd);
             List<(Tag Feature, ushort Index, TLookup LookupTable, ulong Mask)> merged = group.Lookups;
             for (int s = stageIndex; s < groupEnd; s++)
             {
                 Tag featureTag = stages[s].FeatureTag;
+                ulong featureMask = this.Features.GetMask(featureTag);
+                if (featureMask == 0)
+                {
+                    continue;
+                }
+
                 if (!resolver(in featureTag, out List<(Tag Feature, ushort Index, TLookup LookupTable)>? lookups) || lookups is null)
                 {
                     continue;
                 }
 
-                ulong featureMask = this.Features.GetOrAddMask(featureTag);
                 foreach ((Tag Feature, ushort Index, TLookup LookupTable) featureLookup in lookups)
                 {
                     // Scan from the tail toward the head. Three outcomes: the

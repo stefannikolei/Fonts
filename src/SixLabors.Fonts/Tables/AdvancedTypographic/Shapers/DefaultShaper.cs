@@ -176,12 +176,12 @@ internal class DefaultShaper : BaseShaper
     protected override void PlanPreprocessingFeatures(ShapingBuffer buffer, int index, int count)
     {
         // Add variation Features.
-        this.AddFeature(buffer, index, count, RvnrTag);
+        this.EnableFeature(buffer, index, count, RvnrTag);
 
-        // Add directional features once per direction span. The plan registers a
-        // direction's features across the whole span in a single range registration,
-        // producing the same per-glyph masks as per-glyph registration while
-        // resolving each feature's mask bit once.
+        // Add directional features once per direction span. A segment may span
+        // direction runs, so these stay varying features whose bits cover only
+        // their own span; a global classification would let one direction's
+        // lookups match glyphs of the other.
         int end = index + count;
         int spanStart = index;
         while (spanStart < end)
@@ -216,11 +216,11 @@ internal class DefaultShaper : BaseShaper
     protected override void PlanPostprocessingFeatures(ShapingBuffer buffer, int index, int count)
     {
         // Add common features.
-        this.AddFeature(buffer, index, count, CcmpTag);
-        this.AddFeature(buffer, index, count, LoclTag);
-        this.AddFeature(buffer, index, count, RligTag);
-        this.AddFeature(buffer, index, count, MarkTag);
-        this.AddFeature(buffer, index, count, MkmkTag);
+        this.EnableFeature(buffer, index, count, CcmpTag);
+        this.EnableFeature(buffer, index, count, LoclTag);
+        this.EnableFeature(buffer, index, count, RligTag);
+        this.EnableFeature(buffer, index, count, MarkTag);
+        this.EnableFeature(buffer, index, count, MkmkTag);
 
         LayoutMode layoutMode = buffer.TextOptions.LayoutMode;
         bool isVerticalLayout = false;
@@ -234,12 +234,12 @@ internal class DefaultShaper : BaseShaper
         if (!isVerticalLayout)
         {
             // Add horizontal features.
-            this.AddFeature(buffer, index, count, CaltTag);
-            this.AddFeature(buffer, index, count, CligTag);
-            this.AddFeature(buffer, index, count, LigaTag);
-            this.AddFeature(buffer, index, count, RcltTag);
-            this.AddFeature(buffer, index, count, CursTag);
-            this.AddFeature(buffer, index, count, KernTag);
+            this.EnableFeature(buffer, index, count, CaltTag);
+            this.EnableFeature(buffer, index, count, CligTag);
+            this.EnableFeature(buffer, index, count, LigaTag);
+            this.EnableFeature(buffer, index, count, RcltTag);
+            this.EnableFeature(buffer, index, count, CursTag);
+            this.EnableFeature(buffer, index, count, KernTag);
         }
         else
         {
@@ -251,7 +251,7 @@ internal class DefaultShaper : BaseShaper
             // matter which script/langsys it is listed (or not) under.
             // See various bugs referenced from:
             // https://github.com/harfbuzz/harfbuzz/issues/63
-            this.AddFeature(buffer, index, count, VertTag);
+            this.EnableFeature(buffer, index, count, VertTag);
         }
 
         // Add user defined features.
@@ -260,7 +260,7 @@ internal class DefaultShaper : BaseShaper
             // We've already dealt with fractional features.
             if (feature != FracTag && feature != NumrTag && feature != DnomTag)
             {
-                this.AddFeature(buffer, index, count, feature);
+                this.EnableFeature(buffer, index, count, feature);
             }
         }
     }
@@ -305,9 +305,67 @@ internal class DefaultShaper : BaseShaper
         }
 
         buffer.AddShapingFeatureRange(index, count, new TagEntry(feature, enabled), this.Features.GetOrAddMask(feature));
+        this.AddStage(feature, preAction, postAction);
+    }
 
-        // First registration wins, matching the previous set semantics: a duplicate
-        // tag keeps the originally supplied pre and post actions.
+    /// <summary>
+    /// Registers a global feature over the given range: one that applies to every
+    /// glyph of the plan's segments and therefore shares the plan's single global
+    /// mask bit instead of consuming a distinct bit. Features whose per-glyph
+    /// state varies register through <see cref="AddFeature"/> instead.
+    /// </summary>
+    /// <param name="buffer">The glyph shaping buffer.</param>
+    /// <param name="index">The zero-based index of the first element.</param>
+    /// <param name="count">The number of elements.</param>
+    /// <param name="feature">The feature tag to enable.</param>
+    protected void EnableFeature(ShapingBuffer buffer, int index, int count, Tag feature)
+        => this.EnableFeature(buffer, index, count, feature, null, null);
+
+    /// <summary>
+    /// Registers a global feature over the given range and attaches the supplied
+    /// stage actions. The feature applies to every glyph of the plan's segments
+    /// and therefore shares the plan's single global mask bit instead of consuming
+    /// a distinct bit.
+    /// </summary>
+    /// <param name="buffer">The glyph shaping buffer.</param>
+    /// <param name="index">The zero-based index of the first element.</param>
+    /// <param name="count">The number of elements.</param>
+    /// <param name="feature">The feature tag to enable.</param>
+    /// <param name="preAction">The action to invoke before the feature is applied, or <see langword="null"/>.</param>
+    /// <param name="postAction">The action to invoke after the feature is applied, or <see langword="null"/>.</param>
+    protected void EnableFeature(
+        ShapingBuffer buffer,
+        int index,
+        int count,
+        Tag feature,
+        Action<ShapePlan, ShapingBuffer, int, int>? preAction,
+        Action<ShapePlan, ShapingBuffer, int, int>? postAction)
+    {
+        if (this.kerningMode == KerningMode.None)
+        {
+            if (feature == KernTag || feature == VKernTag)
+            {
+                return;
+            }
+        }
+
+        buffer.AddShapingFeatureRange(index, count, new TagEntry(feature, true), this.Features.GetOrAddGlobalMask(feature));
+        this.AddStage(feature, preAction, postAction);
+    }
+
+    /// <summary>
+    /// Appends a shaping stage for the feature unless one already exists. The
+    /// first registration wins, matching the previous set semantics: a duplicate
+    /// tag keeps the originally supplied pre and post actions.
+    /// </summary>
+    /// <param name="feature">The feature tag the stage applies.</param>
+    /// <param name="preAction">The action to invoke before the feature is applied, or <see langword="null"/>.</param>
+    /// <param name="postAction">The action to invoke after the feature is applied, or <see langword="null"/>.</param>
+    private void AddStage(
+        Tag feature,
+        Action<ShapePlan, ShapingBuffer, int, int>? preAction,
+        Action<ShapePlan, ShapingBuffer, int, int>? postAction)
+    {
         List<ShapingStage> stages = this.shapingStages;
         for (int i = 0; i < stages.Count; i++)
         {

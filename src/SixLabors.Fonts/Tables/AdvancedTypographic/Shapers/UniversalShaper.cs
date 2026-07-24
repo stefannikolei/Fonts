@@ -174,32 +174,34 @@ internal sealed class UniversalShaper : DefaultShaper
     protected override void PlanFeatures(ShapingBuffer buffer, int index, int count)
     {
         // Default glyph pre-processing group
-        this.AddFeature(buffer, index, count, LoclTag, preAction: this.SetupSyllables);
-        this.AddFeature(buffer, index, count, CcmpTag);
-        this.AddFeature(buffer, index, count, NuktTag);
-        this.AddFeature(buffer, index, count, AkhnTag);
+        this.EnableFeature(buffer, index, count, LoclTag, this.SetupSyllables, null);
+        this.EnableFeature(buffer, index, count, CcmpTag);
+        this.EnableFeature(buffer, index, count, NuktTag);
+        this.EnableFeature(buffer, index, count, AkhnTag);
 
-        // Reordering group
-        this.AddFeature(buffer, index, count, RphfTag, true, ClearSubstitutionFlags, RecordRhpf);
-        this.AddFeature(buffer, index, count, PrefTag, true, ClearSubstitutionFlags, RecordPref);
+        // Reordering group. The repha feature varies per glyph: syllable setup
+        // enables it on each syllable's leading glyphs only, so a repha forms
+        // there and nowhere else.
+        this.AddFeature(buffer, index, count, RphfTag, false, ClearSubstitutionFlags, RecordRhpf);
+        this.EnableFeature(buffer, index, count, PrefTag, ClearSubstitutionFlags, RecordPref);
 
         // Orthographic unit shaping group
-        this.AddFeature(buffer, index, count, RkrfTag);
-        this.AddFeature(buffer, index, count, AbvfTag);
-        this.AddFeature(buffer, index, count, BlwfTag);
-        this.AddFeature(buffer, index, count, HalfTag);
-        this.AddFeature(buffer, index, count, PstfTag);
-        this.AddFeature(buffer, index, count, VatuTag);
-        this.AddFeature(buffer, index, count, CjctTag, postAction: this.Reorder);
+        this.EnableFeature(buffer, index, count, RkrfTag);
+        this.EnableFeature(buffer, index, count, AbvfTag);
+        this.EnableFeature(buffer, index, count, BlwfTag);
+        this.EnableFeature(buffer, index, count, HalfTag);
+        this.EnableFeature(buffer, index, count, PstfTag);
+        this.EnableFeature(buffer, index, count, VatuTag);
+        this.EnableFeature(buffer, index, count, CjctTag, null, this.Reorder);
 
         // Standard topographic presentation and positional feature application
-        this.AddFeature(buffer, index, count, AbvsTag);
-        this.AddFeature(buffer, index, count, BlwsTag);
-        this.AddFeature(buffer, index, count, PresTag);
-        this.AddFeature(buffer, index, count, PstsTag);
-        this.AddFeature(buffer, index, count, DistTag);
-        this.AddFeature(buffer, index, count, AbvmTag);
-        this.AddFeature(buffer, index, count, BlwmTag);
+        this.EnableFeature(buffer, index, count, AbvsTag);
+        this.EnableFeature(buffer, index, count, BlwsTag);
+        this.EnableFeature(buffer, index, count, PresTag);
+        this.EnableFeature(buffer, index, count, PstsTag);
+        this.EnableFeature(buffer, index, count, DistTag);
+        this.EnableFeature(buffer, index, count, AbvmTag);
+        this.EnableFeature(buffer, index, count, BlwmTag);
     }
 
     /// <inheritdoc/>
@@ -276,6 +278,7 @@ internal sealed class UniversalShaper : DefaultShaper
         }
 
         int syllable = 0;
+        ulong rphfMask = this.Features.GetMask(RphfTag);
         StateMachine.MatchEnumerator match = StateMachine.EnumerateMatches(values);
         while (match.MoveNext())
         {
@@ -297,14 +300,16 @@ internal sealed class UniversalShaper : DefaultShaper
                 data.Syllable.Number = syllable;
             }
 
-            // Assign rphf feature
+            // Enable the repha feature on the syllable's leading glyphs only: a
+            // repha can form there and nowhere else, so the feature stays off for
+            // the rest of the syllable.
             int limit = buffer[match.StartIndex + index].Syllable.UseCategory == CategoryR
                 ? 1
                 : Math.Min(3, match.EndIndex - match.StartIndex);
 
             for (int i = match.StartIndex; i < match.StartIndex + limit; i++)
             {
-                buffer.AddShapingFeature(i + index, new TagEntry(RcltTag, true), this.Features.GetOrAddMask(RcltTag));
+                buffer.EnableShapingFeature(i + index, rphfMask);
             }
         }
     }
@@ -350,7 +355,7 @@ internal sealed class UniversalShaper : DefaultShaper
         for (int i = index; i < end; i++)
         {
             ref GlyphShapingData data = ref buffer[i];
-            if (data.IsSubstituted && (data.RegisteredFeatureMask & rphfMask) != 0)
+            if (data.IsSubstituted && (data.FeatureMask & rphfMask) != 0)
             {
                 // Mark a substituted repha.
                 if (data.Syllable.Type != SyllableType.None)

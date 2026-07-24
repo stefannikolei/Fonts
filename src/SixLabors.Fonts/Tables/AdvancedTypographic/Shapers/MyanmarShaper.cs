@@ -122,18 +122,18 @@ internal sealed class MyanmarShaper : DefaultShaper
     /// <inheritdoc />
     protected override void PlanFeatures(ShapingBuffer buffer, int index, int count)
     {
-        this.AddFeature(buffer, index, count, LoclTag, preAction: this.SetupSyllables);
-        this.AddFeature(buffer, index, count, CcmpTag);
+        this.EnableFeature(buffer, index, count, LoclTag, this.SetupSyllables, null);
+        this.EnableFeature(buffer, index, count, CcmpTag);
 
-        this.AddFeature(buffer, index, count, RphfTag, preAction: this.InitialReorder);
-        this.AddFeature(buffer, index, count, PrefTag);
-        this.AddFeature(buffer, index, count, BlwfTag);
-        this.AddFeature(buffer, index, count, PstfTag);
+        this.EnableFeature(buffer, index, count, RphfTag, this.InitialReorder, null);
+        this.EnableFeature(buffer, index, count, PrefTag);
+        this.EnableFeature(buffer, index, count, BlwfTag);
+        this.EnableFeature(buffer, index, count, PstfTag);
 
-        this.AddFeature(buffer, index, count, PresTag);
-        this.AddFeature(buffer, index, count, AbvsTag);
-        this.AddFeature(buffer, index, count, BlwsTag);
-        this.AddFeature(buffer, index, count, PstsTag);
+        this.EnableFeature(buffer, index, count, PresTag);
+        this.EnableFeature(buffer, index, count, AbvsTag);
+        this.EnableFeature(buffer, index, count, BlwsTag);
+        this.EnableFeature(buffer, index, count, PstsTag);
     }
 
     /// <summary>

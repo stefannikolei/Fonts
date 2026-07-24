@@ -388,28 +388,6 @@ internal sealed class ShapingBuffer
     }
 
     /// <summary>
-    /// Adds the shaping feature to the record at the given index. The caller
-    /// supplies the feature's plan-assigned mask bit; the shaper that registers a
-    /// feature owns the plan whose bit it is, so the mask is always in scope.
-    /// </summary>
-    /// <remarks>
-    /// Registration only ever accumulates: adding a disabled entry for an already
-    /// enabled feature must not clear the enabled bit.
-    /// </remarks>
-    /// <param name="index">The zero-based index of the record.</param>
-    /// <param name="feature">The feature to apply.</param>
-    /// <param name="mask">The feature's plan-assigned mask bit.</param>
-    public void AddShapingFeature(int index, TagEntry feature, ulong mask)
-    {
-        ref GlyphShapingData item = ref this.data[index];
-        item.RegisteredFeatureMask |= mask;
-        if (feature.Enabled)
-        {
-            item.FeatureMask |= mask;
-        }
-    }
-
-    /// <summary>
     /// Adds the shaping feature to every record in the given range. The caller
     /// resolves the feature's mask bit once for the whole range: shaper plans
     /// register each stage feature across the full run, so the per-glyph work must

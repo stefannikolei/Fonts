@@ -134,8 +134,8 @@ internal sealed class ArabicShaper : DefaultShaper
     /// <inheritdoc/>
     protected override void PlanFeatures(ShapingBuffer buffer, int index, int count)
     {
-        this.AddFeature(buffer, index, count, CcmpTag);
-        this.AddFeature(buffer, index, count, LoclTag);
+        this.EnableFeature(buffer, index, count, CcmpTag);
+        this.EnableFeature(buffer, index, count, LoclTag);
 
         this.AddFeature(buffer, index, count, IsolTag, false);
         this.AddFeature(buffer, index, count, FinaTag, false);
@@ -150,12 +150,12 @@ internal sealed class ArabicShaper : DefaultShaper
         // DefaultShaper; forced vertical Arabic needs them here as well.
         if (buffer.TextOptions.LayoutMode.IsVertical())
         {
-            this.AddFeature(buffer, index, count, CaltTag);
-            this.AddFeature(buffer, index, count, LigaTag);
-            this.AddFeature(buffer, index, count, CligTag);
+            this.EnableFeature(buffer, index, count, CaltTag);
+            this.EnableFeature(buffer, index, count, LigaTag);
+            this.EnableFeature(buffer, index, count, CligTag);
         }
 
-        this.AddFeature(buffer, index, count, MsetTag);
+        this.EnableFeature(buffer, index, count, MsetTag);
     }
 
     /// <inheritdoc/>

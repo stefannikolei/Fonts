@@ -209,32 +209,43 @@ internal sealed class IndicShaper : DefaultShaper
     /// <inheritdoc />
     protected override void PlanFeatures(ShapingBuffer buffer, int index, int count)
     {
-        this.AddFeature(buffer, index, count, LoclTag, preAction: this.SetupSyllables);
-        this.AddFeature(buffer, index, count, CcmpTag);
+        this.EnableFeature(buffer, index, count, LoclTag, this.SetupSyllables, null);
+        this.EnableFeature(buffer, index, count, CcmpTag);
 
-        this.AddFeature(buffer, index, count, NuktTag, preAction: this.InitialReorder);
-        this.AddFeature(buffer, index, count, AkhnTag);
+        this.EnableFeature(buffer, index, count, NuktTag, this.InitialReorder, null);
+        this.EnableFeature(buffer, index, count, AkhnTag);
 
         this.AddFeature(buffer, index, count, RphfTag, false);
-        this.AddFeature(buffer, index, count, RkrfTag);
+        this.EnableFeature(buffer, index, count, RkrfTag);
         this.AddFeature(buffer, index, count, PrefTag, false);
         this.AddFeature(buffer, index, count, BlwfTag, false);
         this.AddFeature(buffer, index, count, AbvfTag, false);
         this.AddFeature(buffer, index, count, HalfTag, false);
         this.AddFeature(buffer, index, count, PstfTag, false);
-        this.AddFeature(buffer, index, count, VatuTag);
-        this.AddFeature(buffer, index, count, CjctTag);
-        this.AddFeature(buffer, index, count, CfarTag, false, postAction: this.FinalReorder);
+        this.EnableFeature(buffer, index, count, VatuTag);
+        this.EnableFeature(buffer, index, count, CjctTag);
+        this.AddFeature(buffer, index, count, CfarTag, false, null, this.FinalReorder);
 
         this.AddFeature(buffer, index, count, InitTag, false);
-        this.AddFeature(buffer, index, count, PresTag);
-        this.AddFeature(buffer, index, count, AbvsTag);
-        this.AddFeature(buffer, index, count, BlwsTag);
-        this.AddFeature(buffer, index, count, PstsTag);
-        this.AddFeature(buffer, index, count, HalnTag);
-        this.AddFeature(buffer, index, count, DistTag);
-        this.AddFeature(buffer, index, count, AbvmTag);
-        this.AddFeature(buffer, index, count, BlwmTag);
+        this.EnableFeature(buffer, index, count, PresTag);
+        this.EnableFeature(buffer, index, count, AbvsTag);
+        this.EnableFeature(buffer, index, count, BlwsTag);
+        this.EnableFeature(buffer, index, count, PstsTag);
+        this.EnableFeature(buffer, index, count, HalnTag);
+        this.EnableFeature(buffer, index, count, DistTag);
+        this.EnableFeature(buffer, index, count, AbvmTag);
+        this.EnableFeature(buffer, index, count, BlwmTag);
+    }
+
+    /// <inheritdoc />
+    protected override void PlanPostprocessingFeatures(ShapingBuffer buffer, int index, int count)
+    {
+        base.PlanPostprocessingFeatures(buffer, index, count);
+
+        // Standard ligature substitution interferes with the conjunct forms these
+        // scripts build through their dedicated features, so the feature is
+        // disabled for the whole plan and its lookups are never collected.
+        this.Features.DisableFeature(LigaTag);
     }
 
     /// <inheritdoc />

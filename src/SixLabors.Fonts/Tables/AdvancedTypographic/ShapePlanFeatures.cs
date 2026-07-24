@@ -4,13 +4,15 @@
 namespace SixLabors.Fonts.Tables.AdvancedTypographic;
 
 /// <summary>
-/// The feature bit assignment owned by one shape plan: each OpenType feature the
-/// plan touches receives a bit within a 64 bit mask, so per-glyph feature state is
-/// stored and tested as plain bitwise operations. Bits are assigned in stage-list
-/// order when the plan's groups are built and append-only afterwards, so two plans
-/// of the same identity assign identical bits and applied masks stay portable
-/// between the passes' buffers. The vertical trio occupies reserved bits identical
-/// across every plan.
+/// The feature classification and bit assignment owned by one shape plan. Features
+/// that apply to every glyph of the plan's segments share a single reserved global
+/// bit, so any number of them fits one mask; only features whose per-glyph state
+/// varies receive distinct bits, assigned in registration order and append-only, so
+/// plans of the same identity assign identical layouts. Classification moves in one
+/// direction only: a global feature may be demoted to varying or disabled outright,
+/// and either move is terminal, which keeps repeated per-segment planning
+/// convergent. The vertical trio occupies reserved bits in the applied-mask space,
+/// which is independent of the registration space managed here.
 /// </summary>
 internal sealed class ShapePlanFeatures
 {
@@ -39,22 +41,45 @@ internal sealed class ShapePlanFeatures
     public const ulong VerticalFeatureMask = VerticalAlternatesMask | VerticalAlternatesForRotationMask | VerticalKerningMask;
 
     /// <summary>
-    /// The first bit available to assigned features; lower bits are reserved for
-    /// the vertical trio.
+    /// The single mask bit shared by every global feature: one that applies to all
+    /// glyphs of the plan's segments. Every planned glyph carries this bit, so the
+    /// lookups of any number of global features match with one bit between them and
+    /// the distinct bits are kept for features whose per-glyph state varies.
+    /// </summary>
+    public const ulong GlobalFeatureMask = 1UL << 63;
+
+    /// <summary>
+    /// The first bit available to varying features; lower bits stay clear of the
+    /// applied-mask space's reserved trio so a mask value's space is identifiable
+    /// at a glance when debugging.
     /// </summary>
     private const int FirstAssignableBit = 3;
 
     /// <summary>
-    /// The number of assignable feature bits after the reserved bits.
+    /// The number of assignable varying-feature bits: everything between the first
+    /// assignable bit and the reserved global bit.
     /// </summary>
-    private const int AssignableBitCount = 64 - FirstAssignableBit;
+    private const int AssignableBitCount = 63 - FirstAssignableBit;
 
     /// <summary>
-    /// The assigned feature tag values, indexed by bit position above the reserved
+    /// The varying feature tag values, indexed by bit position above the reserved
     /// bits. Stored as raw <see cref="uint"/> values so lookups take the runtime's
     /// vectorized primitive search path.
     /// </summary>
-    private readonly List<uint> featureTags = new(32);
+    private readonly List<uint> featureTags = new(16);
+
+    /// <summary>
+    /// The global feature tag values; each resolves to the shared
+    /// <see cref="GlobalFeatureMask"/> bit.
+    /// </summary>
+    private readonly List<uint> globalTags = new(32);
+
+    /// <summary>
+    /// The disabled feature tag values. A disabled feature resolves to a zero mask
+    /// and never re-registers, so its lookups are never collected and its state
+    /// survives repeated per-segment planning.
+    /// </summary>
+    private readonly List<uint> disabledTags = new(1);
 
     /// <summary>
     /// The most recently resolved tag value. Queries strongly repeat the same
@@ -97,13 +122,13 @@ internal sealed class ShapePlanFeatures
     }
 
     /// <summary>
-    /// Gets the mask bit for the given feature tag, or zero when the tag has no
-    /// assignment. The vertical trio answers from the reserved bits; a zero result
-    /// is safe at every consumption site: testing it enables or matches nothing and
-    /// clearing it clears nothing.
+    /// Gets the mask for the given feature tag: a varying feature's distinct bit,
+    /// the shared global bit for a global feature, or zero when the tag is disabled
+    /// or unknown. A zero result is safe at every consumption site: testing it
+    /// enables or matches nothing and clearing it clears nothing.
     /// </summary>
     /// <param name="tag">The feature tag.</param>
-    /// <returns>The single-bit mask, or zero.</returns>
+    /// <returns>The feature's mask, or zero.</returns>
     public ulong GetMask(Tag tag)
     {
         if (tag.Value == this.lastTagValue)
@@ -111,50 +136,62 @@ internal sealed class ShapePlanFeatures
             return this.lastMask;
         }
 
-        if (tag == KnownFeatureTags.VerticalAlternates)
+        if (this.disabledTags.Count > 0 && this.disabledTags.Contains(tag.Value))
         {
-            return VerticalAlternatesMask;
-        }
-
-        if (tag == KnownFeatureTags.VerticalAlternatesForRotation)
-        {
-            return VerticalAlternatesForRotationMask;
-        }
-
-        if (tag == KnownFeatureTags.VerticalKerning)
-        {
-            return VerticalKerningMask;
+            return 0;
         }
 
         int index = this.featureTags.IndexOf(tag.Value);
-        ulong mask = index < 0 ? 0 : 1UL << (FirstAssignableBit + index);
+        if (index >= 0)
+        {
+            ulong mask = 1UL << (FirstAssignableBit + index);
+            this.lastTagValue = tag.Value;
+            this.lastMask = mask;
+            return mask;
+        }
+
+        if (this.globalTags.Contains(tag.Value))
+        {
+            this.lastTagValue = tag.Value;
+            this.lastMask = GlobalFeatureMask;
+            return GlobalFeatureMask;
+        }
 
         // A zero mask is never memoized: the tag may gain an assignment later and
         // the memo must not serve a stale zero after that.
-        if (mask != 0)
-        {
-            this.lastTagValue = tag.Value;
-            this.lastMask = mask;
-        }
-
-        return mask;
+        return 0;
     }
 
     /// <summary>
-    /// Gets the mask bit for the given feature tag, assigning the next free bit
-    /// when the tag is new to this plan. A plan that has exhausted its bits assigns
-    /// nothing and returns zero, which disables the feature: a zero mask registers
-    /// nothing, enables nothing, and matches nothing at every consumption site.
+    /// Gets the distinct bit for a varying feature, assigning the next free bit
+    /// when the tag has none. A feature currently classified global is demoted to
+    /// varying, keeping the terminal classification: repeated per-segment planning
+    /// re-registers the same features, and a demoted feature must stay demoted. A
+    /// disabled feature stays disabled, and a plan that has exhausted its bits
+    /// assigns nothing; both cases return zero, which registers nothing, enables
+    /// nothing, and matches nothing at every consumption site.
     /// </summary>
     /// <param name="tag">The feature tag.</param>
-    /// <returns>The single-bit mask, or zero when the bits are exhausted.</returns>
+    /// <returns>The distinct bit, or zero when disabled or exhausted.</returns>
     public ulong GetOrAddMask(Tag tag)
     {
-        ulong mask = this.GetMask(tag);
-        if (mask != 0)
+        if (this.disabledTags.Count > 0 && this.disabledTags.Contains(tag.Value))
         {
+            return 0;
+        }
+
+        int index = this.featureTags.IndexOf(tag.Value);
+        if (index >= 0)
+        {
+            ulong mask = 1UL << (FirstAssignableBit + index);
+            this.lastTagValue = tag.Value;
+            this.lastMask = mask;
             return mask;
         }
+
+        // Demote a global registration: removal is a no-op when the tag was never
+        // global. The allocation below then gives the feature its distinct bit.
+        this.globalTags.Remove(tag.Value);
 
         if (this.featureTags.Count == AssignableBitCount)
         {
@@ -162,9 +199,65 @@ internal sealed class ShapePlanFeatures
         }
 
         this.featureTags.Add(tag.Value);
-        mask = 1UL << (FirstAssignableBit + this.featureTags.Count - 1);
+        ulong added = 1UL << (FirstAssignableBit + this.featureTags.Count - 1);
         this.lastTagValue = tag.Value;
-        this.lastMask = mask;
-        return mask;
+        this.lastMask = added;
+        return added;
+    }
+
+    /// <summary>
+    /// Gets the shared global bit for a feature that applies to every glyph,
+    /// recording the tag as global when it is new to this plan. A feature already
+    /// demoted to varying keeps its distinct bit and a disabled feature stays
+    /// disabled: both classifications are terminal so repeated per-segment planning
+    /// converges instead of oscillating.
+    /// </summary>
+    /// <param name="tag">The feature tag.</param>
+    /// <returns>The feature's mask, or zero when the feature is disabled.</returns>
+    public ulong GetOrAddGlobalMask(Tag tag)
+    {
+        if (this.disabledTags.Count > 0 && this.disabledTags.Contains(tag.Value))
+        {
+            return 0;
+        }
+
+        int index = this.featureTags.IndexOf(tag.Value);
+        if (index >= 0)
+        {
+            ulong mask = 1UL << (FirstAssignableBit + index);
+            this.lastTagValue = tag.Value;
+            this.lastMask = mask;
+            return mask;
+        }
+
+        if (!this.globalTags.Contains(tag.Value))
+        {
+            this.globalTags.Add(tag.Value);
+        }
+
+        this.lastTagValue = tag.Value;
+        this.lastMask = GlobalFeatureMask;
+        return GlobalFeatureMask;
+    }
+
+    /// <summary>
+    /// Disables a feature for the whole plan: its mask resolves to zero from now
+    /// on, so no lookups are collected for it and no per-glyph state can enable it.
+    /// Disabling is terminal; later registrations of the tag do not resurrect it.
+    /// </summary>
+    /// <param name="tag">The feature tag.</param>
+    public void DisableFeature(Tag tag)
+    {
+        this.globalTags.Remove(tag.Value);
+        if (!this.disabledTags.Contains(tag.Value))
+        {
+            this.disabledTags.Add(tag.Value);
+        }
+
+        if (this.lastTagValue == tag.Value)
+        {
+            this.lastTagValue = 0;
+            this.lastMask = 0;
+        }
     }
 }

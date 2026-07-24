@@ -186,16 +186,20 @@ internal sealed class HangulShaper : DefaultShaper
     }
 
     /// <inheritdoc/>
+    protected override void PlanPostprocessingFeatures(ShapingBuffer buffer, int index, int count)
+    {
+        base.PlanPostprocessingFeatures(buffer, index, count);
+
+        // Uniscribe does not apply contextual alternates for Hangul, and certain
+        // fonts (Noto Sans CJK, Source Han Sans, etc) apply all of the jamo
+        // lookups through the feature, which is not desirable. The feature is
+        // disabled for the whole plan, so its lookups are never collected.
+        this.Features.DisableFeature(CaltTag);
+    }
+
+    /// <inheritdoc/>
     protected override void AssignFeatures(ShapingBuffer buffer, int index, int count)
     {
-        for (int i = index; i < count; i++)
-        {
-            // Uniscribe does not apply 'calt' for Hangul, and certain fonts
-            // (Noto Sans CJK, Source Sans Han, etc) apply all of jamo lookups
-            // in calt, which is not desirable.
-            buffer.DisableShapingFeature(i, this.Features.GetMask(CaltTag));
-        }
-
         // Apply the state machine to map glyphs to features.
         if (buffer.Role == ShapingBufferRole.Substitution)
         {

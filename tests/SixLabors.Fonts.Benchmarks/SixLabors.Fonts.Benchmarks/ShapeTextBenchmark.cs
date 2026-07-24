@@ -22,7 +22,13 @@ public enum ShapeTextBenchmarkScenario
     /// <summary>
     /// Arabic text exercising joining forms and mandatory ligatures, shaped with Dubai.
     /// </summary>
-    Arabic
+    Arabic,
+
+    /// <summary>
+    /// Devanagari text exercising conjuncts, matras, and reordering, shaped with
+    /// Noto Sans Devanagari.
+    /// </summary>
+    Devanagari
 }
 
 /// <summary>
@@ -49,7 +55,7 @@ public class ShapeTextBenchmark : IDisposable
     /// <summary>
     /// Gets or sets the text scenario used by the benchmark.
     /// </summary>
-    [Params(ShapeTextBenchmarkScenario.Latin, ShapeTextBenchmarkScenario.Arabic)]
+    [Params(ShapeTextBenchmarkScenario.Latin, ShapeTextBenchmarkScenario.Arabic, ShapeTextBenchmarkScenario.Devanagari)]
     public ShapeTextBenchmarkScenario Scenario { get; set; }
 
     /// <summary>
@@ -64,10 +70,15 @@ public class ShapeTextBenchmark : IDisposable
             fontPath = GetFontPath("OpenSans-Regular.ttf");
             this.text = "The quick brown fox jumps over the lazy dog; fifty fluffy waffles.";
         }
-        else
+        else if (this.Scenario == ShapeTextBenchmarkScenario.Arabic)
         {
             fontPath = GetFontPath("Dubai-Regular.ttf");
             this.text = "سلام عليكم ورحمة الله وبركاته لا إله إلا الله";
+        }
+        else
+        {
+            fontPath = GetFontPath("NotoSansDevanagari-Regular.ttf");
+            this.text = "क्षत्रिय द्वारा प्रकृति की रक्षा कर्तव्य है";
         }
 
         Font font = new FontCollection().Add(fontPath).CreateFont(16);

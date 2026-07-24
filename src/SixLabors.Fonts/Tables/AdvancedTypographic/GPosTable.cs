@@ -251,7 +251,7 @@ internal class GPosTable : Table
             }
 
             Tag unicodeScriptTag = this.GetUnicodeScriptTag(current);
-            BaseShaper shaper = ShaperFactory.Create(current, unicodeScriptTag, fontMetrics, buffer.TextOptions);
+            BaseShaper shaper = buffer.GetOrCreateShaper(current, unicodeScriptTag, fontMetrics);
 
             // Plan positioning features for each glyph. Records seeded across buffers
             // had their feature registrations cleared, so this pass re-plans.

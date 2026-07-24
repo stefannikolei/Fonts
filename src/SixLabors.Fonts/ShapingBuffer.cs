@@ -196,6 +196,15 @@ internal sealed class ShapingBuffer
     private readonly List<(int CodePointIndex, BidiRun Run)> placeholderBidiRuns = new();
 
     /// <summary>
+    /// Shaper instances reused across segments and passes, keyed by script, script
+    /// tag, and font. Safe to reuse because the pooled buffer is exclusively owned
+    /// and shaper per-segment state is reassigned at each pause invocation. Cleared
+    /// when a reset adopts a different options instance, whose values the shapers
+    /// captured at construction.
+    /// </summary>
+    private readonly List<(ScriptClass Script, Tag ScriptTag, FontMetrics FontMetrics, Tables.AdvancedTypographic.Shapers.BaseShaper Shaper)> shaperCache = new(4);
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="ShapingBuffer"/> class.
     /// </summary>
     /// <param name="textOptions">The text options.</param>
@@ -397,6 +406,14 @@ internal sealed class ShapingBuffer
         this.glyphDigest = default;
         this.placeholderBidiRuns.Clear();
         this.SegmentShapers.Clear();
+
+        // Cached shapers captured option values at construction, so a different
+        // options instance invalidates them.
+        if (!ReferenceEquals(this.TextOptions, textOptions))
+        {
+            this.shaperCache.Clear();
+        }
+
         this.TextOptions = textOptions;
         this.LanguageTags = ResolveLanguageTags(textOptions);
 
@@ -1130,6 +1147,32 @@ internal sealed class ShapingBuffer
         => this.shapingClassCacheEntries[glyphId & 0xFF] = ShapingClassCacheMarkerFlag
             | glyphId
             | ((ulong)shapingClass.Props << ShapingClassCachePropsShift);
+
+    /// <summary>
+    /// Gets a shaper for the given script and font, reusing a cached instance when
+    /// one was created for the same key. Instances persist across passes while the
+    /// options instance is unchanged, so steady-state shaping constructs no shapers.
+    /// </summary>
+    /// <param name="script">The script class to shape.</param>
+    /// <param name="unicodeScriptTag">The resolved OpenType script tag.</param>
+    /// <param name="fontMetrics">The font metrics the shaper binds to.</param>
+    /// <returns>The <see cref="Tables.AdvancedTypographic.Shapers.BaseShaper"/>.</returns>
+    public Tables.AdvancedTypographic.Shapers.BaseShaper GetOrCreateShaper(ScriptClass script, Tag unicodeScriptTag, FontMetrics fontMetrics)
+    {
+        List<(ScriptClass Script, Tag ScriptTag, FontMetrics FontMetrics, Tables.AdvancedTypographic.Shapers.BaseShaper Shaper)> cache = this.shaperCache;
+        for (int i = 0; i < cache.Count; i++)
+        {
+            (ScriptClass cachedScript, Tag cachedTag, FontMetrics cachedMetrics, Tables.AdvancedTypographic.Shapers.BaseShaper cachedShaper) = cache[i];
+            if (cachedScript == script && cachedTag == unicodeScriptTag && ReferenceEquals(cachedMetrics, fontMetrics))
+            {
+                return cachedShaper;
+            }
+        }
+
+        Tables.AdvancedTypographic.Shapers.BaseShaper shaper = Tables.AdvancedTypographic.Shapers.ShaperFactory.Create(script, unicodeScriptTag, fontMetrics, this.TextOptions);
+        cache.Add((script, unicodeScriptTag, fontMetrics, shaper));
+        return shaper;
+    }
 
     /// <summary>
     /// Looks up a resolved feature lookup list through a direct-mapped cache in front

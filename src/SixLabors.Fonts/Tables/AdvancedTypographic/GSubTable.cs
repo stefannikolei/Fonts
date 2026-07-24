@@ -195,7 +195,7 @@ internal class GSubTable : Table
 
             Tag unicodeScriptTag = this.GetUnicodeScriptTag(current);
             var createProbe = ShapingProbe.Enter();
-            BaseShaper shaper = ShaperFactory.Create(current, unicodeScriptTag, fontMetrics, buffer.TextOptions);
+            BaseShaper shaper = buffer.GetOrCreateShaper(current, unicodeScriptTag, fontMetrics);
             ShapingProbe.Exit(ShapingProbe.SubShaperCreate, createProbe);
 
             // Plan substitution features for each glyph.

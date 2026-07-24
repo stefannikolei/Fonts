@@ -167,7 +167,7 @@ public static partial class TextShaper
 
         // Analyse the text for bidi directional runs.
         BidiAlgorithm bidi = BidiAlgorithm.Instance.Value!;
-        BidiData bidiData = new();
+        BidiData bidiData = BidiData.Instance.Value!;
         bidiData.Init(text, (sbyte)options.TextDirection);
 
         if (options.TextBidiMode == TextBidiMode.Override)

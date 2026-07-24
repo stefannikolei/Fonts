@@ -40,6 +40,17 @@ internal struct GlyphShapingData
     private ushort flags;
 
     /// <summary>
+    /// The glyph id the cached shaping class was computed for; meaningful only while
+    /// the cache-valid flag bit is set.
+    /// </summary>
+    private ushort shapingClassCacheId;
+
+    /// <summary>
+    /// The text direction, stored as a byte to keep the record narrow.
+    /// </summary>
+    private byte direction;
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="GlyphShapingData"/> struct.
     /// </summary>
     /// <param name="textRun">The text run.</param>
@@ -109,7 +120,22 @@ internal struct GlyphShapingData
     /// Gets or sets the cache key for <see cref="CachedShapingClass"/>.
     /// A value of <c>-1</c> indicates the cache is invalid. Valid entries store the glyph id.
     /// </summary>
-    public int ShapingClassCacheKey { get; set; } = -1;
+    public int ShapingClassCacheKey
+    {
+        readonly get => (this.flags & (1 << 6)) != 0 ? this.shapingClassCacheId : -1;
+        set
+        {
+            if (value < 0)
+            {
+                this.flags = (ushort)(this.flags & ~(1 << 6));
+            }
+            else
+            {
+                this.shapingClassCacheId = (ushort)value;
+                this.flags = (ushort)(this.flags | (1 << 6));
+            }
+        }
+    }
 
     /// <summary>
     /// Gets or sets the zero-based index within the input codepoint collection of the
@@ -130,7 +156,11 @@ internal struct GlyphShapingData
     /// <summary>
     /// Gets or sets the text direction.
     /// </summary>
-    public TextDirection Direction { get; set; }
+    public TextDirection Direction
+    {
+        readonly get => (TextDirection)this.direction;
+        set => this.direction = (byte)value;
+    }
 
     /// <summary>
     /// Gets or sets the text run this glyph belongs to.

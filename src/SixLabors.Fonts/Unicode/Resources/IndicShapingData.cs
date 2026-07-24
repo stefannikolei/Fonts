@@ -151,26 +151,27 @@ internal static partial class IndicShapingData
         NonMyanmar_Cluster = 1 << 2
     }
 
-    // Visual positions in a syllable from left to right.
-    [Flags]
+    // Visual positions in a syllable from left to right. Ordinal values whose order
+    // is the visual order; zero is reserved as the unassigned sentinel so a default
+    // syllable record compares unequal to every real position.
     public enum Positions
     {
-        Start = 1 << 0,
-        Ra_To_Become_Reph = 1 << 1,
-        Pre_M = 1 << 2,
-        Pre_C = 1 << 3,
-        Base_C = 1 << 4,
-        After_Main = 1 << 5,
-        Above_C = 1 << 6,
-        Before_Sub = 1 << 7,
-        Below_C = 1 << 8,
-        After_Sub = 1 << 9,
-        Before_Post = 1 << 10,
-        Post_C = 1 << 11,
-        After_Post = 1 << 12,
-        Final_C = 1 << 13,
-        SMVD = 1 << 14,
-        End = 1 << 15
+        Start = 1,
+        Ra_To_Become_Reph = 2,
+        Pre_M = 3,
+        Pre_C = 4,
+        Base_C = 5,
+        After_Main = 6,
+        Above_C = 7,
+        Before_Sub = 8,
+        Below_C = 9,
+        After_Sub = 10,
+        Before_Post = 11,
+        Post_C = 12,
+        After_Post = 13,
+        Final_C = 14,
+        SMVD = 15,
+        End = 16
     }
 
     public enum BasePosition

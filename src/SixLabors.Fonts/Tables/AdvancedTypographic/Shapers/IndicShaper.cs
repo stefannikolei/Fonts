@@ -305,12 +305,14 @@ internal sealed class IndicShaper : DefaultShaper
         => UnicodeData.GetIndicShapingProperties((uint)codePoint.Value) >> 8;
 
     /// <summary>
-    /// Gets the Indic shaping position for a code point (lower 8 bits as a bit flag).
+    /// Gets the Indic shaping position for a code point. The trie stores the position
+    /// zero-based; adding one maps it onto the ordinal enum whose zero is the
+    /// unassigned sentinel.
     /// </summary>
     /// <param name="codePoint">The code point.</param>
-    /// <returns>The shaping position as a bit flag.</returns>
+    /// <returns>The shaping position ordinal.</returns>
     private static int IndicShapingPosition(CodePoint codePoint)
-        => 1 << (UnicodeData.GetIndicShapingProperties((uint)codePoint.Value) & 0xFF);
+        => (UnicodeData.GetIndicShapingProperties((uint)codePoint.Value) & 0xFF) + 1;
 
     /// <summary>
     /// Performs the initial reordering pass for Indic syllables, including base consonant
@@ -1272,7 +1274,8 @@ internal sealed class IndicShaper : DefaultShaper
                     if (!found && rephPos == Positions.After_Sub)
                     {
                         newRephPos = basePosition;
-                        while (newRephPos + 1 < end && (buffer[newRephPos + 1].Syllable.IndicPosition & (Positions.Post_C | Positions.After_Post | Positions.SMVD)) == 0)
+                        while (newRephPos + 1 < end
+                            && buffer[newRephPos + 1].Syllable.IndicPosition is not Positions.Post_C and not Positions.After_Post and not Positions.SMVD)
                         {
                             newRephPos++;
                         }

@@ -459,7 +459,7 @@ internal class GSubTable : Table
         // The buffer fronts the table cache with a direct-mapped cache whose hit is
         // one load and one compare, skipping the dictionary probe that hashes the
         // language candidates per query.
-        if (buffer.TryGetFeatureLookupsCached(this, stageFeature, script, out object? cached))
+        if (buffer.TryGetFeatureLookups(this, stageFeature, script, out object? cached))
         {
             value = (List<(Tag Feature, ushort Index, LookupTable LookupTable)>)cached!;
             return value.Count > 0;
@@ -476,7 +476,7 @@ internal class GSubTable : Table
             this.featureLookupsCache.TryAdd(key, value);
         }
 
-        buffer.SetFeatureLookupsCached(stageFeature, script, value);
+        buffer.SetFeatureLookups(stageFeature, script, value);
         return value.Count > 0;
     }
 

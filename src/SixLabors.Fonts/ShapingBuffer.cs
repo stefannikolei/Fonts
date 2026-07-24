@@ -372,7 +372,7 @@ internal sealed class ShapingBuffer
             bool isVertical = AdvancedTypographicUtils.IsVerticalGlyph(codePoint, layoutMode)
                 || (slot.AppliedFeatureMask & verticalMask) != 0;
 
-            FontGlyphMetrics glyphMetrics = this.GetGlyphMetricsCached(fontMetrics, codePoint, slot.GlyphId, textAttributes, textDecorations, layoutMode, colorFontSupport);
+            FontGlyphMetrics glyphMetrics = this.GetGlyphMetrics(fontMetrics, codePoint, slot.GlyphId, textAttributes, textDecorations, layoutMode, colorFontSupport);
 
             if (glyphMetrics.GlyphType == GlyphType.Fallback && !CodePoint.IsControl(codePoint))
             {
@@ -956,7 +956,7 @@ internal sealed class ShapingBuffer
             bool isVertical = AdvancedTypographicUtils.IsVerticalGlyph(codePoint, layoutMode)
                 || (source.AppliedFeatureMask & verticalMask) != 0;
 
-            FontGlyphMetrics glyphMetrics = this.GetGlyphMetricsCached(fontMetrics, codePoint, id, textAttributes, textDecorations, layoutMode, colorFontSupport);
+            FontGlyphMetrics glyphMetrics = this.GetGlyphMetrics(fontMetrics, codePoint, id, textAttributes, textDecorations, layoutMode, colorFontSupport);
 
             if (glyphMetrics.GlyphType == GlyphType.Fallback && !CodePoint.IsControl(codePoint))
             {
@@ -1025,7 +1025,7 @@ internal sealed class ShapingBuffer
                     bool isVertical = AdvancedTypographicUtils.IsVerticalGlyph(codePoint, layoutMode)
                         || (shape.AppliedFeatureMask & verticalMask) != 0;
 
-                    FontGlyphMetrics glyphMetrics = this.GetGlyphMetricsCached(fontMetrics, codePoint, id, textAttributes, textDecorations, layoutMode, colorFontSupport);
+                    FontGlyphMetrics glyphMetrics = this.GetGlyphMetrics(fontMetrics, codePoint, id, textAttributes, textDecorations, layoutMode, colorFontSupport);
 
                     // If the glyphs are fallbacks we don't want them as
                     // we've already captured them on the first run.
@@ -1077,7 +1077,7 @@ internal sealed class ShapingBuffer
     /// <param name="glyphId">When this method returns, contains the glyph id if found.</param>
     /// <param name="skipNextCodePoint">When this method returns, indicates whether the following codepoint was consumed.</param>
     /// <returns><see langword="true"/> if a glyph was found.</returns>
-    public bool TryGetGlyphIdCached(FontMetrics fontMetrics, CodePoint codePoint, CodePoint? nextCodePoint, out ushort glyphId, out bool skipNextCodePoint)
+    public bool TryGetGlyphId(FontMetrics fontMetrics, CodePoint codePoint, CodePoint? nextCodePoint, out ushort glyphId, out bool skipNextCodePoint)
     {
         if (!ReferenceEquals(this.glyphIdCacheOwner, fontMetrics))
         {
@@ -1116,7 +1116,7 @@ internal sealed class ShapingBuffer
     /// <param name="glyphId">The glyph id to look up.</param>
     /// <param name="shapingClass">When this method returns, contains the cached class if found.</param>
     /// <returns><see langword="true"/> if a cached class was found.</returns>
-    public bool TryGetShapingClassCached(FontMetrics fontMetrics, ushort glyphId, out GlyphShapingClass shapingClass)
+    public bool TryGetShapingClass(FontMetrics fontMetrics, ushort glyphId, out GlyphShapingClass shapingClass)
     {
         if (!ReferenceEquals(this.shapingClassCacheOwner, fontMetrics))
         {
@@ -1138,12 +1138,12 @@ internal sealed class ShapingBuffer
     /// <summary>
     /// Stores a table-derived shaping class in the direct-mapped class cache. Must
     /// only be called for classes computed purely from the font's class definition
-    /// tables, after <see cref="TryGetShapingClassCached"/> has established the cache
+    /// tables, after <see cref="TryGetShapingClass"/> has established the cache
     /// owner for the same font.
     /// </summary>
     /// <param name="glyphId">The glyph id the class was computed for.</param>
     /// <param name="shapingClass">The computed class.</param>
-    public void SetShapingClassCached(ushort glyphId, GlyphShapingClass shapingClass)
+    public void SetShapingClass(ushort glyphId, GlyphShapingClass shapingClass)
         => this.shapingClassCacheEntries[glyphId & 0xFF] = ShapingClassCacheMarkerFlag
             | glyphId
             | ((ulong)shapingClass.Props << ShapingClassCachePropsShift);
@@ -1184,7 +1184,7 @@ internal sealed class ShapingBuffer
     /// <param name="script">The script class the feature resolves under.</param>
     /// <param name="lookups">When this method returns, contains the cached lookup list if found.</param>
     /// <returns><see langword="true"/> if a cached list was found.</returns>
-    public bool TryGetFeatureLookupsCached(object table, Tag feature, ScriptClass script, out object? lookups)
+    public bool TryGetFeatureLookups(object table, Tag feature, ScriptClass script, out object? lookups)
     {
         if (!ReferenceEquals(this.subFeatureLookupsCacheOwner, table))
         {
@@ -1209,14 +1209,14 @@ internal sealed class ShapingBuffer
 
     /// <summary>
     /// Stores a resolved feature lookup list in the direct-mapped feature lookups
-    /// cache. Must be called after <see cref="TryGetFeatureLookupsCached"/> has
+    /// cache. Must be called after <see cref="TryGetFeatureLookups"/> has
     /// established the cache owner for the same table, and never for resolutions
     /// that depend on live variation coordinates.
     /// </summary>
     /// <param name="feature">The feature tag.</param>
     /// <param name="script">The script class the feature resolved under.</param>
     /// <param name="lookups">The resolved lookup list.</param>
-    public void SetFeatureLookupsCached(Tag feature, ScriptClass script, object lookups)
+    public void SetFeatureLookups(Tag feature, ScriptClass script, object lookups)
     {
         int slot = FeatureLookupsCacheSlot(feature, script);
         this.subFeatureLookupsCacheTags[slot] = FeatureLookupsCacheMarkerFlag
@@ -1253,7 +1253,7 @@ internal sealed class ShapingBuffer
     /// <param name="layoutMode">The layout mode.</param>
     /// <param name="colorFontSupport">The color font support level.</param>
     /// <returns>The resolved <see cref="FontGlyphMetrics"/>.</returns>
-    private FontGlyphMetrics GetGlyphMetricsCached(
+    private FontGlyphMetrics GetGlyphMetrics(
         FontMetrics fontMetrics,
         CodePoint codePoint,
         ushort glyphId,

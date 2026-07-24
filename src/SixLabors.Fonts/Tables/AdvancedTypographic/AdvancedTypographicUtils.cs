@@ -569,7 +569,7 @@ internal static class AdvancedTypographicUtils
             ShapingProbe.ClassifyMisses++;
         }
 
-        if (buffer.TryGetShapingClassCached(fontMetrics, glyphId, out GlyphShapingClass cached))
+        if (buffer.TryGetShapingClass(fontMetrics, glyphId, out GlyphShapingClass cached))
         {
             shapingData.CachedShapingClass = cached;
             shapingData.ShapingClassCacheKey = glyphId;
@@ -603,7 +603,7 @@ internal static class AdvancedTypographicUtils
         GlyphShapingClass result = new(isMark, isBase, isLigature, markAttachmentType);
         if (tableDerived)
         {
-            buffer.SetShapingClassCached(glyphId, result);
+            buffer.SetShapingClass(glyphId, result);
         }
 
         shapingData.CachedShapingClass = result;

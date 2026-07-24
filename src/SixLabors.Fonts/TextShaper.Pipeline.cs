@@ -583,7 +583,7 @@ public static partial class TextShaper
                 bidiMap[codePointIndex] = bidiRunIndex;
 
                 CodePoint current = new(c);
-                substitutions.TryGetGlyphIdCached(asciiFontMetrics, current, null, out ushort asciiGlyphId, out _);
+                substitutions.TryGetGlyphId(asciiFontMetrics, current, null, out ushort asciiGlyphId, out _);
                 substitutions.AddGlyph(asciiGlyphId, current, (TextDirection)bidiRuns[bidiRunIndex].Direction, (ushort)textRunIndex, codePointIndex);
                 codePointIndex++;
 
@@ -641,7 +641,7 @@ public static partial class TextShaper
                 charIndex += charsConsumed;
 
                 // Get the glyph id for the codepoint and add to the buffer.
-                bool hasGlyph = substitutions.TryGetGlyphIdCached(font.FontMetrics, current, next, out ushort glyphId, out skipNextCodePoint);
+                bool hasGlyph = substitutions.TryGetGlyphId(font.FontMetrics, current, next, out ushort glyphId, out skipNextCodePoint);
 
                 // Unsupported default-ignorable code points such as FE0F should not block
                 // GSUB sequences like emoji ZWJ ligatures. Preserve joiners explicitly.

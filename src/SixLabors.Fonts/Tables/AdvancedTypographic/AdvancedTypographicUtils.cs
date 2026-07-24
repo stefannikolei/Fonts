@@ -541,13 +541,16 @@ internal static class AdvancedTypographicUtils
     /// <summary>
     /// Gets the glyph shaping class (mark, base, ligature, mark attachment type) for the specified glyph,
     /// using GDEF table data if available or falling back to Unicode properties.
-    /// Results are cached on the <see cref="GlyphShapingData"/> instance.
+    /// Results are cached on the <see cref="GlyphShapingData"/> instance, with
+    /// table-derived classes additionally cached on the buffer so re-classification
+    /// after a substitution changes a glyph id skips the table walks.
     /// </summary>
     /// <param name="fontMetrics">The font metrics.</param>
+    /// <param name="buffer">The glyph shaping buffer carrying the class cache.</param>
     /// <param name="glyphId">The glyph identifier.</param>
     /// <param name="shapingData">The glyph shaping data, used for caching and Unicode fallback.</param>
     /// <returns>The <see cref="GlyphShapingClass"/>.</returns>
-    public static GlyphShapingClass GetGlyphShapingClass(FontMetrics fontMetrics, ushort glyphId, ref GlyphShapingData shapingData)
+    public static GlyphShapingClass GetGlyphShapingClass(FontMetrics fontMetrics, ShapingBuffer buffer, ushort glyphId, ref GlyphShapingData shapingData)
     {
         // Cache the shaping class on the GlyphShapingData to avoid repeated GDEF lookups.
         // The cache key stores the glyph id; -1 means "not cached".
@@ -566,15 +569,24 @@ internal static class AdvancedTypographicUtils
             ShapingProbe.ClassifyMisses++;
         }
 
+        if (buffer.TryGetShapingClassCached(fontMetrics, glyphId, out GlyphShapingClass cached))
+        {
+            shapingData.CachedShapingClass = cached;
+            shapingData.ShapingClassCacheKey = glyphId;
+            return cached;
+        }
+
         bool isMark;
         bool isBase;
         bool isLigature;
+        bool tableDerived = false;
         ushort markAttachmentType = 0;
         if (fontMetrics.TryGetGlyphClass(glyphId, out GlyphClassDef? glyphClass))
         {
             isMark = glyphClass == GlyphClassDef.MarkGlyph;
             isBase = glyphClass == GlyphClassDef.BaseGlyph;
             isLigature = glyphClass == GlyphClassDef.LigatureGlyph;
+            tableDerived = true;
             if (fontMetrics.TryGetMarkAttachmentClass(glyphId, out GlyphClassDef? markAttachmentClass))
             {
                 markAttachmentType = (ushort)markAttachmentClass;
@@ -589,6 +601,11 @@ internal static class AdvancedTypographicUtils
         }
 
         GlyphShapingClass result = new(isMark, isBase, isLigature, markAttachmentType);
+        if (tableDerived)
+        {
+            buffer.SetShapingClassCached(glyphId, result);
+        }
+
         shapingData.CachedShapingClass = result;
         shapingData.ShapingClassCacheKey = glyphId;
         return result;

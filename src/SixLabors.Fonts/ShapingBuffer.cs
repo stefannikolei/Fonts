@@ -123,6 +123,38 @@ internal sealed class ShapingBuffer
     private FontMetrics? glyphIdCacheOwner;
 
     /// <summary>
+    /// The bit offset of the packed class props word in a shaping class cache entry.
+    /// </summary>
+    private const int ShapingClassCachePropsShift = 16;
+
+    /// <summary>
+    /// The shaping class cache entry bit distinguishing a populated slot from an
+    /// empty one, since a zero entry could otherwise read as a valid all-zero lookup.
+    /// </summary>
+    private const ulong ShapingClassCacheMarkerFlag = 1UL << 63;
+
+    /// <summary>
+    /// The shaping class cache entry bits forming the lookup key: the marker and the
+    /// glyph id.
+    /// </summary>
+    private const ulong ShapingClassCacheTagMask = ShapingClassCacheMarkerFlag | ((1UL << ShapingClassCachePropsShift) - 1);
+
+    /// <summary>
+    /// Direct-mapped glyph-id-to-class cache: one word per slot packing the glyph id
+    /// key alongside the packed class props word, so a repeat classification is one
+    /// load and one masked compare instead of a class definition table walk. Only
+    /// table-derived classes enter the cache; the codepoint fallback classification
+    /// depends on record state and stays out. Zero marks a slot empty.
+    /// </summary>
+    private readonly ulong[] shapingClassCacheEntries = new ulong[256];
+
+    /// <summary>
+    /// The font metrics instance the shaping class cache entries belong to.
+    /// Populating from a different font clears the cache before use.
+    /// </summary>
+    private FontMetrics? shapingClassCacheOwner;
+
+    /// <summary>
     /// The bidi runs recorded for inline placeholders, keyed by codepoint offset.
     /// Placeholder state lives here rather than on every glyph record because only
     /// placeholders carry a bidi run of their own, and only the copy-out reads it.
@@ -1018,6 +1050,48 @@ internal sealed class ShapingBuffer
             | (skipNextCodePoint ? GlyphIdCacheSkipFlag : 0);
         return found;
     }
+
+    /// <summary>
+    /// Looks up a table-derived shaping class through a direct-mapped cache in front
+    /// of the font's class definition tables, whose walks bisect range records per
+    /// query. A hit is one load and one masked compare. No synchronization is needed:
+    /// a pooled buffer is exclusively owned for the duration of a shaping pass.
+    /// </summary>
+    /// <param name="fontMetrics">The font metrics the class belongs to.</param>
+    /// <param name="glyphId">The glyph id to look up.</param>
+    /// <param name="shapingClass">When this method returns, contains the cached class if found.</param>
+    /// <returns><see langword="true"/> if a cached class was found.</returns>
+    public bool TryGetShapingClassCached(FontMetrics fontMetrics, ushort glyphId, out GlyphShapingClass shapingClass)
+    {
+        if (!ReferenceEquals(this.shapingClassCacheOwner, fontMetrics))
+        {
+            Array.Clear(this.shapingClassCacheEntries);
+            this.shapingClassCacheOwner = fontMetrics;
+        }
+
+        ulong entry = this.shapingClassCacheEntries[glyphId & 0xFF];
+        if ((entry & ShapingClassCacheTagMask) == (ShapingClassCacheMarkerFlag | glyphId))
+        {
+            shapingClass = new((ushort)(entry >> ShapingClassCachePropsShift));
+            return true;
+        }
+
+        shapingClass = default;
+        return false;
+    }
+
+    /// <summary>
+    /// Stores a table-derived shaping class in the direct-mapped class cache. Must
+    /// only be called for classes computed purely from the font's class definition
+    /// tables, after <see cref="TryGetShapingClassCached"/> has established the cache
+    /// owner for the same font.
+    /// </summary>
+    /// <param name="glyphId">The glyph id the class was computed for.</param>
+    /// <param name="shapingClass">The computed class.</param>
+    public void SetShapingClassCached(ushort glyphId, GlyphShapingClass shapingClass)
+        => this.shapingClassCacheEntries[glyphId & 0xFF] = ShapingClassCacheMarkerFlag
+            | glyphId
+            | ((ulong)shapingClass.Props << ShapingClassCachePropsShift);
 
     /// <summary>
     /// Resolves glyph metrics through a direct-mapped cache in front of the font's own

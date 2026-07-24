@@ -164,7 +164,7 @@ internal struct SkippingGlyphIterator
         // inline so the common hit path avoids the classification call entirely.
         ushort props = data.ShapingClassCacheKey == data.GlyphId
             ? data.CachedShapingClass.Props
-            : AdvancedTypographicUtils.GetGlyphShapingClass(this.fontMetrics, data.GlyphId, ref data).Props;
+            : AdvancedTypographicUtils.GetGlyphShapingClass(this.fontMetrics, this.Collection, data.GlyphId, ref data).Props;
 
         if ((props & this.ignoreClassMask) != 0)
         {

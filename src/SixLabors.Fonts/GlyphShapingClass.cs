@@ -34,6 +34,13 @@ internal readonly struct GlyphShapingClass
             | (markAttachmentType << MarkAttachmentTypeShift));
 
     /// <summary>
+    /// Initializes a new instance of the <see cref="GlyphShapingClass"/> struct from
+    /// an already packed props word, the round-trip used by cached classifications.
+    /// </summary>
+    /// <param name="props">The packed class props word.</param>
+    public GlyphShapingClass(ushort props) => this.Props = props;
+
+    /// <summary>
     /// Gets the class packed into a single word: the low byte carries the glyph class
     /// bits and the high byte the mark attachment class, so a skip decision is bitwise
     /// arithmetic instead of a branch per class. The word is the struct's only storage;

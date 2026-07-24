@@ -212,7 +212,7 @@ internal sealed class LookupType4Format1SubTable : LookupSubTable
             //
             //   This in fact happened to a font...  See https://bugzilla.gnome.org/show_bug.cgi?id=437633
             ref GlyphShapingData data = ref buffer[index];
-            GlyphShapingClass shapingClass = AdvancedTypographicUtils.GetGlyphShapingClass(fontMetrics, glyphId, ref data);
+            GlyphShapingClass shapingClass = AdvancedTypographicUtils.GetGlyphShapingClass(fontMetrics, buffer, glyphId, ref data);
             bool isBaseLigature = shapingClass.IsBase;
             bool isMarkLigature = shapingClass.IsMark;
 

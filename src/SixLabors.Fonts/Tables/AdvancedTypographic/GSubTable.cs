@@ -194,13 +194,17 @@ internal class GSubTable : Table
             }
 
             Tag unicodeScriptTag = this.GetUnicodeScriptTag(current);
+            var createProbe = ShapingProbe.Enter();
             BaseShaper shaper = ShaperFactory.Create(current, unicodeScriptTag, fontMetrics, buffer.TextOptions);
+            ShapingProbe.Exit(ShapingProbe.SubShaperCreate, createProbe);
 
             // Plan substitution features for each glyph.
             // Shapers can adjust the count during initialization and feature processing so we must capture
             // the current count to allow resetting indexes and processing counts.
             int collectionCount = buffer.Count;
+            var planProbe = ShapingProbe.Enter();
             shaper.Plan(buffer, index, count);
+            ShapingProbe.Exit(ShapingProbe.SubShaperPlan, planProbe);
             int delta = buffer.Count - collectionCount;
             i += delta;
             count += delta;
@@ -210,7 +214,9 @@ internal class GSubTable : Table
             foreach (ShapingStage stage in stages)
             {
                 collectionCount = buffer.Count;
+                var preProbe = ShapingProbe.Enter();
                 stage.PreProcessFeature(buffer, index, count);
+                ShapingProbe.Exit(ShapingProbe.SubStagePrePost, preProbe);
 
                 // Account for substitutions changing the length of the buffer.
                 delta = buffer.Count - collectionCount;
@@ -219,6 +225,7 @@ internal class GSubTable : Table
 
                 Tag featureTag = stage.FeatureTag;
 
+                var applyProbe = ShapingProbe.Enter();
                 this.ApplyFeature(
                     fontMetrics,
                     buffer,
@@ -232,9 +239,12 @@ internal class GSubTable : Table
                     maxCount,
                     maxOperationsCount,
                     ref currentOperations);
+                ShapingProbe.Exit(ShapingProbe.SubStageApply, applyProbe);
 
                 collectionCount = buffer.Count;
+                var postProbe = ShapingProbe.Enter();
                 stage.PostProcessFeature(buffer, index, count);
+                ShapingProbe.Exit(ShapingProbe.SubStagePrePost, postProbe);
 
                 // Account for substitutions changing the length of the buffer.
                 delta = buffer.Count - collectionCount;

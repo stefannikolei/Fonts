@@ -20,6 +20,14 @@ public static class ShapingProbe
     public const int Positioning = 6;
     public const int Projection = 7;
     public const int LookupResolve = 8;
+    public const int SubShaperCreate = 9;
+    public const int SubShaperPlan = 10;
+    public const int SubStagePrePost = 11;
+    public const int SubStageApply = 12;
+    public const int PlanPre = 13;
+    public const int PlanMain = 14;
+    public const int PlanPost = 15;
+    public const int PlanAssign = 16;
 
     private static readonly string[] Names =
     [
@@ -32,6 +40,14 @@ public static class ShapingProbe
         "GPOS positioning",
         "Projection (ShapedGlyph)",
         "  of which lookup resolve",
+        "  sub: shaper create",
+        "  sub: shaper plan",
+        "  sub: stage pre/post",
+        "  sub: stage apply",
+        "    plan: preprocessing",
+        "    plan: features",
+        "    plan: postprocessing",
+        "    plan: assign",
     ];
 
     private static readonly long[] Ticks = new long[Names.Length];

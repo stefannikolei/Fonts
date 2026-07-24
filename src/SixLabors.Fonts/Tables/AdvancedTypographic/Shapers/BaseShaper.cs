@@ -31,19 +31,27 @@ internal abstract class BaseShaper
     {
         int collectionCount = buffer.Count;
 
+        var preProbe = ShapingProbe.Enter();
         this.PlanPreprocessingFeatures(buffer, index, count);
+        ShapingProbe.Exit(ShapingProbe.PlanPre, preProbe);
 
         RecalculateCount(buffer, ref collectionCount, ref count);
 
+        var mainProbe = ShapingProbe.Enter();
         this.PlanFeatures(buffer, index, count);
+        ShapingProbe.Exit(ShapingProbe.PlanMain, mainProbe);
 
         RecalculateCount(buffer, ref collectionCount, ref count);
 
+        var postProbe = ShapingProbe.Enter();
         this.PlanPostprocessingFeatures(buffer, index, count);
+        ShapingProbe.Exit(ShapingProbe.PlanPost, postProbe);
 
         RecalculateCount(buffer, ref collectionCount, ref count);
 
+        var assignProbe = ShapingProbe.Enter();
         this.AssignFeatures(buffer, index, count);
+        ShapingProbe.Exit(ShapingProbe.PlanAssign, assignProbe);
     }
 
     /// <summary>

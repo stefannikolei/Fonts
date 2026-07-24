@@ -57,6 +57,22 @@ public static class ShapingProbe
 
     public static bool Enabled { get; set; }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether phase probes also sample allocated
+    /// bytes. Byte sampling costs far more than timestamping, so disable it when only
+    /// phase timings matter: nested probe pairs otherwise inflate every enclosing
+    /// phase's measured time.
+    /// </summary>
+    public static bool BytesEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether per-feature timing detail is recorded.
+    /// Feature exits build a key string and touch three dictionaries per feature per
+    /// pass, which distorts the enclosing substitution and positioning phase timings
+    /// when only phases matter.
+    /// </summary>
+    public static bool FeatureDetailEnabled { get; set; } = true;
+
     public static readonly Dictionary<string, long> FeatureTicks = [];
     public static readonly Dictionary<string, long> FeatureApplies = [];
 
@@ -100,7 +116,7 @@ public static class ShapingProbe
 
     public static void ExitFeature(string table, Tag feature, long start, long applies)
     {
-        if (!Enabled)
+        if (!Enabled || !FeatureDetailEnabled)
         {
             return;
         }
@@ -125,7 +141,14 @@ public static class ShapingProbe
     }
 
     public static (long Ticks, long Bytes) Enter()
-        => Enabled ? (Stopwatch.GetTimestamp(), GC.GetAllocatedBytesForCurrentThread()) : default;
+    {
+        if (!Enabled)
+        {
+            return default;
+        }
+
+        return (Stopwatch.GetTimestamp(), BytesEnabled ? GC.GetAllocatedBytesForCurrentThread() : 0);
+    }
 
     public static void Exit(int phase, (long Ticks, long Bytes) entry)
     {
@@ -134,7 +157,11 @@ public static class ShapingProbe
             return;
         }
 
-        Bytes[phase] += GC.GetAllocatedBytesForCurrentThread() - entry.Bytes;
+        if (BytesEnabled)
+        {
+            Bytes[phase] += GC.GetAllocatedBytesForCurrentThread() - entry.Bytes;
+        }
+
         Ticks[phase] += Stopwatch.GetTimestamp() - entry.Ticks;
     }
 

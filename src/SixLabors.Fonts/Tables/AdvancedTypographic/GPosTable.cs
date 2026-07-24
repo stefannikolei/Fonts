@@ -712,23 +712,23 @@ internal class GPosTable : Table
         for (int i = 0; i < count; i++)
         {
             int currentIndex = i + index;
-            ref GlyphShapingData data = ref buffer[currentIndex];
-            if (data.CursiveAttachment != -1)
+            ref GlyphShapingPosition position = ref buffer.PositionAt(currentIndex);
+            if (position.CursiveAttachment != -1)
             {
-                int j = data.CursiveAttachment + currentIndex;
+                int j = position.CursiveAttachment + currentIndex;
                 if (j < index || j >= index + count)
                 {
                     return;
                 }
 
-                ref GlyphShapingData cursiveData = ref buffer[j];
-                if (!AdvancedTypographicUtils.IsVerticalGlyph(data.CodePoint, layoutMode))
+                ref GlyphShapingPosition cursivePosition = ref buffer.PositionAt(j);
+                if (!AdvancedTypographicUtils.IsVerticalGlyph(buffer[currentIndex].CodePoint, layoutMode))
                 {
-                    data.Bounds.Y += cursiveData.Bounds.Y;
+                    position.Bounds.Y += cursivePosition.Bounds.Y;
                 }
                 else
                 {
-                    data.Bounds.X += cursiveData.Bounds.X;
+                    position.Bounds.X += cursivePosition.Bounds.X;
                 }
             }
         }
@@ -745,27 +745,27 @@ internal class GPosTable : Table
         for (int i = 0; i < count; i++)
         {
             int currentIndex = i + index;
-            ref GlyphShapingData data = ref buffer[currentIndex];
-            if (data.MarkAttachment != -1)
+            ref GlyphShapingPosition position = ref buffer.PositionAt(currentIndex);
+            if (position.MarkAttachment != -1)
             {
-                int j = data.MarkAttachment;
-                data.Bounds.X += buffer[j].Bounds.X;
-                data.Bounds.Y += buffer[j].Bounds.Y;
+                int j = position.MarkAttachment;
+                position.Bounds.X += buffer.PositionAt(j).Bounds.X;
+                position.Bounds.Y += buffer.PositionAt(j).Bounds.Y;
 
-                if (data.Direction == TextDirection.LeftToRight)
+                if (buffer[currentIndex].Direction == TextDirection.LeftToRight)
                 {
                     for (int k = j; k < currentIndex; k++)
                     {
-                        data.Bounds.X -= buffer[k].Bounds.Width;
-                        data.Bounds.Y -= buffer[k].Bounds.Height;
+                        position.Bounds.X -= buffer.PositionAt(k).Bounds.Width;
+                        position.Bounds.Y -= buffer.PositionAt(k).Bounds.Height;
                     }
                 }
                 else
                 {
                     for (int k = j + 1; k < currentIndex + 1; k++)
                     {
-                        data.Bounds.X += buffer[k].Bounds.Width;
-                        data.Bounds.Y += buffer[k].Bounds.Height;
+                        position.Bounds.X += buffer.PositionAt(k).Bounds.Width;
+                        position.Bounds.Y += buffer.PositionAt(k).Bounds.Height;
                     }
                 }
             }
@@ -787,8 +787,9 @@ internal class GPosTable : Table
             ref GlyphShapingData data = ref buffer[currentIndex];
             if (AdvancedTypographicUtils.IsMarkGlyph(fontMetrics, data.GlyphId, ref data))
             {
-                data.Bounds.Width = 0;
-                data.Bounds.Height = 0;
+                ref GlyphShapingPosition position = ref buffer.PositionAt(currentIndex);
+                position.Bounds.Width = 0;
+                position.Bounds.Height = 0;
             }
         }
     }

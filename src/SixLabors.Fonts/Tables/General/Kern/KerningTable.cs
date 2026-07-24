@@ -99,20 +99,20 @@ internal sealed class KerningTable : Table
             return;
         }
 
-        ref GlyphShapingData current = ref buffer[left];
-        if (current.IsKerned)
+        ref GlyphShapingPosition currentPosition = ref buffer.PositionAt(left);
+        if (currentPosition.IsKerned)
         {
             // Already kerned via previous processing.
             return;
         }
 
-        ushort currentId = current.GlyphId;
+        ushort currentId = buffer[left].GlyphId;
         ushort nextId = buffer[right].GlyphId;
 
         if (this.TryGetKerningOffset(currentId, nextId, out Vector2 result))
         {
             buffer.Advance(fontMetrics, left, currentId, (short)result.X, (short)result.Y);
-            current.IsKerned = true;
+            currentPosition.IsKerned = true;
         }
     }
 

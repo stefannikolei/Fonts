@@ -400,6 +400,7 @@ public static partial class TextShaper
         {
             ref GlyphShapingData shaping = ref shaped[i];
             ref ShapingBuffer.GlyphMetricsEntry entry = ref shaped.MetricsAt(i);
+            ref GlyphShapingPosition shapingPosition = ref shaped.PositionAt(i);
 
             // Placeholders carry a bidi run of their own, so they always cut a run.
             BidiRun shapingBidiRun = shaping.IsPlaceholder
@@ -445,9 +446,9 @@ public static partial class TextShaper
                 flags);
 
             positions[i] = new(
-                entry.GetAdvanceWidth(in shaping),
-                entry.GetAdvanceHeight(in shaping),
-                new Vector2(shaping.Bounds.X, shaping.Bounds.Y),
+                entry.GetAdvanceWidth(in shapingPosition),
+                entry.GetAdvanceHeight(in shapingPosition),
+                new Vector2(shapingPosition.Bounds.X, shapingPosition.Bounds.Y),
                 entry.Metrics.Offset);
         }
 

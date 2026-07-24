@@ -474,9 +474,10 @@ internal static class AdvancedTypographicUtils
         ref GlyphShapingData markData = ref buffer[index];
         AnchorXY markXY = markRecord.MarkAnchorTable.GetAnchor(fontMetrics, ref markData, buffer);
 
-        markData.Bounds.X = baseXY.XCoordinate - markXY.XCoordinate;
-        markData.Bounds.Y = baseXY.YCoordinate - markXY.YCoordinate;
-        markData.MarkAttachment = baseGlyphIndex;
+        ref GlyphShapingPosition markPosition = ref buffer.PositionAt(index);
+        markPosition.Bounds.X = baseXY.XCoordinate - markXY.XCoordinate;
+        markPosition.Bounds.Y = baseXY.YCoordinate - markXY.YCoordinate;
+        markPosition.MarkAttachment = baseGlyphIndex;
         markData.AppliedFeatureMask |= buffer.FeatureMap.GetOrAddMask(feature);
     }
 
@@ -495,21 +496,22 @@ internal static class AdvancedTypographicUtils
         ValueRecord record,
         Tag feature)
     {
-        ref GlyphShapingData current = ref buffer[index];
-        current.Bounds.Width += record.XAdvance;
-        current.Bounds.Height += record.YAdvance;
-        current.Bounds.X += record.XPlacement;
-        current.Bounds.Y += record.YPlacement;
+        ref GlyphShapingPosition position = ref buffer.PositionAt(index);
+        position.Bounds.Width += record.XAdvance;
+        position.Bounds.Height += record.YAdvance;
+        position.Bounds.X += record.XPlacement;
+        position.Bounds.Y += record.YPlacement;
 
         // Apply variation deltas from VariationIndex tables (variable fonts).
         if (record.HasVariation)
         {
-            current.Bounds.X += (short)MathF.Round(fontMetrics.GetGDefVariationDelta(record.XPlacementVariation));
-            current.Bounds.Y += (short)MathF.Round(fontMetrics.GetGDefVariationDelta(record.YPlacementVariation));
-            current.Bounds.Width += (short)MathF.Round(fontMetrics.GetGDefVariationDelta(record.XAdvanceVariation));
-            current.Bounds.Height += (short)MathF.Round(fontMetrics.GetGDefVariationDelta(record.YAdvanceVariation));
+            position.Bounds.X += (short)MathF.Round(fontMetrics.GetGDefVariationDelta(record.XPlacementVariation));
+            position.Bounds.Y += (short)MathF.Round(fontMetrics.GetGDefVariationDelta(record.YPlacementVariation));
+            position.Bounds.Width += (short)MathF.Round(fontMetrics.GetGDefVariationDelta(record.XAdvanceVariation));
+            position.Bounds.Height += (short)MathF.Round(fontMetrics.GetGDefVariationDelta(record.YAdvanceVariation));
         }
 
+        ref GlyphShapingData current = ref buffer[index];
         current.AppliedFeatureMask |= buffer.FeatureMap.GetOrAddMask(feature);
     }
 

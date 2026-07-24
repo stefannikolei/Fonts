@@ -40,6 +40,14 @@ internal sealed class ShapingBuffer
     private GlyphMetricsEntry[] metrics = new GlyphMetricsEntry[64];
 
     /// <summary>
+    /// The positioning stream, parallel to <see cref="data"/>: shaping bounds,
+    /// attachment links, and positioned and kerned marks. Seeded alongside the
+    /// metrics stream; keeping this state out of the glyph record keeps the record
+    /// narrow for the substitution walks that never touch it.
+    /// </summary>
+    private GlyphShapingPosition[] positions = new GlyphShapingPosition[64];
+
+    /// <summary>
     /// The live record count.
     /// </summary>
     private int count;
@@ -231,6 +239,15 @@ internal sealed class ShapingBuffer
     public ref GlyphMetricsEntry MetricsAt(int index) => ref this.metrics[index];
 
     /// <summary>
+    /// Gets an interior reference to the positioning entry at the specified index.
+    /// Valid only after the buffer has been seeded.
+    /// </summary>
+    /// <param name="index">The zero-based index of the entry to get.</param>
+    /// <returns>The <see cref="GlyphShapingPosition"/>.</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public ref GlyphShapingPosition PositionAt(int index) => ref this.positions[index];
+
+    /// <summary>
     /// Assigns the text runs for the pass. Must run on both of a pass's buffers
     /// before any glyph is added, so record run indices resolve identically across
     /// them.
@@ -290,9 +307,9 @@ internal sealed class ShapingBuffer
             // Feature masks persist deliberately: the in-place positioning pass
             // reuses the substitution pass's plan, whose registrations already cover
             // the positioning features.
-            slot.Bounds = isVertical
+            this.positions[i] = new(isVertical
                 ? new(0, 0, 0, glyphMetrics.AdvanceHeight)
-                : new(0, 0, glyphMetrics.AdvanceWidth, 0);
+                : new(0, 0, glyphMetrics.AdvanceWidth, 0));
 
             this.metrics[i] = new(font, font.Size, glyphMetrics);
         }
@@ -641,8 +658,6 @@ internal sealed class ShapingBuffer
         current.GlyphId = glyphId;
         current.LigatureId = 0;
         current.LigatureComponent = -1;
-        current.MarkAttachment = -1;
-        current.CursiveAttachment = -1;
         current.IsSubstituted = true;
         current.AppliedFeatureMask |= this.FeatureMap.GetOrAddMask(feature);
     }
@@ -691,8 +706,6 @@ internal sealed class ShapingBuffer
         current.LigatureId = ligatureId;
         current.IsLigated = true;
         current.LigatureComponent = -1;
-        current.MarkAttachment = -1;
-        current.CursiveAttachment = -1;
         current.IsSubstituted = true;
         current.AppliedFeatureMask |= this.FeatureMap.GetOrAddMask(feature);
     }
@@ -739,8 +752,6 @@ internal sealed class ShapingBuffer
         current.GlyphId = glyphId;
         current.LigatureId = 0;
         current.LigatureComponent = -1;
-        current.MarkAttachment = -1;
-        current.CursiveAttachment = -1;
         current.IsSubstituted = true;
         current.AppliedFeatureMask |= this.FeatureMap.GetOrAddMask(feature);
     }
@@ -758,8 +769,6 @@ internal sealed class ShapingBuffer
             this.glyphDigest.Add(glyphIds[0]);
             this.data[index].GlyphId = glyphIds[0];
             this.data[index].LigatureComponent = 0;
-            this.data[index].MarkAttachment = -1;
-            this.data[index].CursiveAttachment = -1;
             this.data[index].IsSubstituted = true;
             this.data[index].IsDecomposed = true;
 
@@ -842,10 +851,12 @@ internal sealed class ShapingBuffer
                 ref GlyphShapingData placeholderSlot = ref this.Append();
                 placeholderSlot = source;
                 placeholderSlot.ClearFeatures();
-                placeholderSlot.Bounds = layoutMode.IsVertical()
+                this.positions[this.count - 1] = new(layoutMode.IsVertical()
                     ? new(0, 0, 0, placeholderMetrics.AdvanceHeight)
-                    : new(0, 0, placeholderMetrics.AdvanceWidth, 0);
-                placeholderSlot.IsPositioned = true;
+                    : new(0, 0, placeholderMetrics.AdvanceWidth, 0))
+                {
+                    IsPositioned = true,
+                };
 
                 this.metrics[this.count - 1] = new(font, font.Size, placeholderMetrics);
                 continue;
@@ -871,9 +882,9 @@ internal sealed class ShapingBuffer
             ref GlyphShapingData slot = ref this.Append();
             slot = source;
             slot.ClearFeatures();
-            slot.Bounds = isVertical
+            this.positions[this.count - 1] = new(isVertical
                 ? new(0, 0, 0, glyphMetrics.AdvanceHeight)
-                : new(0, 0, glyphMetrics.AdvanceWidth, 0);
+                : new(0, 0, glyphMetrics.AdvanceWidth, 0));
 
             this.metrics[this.count - 1] = new(font, font.Size, glyphMetrics);
         }
@@ -948,12 +959,12 @@ internal sealed class ShapingBuffer
                     // correctly increment our position.
                     shape.CodePointIndex = offset;
                     shape.ClearFeatures();
-                    shape.Bounds = isVertical
-                        ? new(0, 0, 0, glyphMetrics.AdvanceHeight)
-                        : new(0, 0, glyphMetrics.AdvanceWidth, 0);
 
                     this.glyphDigest.Add(glyphMetrics.GlyphId);
                     this.InsertAt(i + replacementCount, shape, new(font, pointSize, glyphMetrics));
+                    this.positions[i + replacementCount] = new(isVertical
+                        ? new(0, 0, 0, glyphMetrics.AdvanceHeight)
+                        : new(0, 0, glyphMetrics.AdvanceWidth, 0));
                     replacementCount++;
                 }
 
@@ -1059,16 +1070,16 @@ internal sealed class ShapingBuffer
 
     /// <summary>
     /// Marks the glyph at the specified index as positioned. Positions accumulate in
-    /// the record's shaping bounds and are read from there by consumers, so the shared
-    /// metrics instance is never mutated.
+    /// the position entry's shaping bounds and are read from there by consumers, so
+    /// the shared metrics instance is never mutated.
     /// </summary>
     /// <param name="index">The zero-based index of the record.</param>
-    public void UpdatePosition(int index) => this.data[index].IsPositioned = true;
+    public void UpdatePosition(int index) => this.positions[index].IsPositioned = true;
 
     /// <summary>
     /// Adds dx and dy to the positioned advance of the glyph at the given index and id.
-    /// Advances accumulate in the record's shaping bounds so the shared metrics
-    /// instance is never mutated.
+    /// Advances accumulate in the position entry's shaping bounds so the shared
+    /// metrics instance is never mutated.
     /// </summary>
     /// <param name="fontMetrics">The font face with metrics.</param>
     /// <param name="index">The zero-based index of the record.</param>
@@ -1087,10 +1098,10 @@ internal sealed class ShapingBuffer
             || (this.data[index].AppliedFeatureMask & this.GetVerticalFeatureMask()) != 0;
 
         // Advance heights grow downward but font-space grows upward, hence the negation.
-        this.data[index].Bounds.Width += dx;
+        this.positions[index].Bounds.Width += dx;
         if (isVertical)
         {
-            this.data[index].Bounds.Height -= dy;
+            this.positions[index].Bounds.Height -= dy;
         }
     }
 
@@ -1102,7 +1113,7 @@ internal sealed class ShapingBuffer
     /// <param name="index">The zero-based index of the record.</param>
     /// <returns><see langword="true"/> if the record should be processed.</returns>
     public bool ShouldProcess(FontMetrics fontMetrics, int index)
-        => !this.data[index].IsPositioned && this.metrics[index].Metrics.FontMetrics == fontMetrics;
+        => !this.positions[index].IsPositioned && this.metrics[index].Metrics.FontMetrics == fontMetrics;
 
     /// <summary>
     /// Gets the combined mask of the three vertical alternate features. Computed from
@@ -1140,6 +1151,7 @@ internal sealed class ShapingBuffer
         {
             Array.Resize(ref this.data, this.data.Length * 2);
             Array.Resize(ref this.metrics, this.metrics.Length * 2);
+            Array.Resize(ref this.positions, this.positions.Length * 2);
         }
 
         return ref this.data[this.count++];
@@ -1168,12 +1180,15 @@ internal sealed class ShapingBuffer
         {
             Array.Resize(ref this.data, this.data.Length * 2);
             Array.Resize(ref this.metrics, this.metrics.Length * 2);
+            Array.Resize(ref this.positions, this.positions.Length * 2);
         }
 
         Array.Copy(this.data, index, this.data, index + 1, this.count - index);
         Array.Copy(this.metrics, index, this.metrics, index + 1, this.count - index);
+        Array.Copy(this.positions, index, this.positions, index + 1, this.count - index);
         this.data[index] = item;
         this.metrics[index] = metricsEntry;
+        this.positions[index] = default;
         this.count++;
     }
 
@@ -1186,6 +1201,7 @@ internal sealed class ShapingBuffer
     {
         Array.Copy(this.data, index + 1, this.data, index, this.count - index - 1);
         Array.Copy(this.metrics, index + 1, this.metrics, index, this.count - index - 1);
+        Array.Copy(this.positions, index + 1, this.positions, index, this.count - index - 1);
         this.count--;
     }
 
@@ -1226,23 +1242,23 @@ internal sealed class ShapingBuffer
 
         /// <summary>
         /// Gets the positioned horizontal advance in font design units for the paired
-        /// record: the shaping bounds value once positioning has written one, otherwise
+        /// entry: the shaping bounds value once positioning has written one, otherwise
         /// the metrics advance.
         /// </summary>
-        /// <param name="data">The paired glyph record.</param>
+        /// <param name="position">The paired positioning entry.</param>
         /// <returns>The advance.</returns>
-        public readonly ushort GetAdvanceWidth(in GlyphShapingData data)
-            => data.Bounds.IsDirtyWH ? (ushort)data.Bounds.Width : this.Metrics.AdvanceWidth;
+        public readonly ushort GetAdvanceWidth(in GlyphShapingPosition position)
+            => position.Bounds.IsDirtyWH ? (ushort)position.Bounds.Width : this.Metrics.AdvanceWidth;
 
         /// <summary>
         /// Gets the positioned vertical advance in font design units for the paired
-        /// record: the shaping bounds value once positioning has written one, otherwise
+        /// entry: the shaping bounds value once positioning has written one, otherwise
         /// the metrics advance.
         /// </summary>
-        /// <param name="data">The paired glyph record.</param>
+        /// <param name="position">The paired positioning entry.</param>
         /// <returns>The advance.</returns>
-        public readonly ushort GetAdvanceHeight(in GlyphShapingData data)
-            => data.Bounds.IsDirtyWH ? (ushort)data.Bounds.Height : this.Metrics.AdvanceHeight;
+        public readonly ushort GetAdvanceHeight(in GlyphShapingPosition position)
+            => position.Bounds.IsDirtyWH ? (ushort)position.Bounds.Height : this.Metrics.AdvanceHeight;
     }
 #pragma warning restore SA1401
 }

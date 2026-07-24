@@ -7,8 +7,8 @@ namespace SixLabors.Fonts;
 
 /// <summary>
 /// Represents the shaped bounds of a glyph. A mutable struct embedded in
-/// <see cref="GlyphShapingData"/> and accessed by reference through
-/// <see cref="GlyphShapingData.Bounds"/>: positioning lookups accumulate deltas into
+/// <see cref="GlyphShapingPosition"/> and accessed by reference through
+/// <see cref="GlyphShapingPosition.Bounds"/>: positioning lookups accumulate deltas into
 /// the fields in place, and re-seeding is plain value assignment with no allocation.
 /// </summary>
 [DebuggerDisplay("{DebuggerDisplay,nq}")]

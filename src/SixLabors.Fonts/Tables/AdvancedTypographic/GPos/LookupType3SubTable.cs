@@ -165,35 +165,38 @@ internal static class LookupType3SubTable
             AnchorXY exitXY = exit.GetAnchor(fontMetrics, ref current, buffer);
             AnchorXY entryXY = entry.GetAnchor(fontMetrics, ref next, buffer);
 
+            ref GlyphShapingPosition currentPosition = ref buffer.PositionAt(index);
+            ref GlyphShapingPosition nextPosition = ref buffer.PositionAt(nextIndex);
+
             bool isVerticalLayout = AdvancedTypographicUtils.IsVerticalGlyph(current.CodePoint, buffer.TextOptions.LayoutMode);
             if (!isVerticalLayout)
             {
                 // Horizontal
                 if (current.Direction == TextDirection.LeftToRight)
                 {
-                    current.Bounds.Width = exitXY.XCoordinate + current.Bounds.X;
+                    currentPosition.Bounds.Width = exitXY.XCoordinate + currentPosition.Bounds.X;
 
-                    int delta = entryXY.XCoordinate + next.Bounds.X;
-                    next.Bounds.Width -= delta;
-                    next.Bounds.X -= delta;
+                    int delta = entryXY.XCoordinate + nextPosition.Bounds.X;
+                    nextPosition.Bounds.Width -= delta;
+                    nextPosition.Bounds.X -= delta;
                 }
                 else
                 {
-                    int delta = exitXY.XCoordinate + current.Bounds.X;
-                    current.Bounds.Width -= delta;
-                    current.Bounds.X -= delta;
+                    int delta = exitXY.XCoordinate + currentPosition.Bounds.X;
+                    currentPosition.Bounds.Width -= delta;
+                    currentPosition.Bounds.X -= delta;
 
-                    next.Bounds.Width = entryXY.XCoordinate + next.Bounds.X;
+                    nextPosition.Bounds.Width = entryXY.XCoordinate + nextPosition.Bounds.X;
                 }
             }
             else
             {
                 // Vertical layout modes advance top-to-bottom; column progression is handled by layout.
-                current.Bounds.Height = exitXY.YCoordinate + current.Bounds.Y;
+                currentPosition.Bounds.Height = exitXY.YCoordinate + currentPosition.Bounds.Y;
 
-                int delta = entryXY.YCoordinate + next.Bounds.Y;
-                next.Bounds.Height -= delta;
-                next.Bounds.Y -= delta;
+                int delta = entryXY.YCoordinate + nextPosition.Bounds.Y;
+                nextPosition.Bounds.Height -= delta;
+                nextPosition.Bounds.Y -= delta;
             }
 
             int child = index;
@@ -215,7 +218,7 @@ internal static class LookupType3SubTable
             bool horizontal = !isVerticalLayout;
             ReverseCursiveMinorOffset(buffer, index, child, horizontal, parent);
 
-            ref GlyphShapingData c = ref buffer[child];
+            ref GlyphShapingPosition c = ref buffer.PositionAt(child);
             c.CursiveAttachment = parent - child;
             if (horizontal)
             {
@@ -226,15 +229,15 @@ internal static class LookupType3SubTable
                 c.Bounds.X = xOffset;
             }
 
-            // If parent was attached to child, separate them.
-            // https://github.com/harfbuzz/harfbuzz/issues/2469
-            ref GlyphShapingData p = ref buffer[parent];
+            // If parent was attached to child, separate them so the attachment
+            // graph stays acyclic.
+            ref GlyphShapingPosition p = ref buffer.PositionAt(parent);
             if (p.CursiveAttachment == -c.CursiveAttachment)
             {
                 p.CursiveAttachment = 0;
 
-                // Bounds.X/Y carry shaping placement offsets here, matching
-                // HarfBuzz x_offset/y_offset. Clear only the detached parent's minor axis.
+                // Bounds.X/Y carry shaping placement offsets here. Clear only the
+                // detached parent's minor axis.
                 if (horizontal)
                 {
                     p.Bounds.Y = 0;
@@ -264,7 +267,7 @@ internal static class LookupType3SubTable
             bool horizontal,
             int parent)
         {
-            ref GlyphShapingData c = ref buffer[i];
+            ref GlyphShapingPosition c = ref buffer.PositionAt(i);
             int chain = c.CursiveAttachment;
             if (chain <= 0)
             {
@@ -283,7 +286,7 @@ internal static class LookupType3SubTable
 
             ReverseCursiveMinorOffset(buffer, position, j, horizontal, parent);
 
-            ref GlyphShapingData p = ref buffer[j];
+            ref GlyphShapingPosition p = ref buffer.PositionAt(j);
             if (horizontal)
             {
                 p.Bounds.Y = -c.Bounds.Y;

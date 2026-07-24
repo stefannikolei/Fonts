@@ -18,12 +18,6 @@ internal struct GlyphShapingData
 {
 #pragma warning disable SA1401 // Fields exposed so shaping mutates embedded values in place.
     /// <summary>
-    /// The shaping bounds. A field rather than a property so positioning lookups
-    /// mutate the embedded value in place and re-seeding is plain value assignment.
-    /// </summary>
-    public GlyphShapingBounds Bounds;
-
-    /// <summary>
     /// The syllable classification assigned by the complex-script shapers, stored by
     /// value so classification never allocates. A <see cref="SyllableInfo.Type"/> of
     /// <see cref="SyllableType.None"/> means no classification has been assigned.
@@ -50,16 +44,6 @@ internal struct GlyphShapingData
     /// The <see cref="flags"/> bit recording <see cref="IsPlaceholder"/>.
     /// </summary>
     private const ushort PlaceholderFlag = 1 << 3;
-
-    /// <summary>
-    /// The <see cref="flags"/> bit recording <see cref="IsPositioned"/>.
-    /// </summary>
-    private const ushort PositionedFlag = 1 << 4;
-
-    /// <summary>
-    /// The <see cref="flags"/> bit recording <see cref="IsKerned"/>.
-    /// </summary>
-    private const ushort KernedFlag = 1 << 5;
 
     /// <summary>
     /// The <see cref="flags"/> bit recording that <see cref="shapingClassCacheId"/>
@@ -110,13 +94,9 @@ internal struct GlyphShapingData
         this.LigatureId = data.LigatureId;
         this.IsLigated = data.IsLigated;
         this.LigatureComponent = data.LigatureComponent;
-        this.MarkAttachment = data.MarkAttachment;
-        this.CursiveAttachment = data.CursiveAttachment;
         this.IsSubstituted = data.IsSubstituted;
         this.IsDecomposed = data.IsDecomposed;
         this.IsPlaceholder = data.IsPlaceholder;
-        this.IsPositioned = data.IsPositioned;
-        this.IsKerned = data.IsKerned;
 
         this.Syllable = data.Syllable;
 
@@ -128,7 +108,6 @@ internal struct GlyphShapingData
 
         this.AppliedFeatureMask = data.AppliedFeatureMask;
 
-        this.Bounds = data.Bounds;
         this.CachedShapingClass = data.CachedShapingClass;
         this.ShapingClassCacheKey = data.ShapingClassCacheKey;
     }
@@ -227,16 +206,6 @@ internal struct GlyphShapingData
     public int LigatureComponent { get; set; } = -1;
 
     /// <summary>
-    /// Gets or sets the index of any mark attachment.
-    /// </summary>
-    public int MarkAttachment { get; set; } = -1;
-
-    /// <summary>
-    /// Gets or sets the index of any cursive attachment.
-    /// </summary>
-    public int CursiveAttachment { get; set; } = -1;
-
-    /// <summary>
     /// Gets or sets the mask of features a shaper has registered for this glyph, enabled
     /// or not. Bits are assigned by the shaping pass's <see cref="ShapingFeatureMap"/>.
     /// Enabling a feature only ever reveals a registered bit; a feature that was never
@@ -286,24 +255,6 @@ internal struct GlyphShapingData
     {
         readonly get => (this.flags & PlaceholderFlag) != 0;
         set => this.flags = value ? (ushort)(this.flags | PlaceholderFlag) : (ushort)(this.flags & ~PlaceholderFlag);
-    }
-
-    /// <summary>
-    /// Gets or sets a value indicating whether this glyph has been positioned.
-    /// </summary>
-    public bool IsPositioned
-    {
-        readonly get => (this.flags & PositionedFlag) != 0;
-        set => this.flags = value ? (ushort)(this.flags | PositionedFlag) : (ushort)(this.flags & ~PositionedFlag);
-    }
-
-    /// <summary>
-    /// Gets or sets a value indicating whether this glyph has been kerned.
-    /// </summary>
-    public bool IsKerned
-    {
-        readonly get => (this.flags & KernedFlag) != 0;
-        set => this.flags = value ? (ushort)(this.flags | KernedFlag) : (ushort)(this.flags & ~KernedFlag);
     }
 
     private string DebuggerDisplay

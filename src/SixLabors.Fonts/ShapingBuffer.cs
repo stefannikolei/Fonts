@@ -93,7 +93,7 @@ internal sealed class ShapingBuffer
     /// Gets the shaping phase this buffer serves. Shapers gate phase-specific work,
     /// such as syllable analysis and reordering, on the substitution role.
     /// </summary>
-    public ShapingBufferRole Role { get; }
+    public ShapingBufferRole Role { get; private set; }
 
     /// <summary>
     /// Gets the number of live glyph records. Substitution can leave this greater or
@@ -183,6 +183,66 @@ internal sealed class ShapingBuffer
     /// </summary>
     /// <param name="textRuns">The resolved text runs covering the input.</param>
     public void SetTextRuns(IReadOnlyList<TextRun> textRuns) => this.TextRuns = textRuns;
+
+    /// <summary>
+    /// Changes the shaping phase this buffer serves. The single-run fast path shapes
+    /// and seeds one buffer in place, flipping it from substitution to positioning
+    /// instead of copying every record into a second buffer.
+    /// </summary>
+    /// <param name="role">The shaping phase the buffer serves next.</param>
+    public void SetRole(ShapingBufferRole role) => this.Role = role;
+
+    /// <summary>
+    /// Seeds this buffer's metrics stream in place after substitution: fetches each
+    /// glyph's metrics from <paramref name="font"/>, clears the record's feature
+    /// registration for the positioning pass, and starts the shaping bounds from the
+    /// single-axis advance. Behaviorally the in-place equivalent of
+    /// <see cref="TryAdd"/> without the cross-buffer record copy; valid only when the
+    /// buffer holds no placeholders.
+    /// </summary>
+    /// <param name="font">The font used to resolve metrics.</param>
+    /// <returns>
+    /// <see langword="true"/> when every mapped codepoint resolved a real glyph;
+    /// <see langword="false"/> when fallback glyphs remain for a later font pass.
+    /// </returns>
+    public bool SeedMetricsInPlace(Font font)
+    {
+        bool hasFallBacks = false;
+        FontMetrics fontMetrics = font.FontMetrics;
+        LayoutMode layoutMode = this.TextOptions.LayoutMode;
+        ColorFontSupport colorFontSupport = this.TextOptions.ColorFontSupport;
+
+        ulong verticalMask = this.GetVerticalFeatureMask();
+
+        for (int i = 0; i < this.count; i++)
+        {
+            ref GlyphShapingData slot = ref this.data[i];
+            CodePoint codePoint = slot.CodePoint;
+
+            TextRun textRun = this.TextRuns[slot.TextRunIndex];
+            TextAttributes textAttributes = textRun.TextAttributes;
+            TextDecorations textDecorations = textRun.TextDecorations;
+
+            bool isVertical = AdvancedTypographicUtils.IsVerticalGlyph(codePoint, layoutMode)
+                || (slot.AppliedFeatureMask & verticalMask) != 0;
+
+            FontGlyphMetrics glyphMetrics = this.GetGlyphMetricsCached(fontMetrics, codePoint, slot.GlyphId, textAttributes, textDecorations, layoutMode, colorFontSupport);
+
+            if (glyphMetrics.GlyphType == GlyphType.Fallback && !CodePoint.IsControl(codePoint))
+            {
+                hasFallBacks = true;
+            }
+
+            slot.ClearFeatures();
+            slot.Bounds = isVertical
+                ? new(0, 0, 0, glyphMetrics.AdvanceHeight)
+                : new(0, 0, glyphMetrics.AdvanceWidth, 0);
+
+            this.metrics[i] = new(font, font.Size, glyphMetrics);
+        }
+
+        return !hasFallBacks;
+    }
 
     /// <summary>
     /// Resets the buffer for reuse by a new shaping pass: adopts the new options,

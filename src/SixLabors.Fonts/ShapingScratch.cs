@@ -52,6 +52,11 @@ internal sealed class ShapingScratch
             this.featureMap.Reset();
             this.workspace!.Reset(options);
             this.result!.Reset(options);
+
+            // The single-run fast path flips the workspace to the positioning role in
+            // place; a pooled scratch must hand out buffers in their home roles.
+            this.workspace.SetRole(ShapingBufferRole.Substitution);
+            this.result.SetRole(ShapingBufferRole.Positioning);
         }
 
         return (this.workspace!, this.result!);

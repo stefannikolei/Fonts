@@ -235,6 +235,47 @@ public static partial class TextShaper
         int textRunIndex = 0;
         int codePointIndex = 0;
         int bidiRunIndex = 0;
+
+        // Single-run fast path: shape and seed one buffer in place and flip it to the
+        // positioning role, so no record is copied between buffers. When fallback
+        // glyphs remain and fallback fonts exist, fall through to the general
+        // cross-buffer seed so the fallback passes can merge into the accumulator.
+        ShapingBuffer shaped = positionings;
+        if (textRuns.Count == 1 && !textRuns[0].Placeholder.HasValue)
+        {
+            TextRun onlyRun = textRuns[0];
+            PopulateAndSubstitute(
+                text,
+                onlyRun.Start,
+                textRuns,
+                ref textRunIndex,
+                ref codePointIndex,
+                ref bidiRunIndex,
+                onlyRun.ResolvedFont,
+                bidiRuns,
+                bidiMap,
+                substitutions);
+
+            var seedProbe = ShapingProbe.Enter();
+            complete = substitutions.SeedMetricsInPlace(onlyRun.ResolvedFont);
+            ShapingProbe.Exit(ShapingProbe.MetricsAdd, seedProbe);
+
+            if (complete || fallbackFonts.Length == 0)
+            {
+                substitutions.SetRole(ShapingBufferRole.Positioning);
+                shaped = substitutions;
+                complete = true;
+            }
+            else
+            {
+                seedProbe = ShapingProbe.Enter();
+                complete = positionings.TryAdd(onlyRun.ResolvedFont, substitutions);
+                ShapingProbe.Exit(ShapingProbe.MetricsAdd, seedProbe);
+            }
+
+            goto FallbackPasses;
+        }
+
         for (int runIndex = 0; runIndex < textRuns.Count; runIndex++)
         {
             TextRun textRun = textRuns[runIndex];
@@ -287,6 +328,7 @@ public static partial class TextShaper
             }
         }
 
+        FallbackPasses:
         if (!complete)
         {
             // Finally try our fallback fonts.
@@ -330,13 +372,13 @@ public static partial class TextShaper
                 continue;
             }
 
-            font.FontMetrics.UpdatePositions(positionings);
+            font.FontMetrics.UpdatePositions(shaped);
             lastFont = font;
         }
 
         foreach (Font font in fallbackFonts)
         {
-            font.FontMetrics.UpdatePositions(positionings);
+            font.FontMetrics.UpdatePositions(shaped);
         }
 
         ShapingProbe.Exit(ShapingProbe.Positioning, probe);
@@ -345,8 +387,8 @@ public static partial class TextShaper
         // deduplicates into a run table and per-glyph state splits into parallel
         // identity and geometry arrays of pure values, so the scratch can go back to
         // the pool before consumption and no metrics reference survives shaping.
-        ulong verticalMask = positionings.GetVerticalFeatureMask();
-        int count = positionings.Count;
+        ulong verticalMask = shaped.GetVerticalFeatureMask();
+        int count = shaped.Count;
         ShapedGlyphInfo[] infos = new ShapedGlyphInfo[count];
         ShapedGlyphPosition[] positions = new ShapedGlyphPosition[count];
         List<ShapedTextRun> runs = [];
@@ -356,12 +398,12 @@ public static partial class TextShaper
         BidiRun runBidiRun = default;
         for (int i = 0; i < count; i++)
         {
-            ref GlyphShapingData shaping = ref positionings[i];
-            ref ShapingBuffer.GlyphMetricsEntry entry = ref positionings.MetricsAt(i);
+            ref GlyphShapingData shaping = ref shaped[i];
+            ref ShapingBuffer.GlyphMetricsEntry entry = ref shaped.MetricsAt(i);
 
             // Placeholders carry a bidi run of their own, so they always cut a run.
             BidiRun shapingBidiRun = shaping.IsPlaceholder
-                ? positionings.GetPlaceholderBidiRun(shaping.CodePointIndex)
+                ? shaped.GetPlaceholderBidiRun(shaping.CodePointIndex)
                 : default;
             if (entry.Font != runFont
                 || shaping.TextRunIndex != runTextRunIndex
@@ -370,7 +412,7 @@ public static partial class TextShaper
                 runFont = entry.Font;
                 runTextRunIndex = shaping.TextRunIndex;
                 runBidiRun = shapingBidiRun;
-                runs.Add(new(entry.Font, entry.PointSize, positionings.TextRuns[shaping.TextRunIndex], shapingBidiRun));
+                runs.Add(new(entry.Font, entry.PointSize, shaped.TextRuns[shaping.TextRunIndex], shapingBidiRun));
             }
 
             ShapedGlyphFlags flags = ShapedGlyphFlags.None;
@@ -449,6 +491,53 @@ public static partial class TextShaper
         int[] bidiMap,
         ShapingBuffer substitutions,
         ShapingBuffer positionings)
+    {
+        PopulateAndSubstitute(
+            text,
+            start,
+            textRuns,
+            ref textRunIndex,
+            ref codePointIndex,
+            ref bidiRunIndex,
+            font,
+            bidiRuns,
+            bidiMap,
+            substitutions);
+
+        var seedProbe = ShapingProbe.Enter();
+        bool result = !isFallbackRun
+            ? positionings.TryAdd(font, substitutions)
+            : positionings.TryUpdate(font, substitutions);
+        ShapingProbe.Exit(ShapingProbe.MetricsAdd, seedProbe);
+        return result;
+    }
+
+    /// <summary>
+    /// Populates the substitution buffer from <paramref name="text"/> and runs bidi
+    /// mirroring and GSUB substitution over it, leaving the shaped records in the
+    /// buffer for either in-place metrics seeding or a cross-buffer seed.
+    /// </summary>
+    /// <param name="text">The run-relative text slice to shape.</param>
+    /// <param name="start">The starting grapheme index (absolute within the original input).</param>
+    /// <param name="textRuns">The ordered list of resolved text runs.</param>
+    /// <param name="textRunIndex">The index of the current text run; advanced as the enumerator crosses run boundaries.</param>
+    /// <param name="codePointIndex">The running codepoint index (absolute within the original input).</param>
+    /// <param name="bidiRunIndex">The running bidi run index.</param>
+    /// <param name="font">The font to shape with.</param>
+    /// <param name="bidiRuns">The resolved bidi runs covering the whole input.</param>
+    /// <param name="bidiMap">A codepoint → bidi-run mapping accumulated across shaping passes.</param>
+    /// <param name="substitutions">The GSUB substitution buffer to write into.</param>
+    private static void PopulateAndSubstitute(
+        ReadOnlySpan<char> text,
+        int start,
+        IReadOnlyList<TextRun> textRuns,
+        ref int textRunIndex,
+        ref int codePointIndex,
+        ref int bidiRunIndex,
+        Font font,
+        BidiRun[] bidiRuns,
+        int[] bidiMap,
+        ShapingBuffer substitutions)
     {
         // For each run we start with a fresh substitution buffer to avoid
         // overwriting the glyph ids.
@@ -535,13 +624,6 @@ public static partial class TextShaper
         probe = ShapingProbe.Enter();
         font.FontMetrics.ApplySubstitution(substitutions);
         ShapingProbe.Exit(ShapingProbe.Substitution, probe);
-
-        probe = ShapingProbe.Enter();
-        bool result = !isFallbackRun
-            ? positionings.TryAdd(font, substitutions)
-            : positionings.TryUpdate(font, substitutions);
-        ShapingProbe.Exit(ShapingProbe.MetricsAdd, probe);
-        return result;
     }
 
     /// <summary>

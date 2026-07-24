@@ -550,55 +550,8 @@ public static partial class TextShaper
         // during glyph lookup, so the per-codepoint lookahead decode is skipped.
         bool hasVariationSequences = font.FontMetrics.HasUnicodeVariationSequences;
 
-        int graphemeIndex = start;
-
-        // ASCII text takes a tight per-char path: every char is one codepoint and,
-        // except for the CR LF pair, one grapheme; no ASCII codepoint is default
-        // ignorable or participates in a variation sequence, so the boundary state
-        // machine, the codepoint decode, and the lookahead all fall away. Passing no
-        // following codepoint is safe because no ASCII successor can select a
-        // variation, so the resolved glyph is identical.
-        if (!text.ContainsAnyExceptInRange((char)0, (char)0x7F))
-        {
-            FontMetrics asciiFontMetrics = font.FontMetrics;
-            for (int i = 0; i < text.Length; i++)
-            {
-                char c = text[i];
-
-                // A line feed directly after a carriage return continues that
-                // grapheme; everything else starts one.
-                if (c != '\n' || i == 0 || text[i - 1] != '\r')
-                {
-                    while (textRunIndex < textRuns.Count - 1 && graphemeIndex == textRuns[textRunIndex].End)
-                    {
-                        textRunIndex++;
-                    }
-                }
-
-                if (codePointIndex == bidiRuns[bidiRunIndex].End)
-                {
-                    bidiRunIndex++;
-                }
-
-                bidiMap[codePointIndex] = bidiRunIndex;
-
-                CodePoint current = new(c);
-                substitutions.TryGetGlyphId(asciiFontMetrics, current, null, out ushort asciiGlyphId, out _);
-                substitutions.AddGlyph(asciiGlyphId, current, (TextDirection)bidiRuns[bidiRunIndex].Direction, (ushort)textRunIndex, codePointIndex);
-                codePointIndex++;
-
-                // The grapheme ends here unless this char opens a CR LF pair.
-                if (c != '\r' || i + 1 >= text.Length || text[i + 1] != '\n')
-                {
-                    graphemeIndex++;
-                }
-            }
-
-            ShapingProbe.Exit(ShapingProbe.Populate, probe);
-            goto Substitute;
-        }
-
         // Enumerate through each grapheme in the text.
+        int graphemeIndex = start;
         SpanGraphemeEnumerator graphemeEnumerator = new(text);
         while (graphemeEnumerator.MoveNext())
         {
@@ -666,8 +619,6 @@ public static partial class TextShaper
         }
 
         ShapingProbe.Exit(ShapingProbe.Populate, probe);
-
-    Substitute:
 
         // Apply the simple and complex substitutions.
         // TODO: Investigate HarfBuzz normalizer.

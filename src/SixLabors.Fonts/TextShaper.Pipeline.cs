@@ -223,8 +223,11 @@ public static partial class TextShaper
 
         probe = ShapingProbe.Enter();
 
-        // Incrementally build out buffer of glyphs.
+        // Incrementally build out buffer of glyphs. Both buffers share the run list so
+        // per-glyph run indices agree when records are seeded across them.
         IReadOnlyList<TextRun> textRuns = BuildTextRuns(text, options);
+        substitutions.SetTextRuns(textRuns);
+        positionings.SetTextRuns(textRuns);
         ShapingProbe.Exit(ShapingProbe.BuildTextRuns, probe);
 
         // First do multiple font runs using the individual text runs.
@@ -232,8 +235,9 @@ public static partial class TextShaper
         int textRunIndex = 0;
         int codePointIndex = 0;
         int bidiRunIndex = 0;
-        foreach (TextRun textRun in textRuns)
+        for (int runIndex = 0; runIndex < textRuns.Count; runIndex++)
         {
+            TextRun textRun = textRuns[runIndex];
             if (textRun.Placeholder.HasValue)
             {
                 substitutions.Clear();
@@ -251,11 +255,13 @@ public static partial class TextShaper
                     : new(BidiCharacterType.LeftToRight, 2, codePointIndex, 0);
 
                 // Placeholder runs are inserted into the layout stream and do not consume
-                // source graphemes, source codepoints, or bidi runs.
+                // source graphemes, source codepoints, or bidi runs. The loop position
+                // is the placeholder's own run index; the populate tracker below may
+                // lag it between runs.
                 substitutions.AddPlaceholder(
                     CodePoint.ObjectReplacementChar,
                     placeholderBidiRun,
-                    textRun,
+                    (ushort)runIndex,
                     codePointIndex);
 
                 complete &= positionings.TryAdd(textRun.ResolvedFont, substitutions);
@@ -346,7 +352,7 @@ public static partial class TextShaper
         List<ShapedTextRun> runs = [];
 
         Font? runFont = null;
-        TextRun? runTextRun = null;
+        int runTextRunIndex = -1;
         BidiRun runBidiRun = default;
         for (int i = 0; i < count; i++)
         {
@@ -358,13 +364,13 @@ public static partial class TextShaper
                 ? positionings.GetPlaceholderBidiRun(shaping.CodePointIndex)
                 : default;
             if (entry.Font != runFont
-                || shaping.TextRun != runTextRun
+                || shaping.TextRunIndex != runTextRunIndex
                 || (shaping.IsPlaceholder && !shapingBidiRun.Equals(runBidiRun)))
             {
                 runFont = entry.Font;
-                runTextRun = shaping.TextRun;
+                runTextRunIndex = shaping.TextRunIndex;
                 runBidiRun = shapingBidiRun;
-                runs.Add(new(entry.Font, entry.PointSize, shaping.TextRun, shapingBidiRun));
+                runs.Add(new(entry.Font, entry.PointSize, positionings.TextRuns[shaping.TextRunIndex], shapingBidiRun));
             }
 
             ShapedGlyphFlags flags = ShapedGlyphFlags.None;
@@ -509,7 +515,7 @@ public static partial class TextShaper
                     continue;
                 }
 
-                substitutions.AddGlyph(glyphId, current, (TextDirection)bidiRuns[bidiRunIndex].Direction, textRuns[textRunIndex], codePointIndex);
+                substitutions.AddGlyph(glyphId, current, (TextDirection)bidiRuns[bidiRunIndex].Direction, (ushort)textRunIndex, codePointIndex);
 
                 codePointIndex++;
                 graphemeCodePointIndex++;

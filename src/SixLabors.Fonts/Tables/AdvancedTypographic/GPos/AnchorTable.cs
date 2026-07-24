@@ -156,8 +156,9 @@ internal abstract class AnchorTable
         {
             if (buffer.TextOptions.HintingMode != HintingMode.None)
             {
-                TextAttributes textAttributes = data.TextRun.TextAttributes;
-                TextDecorations textDecorations = data.TextRun.TextDecorations;
+                TextRun textRun = buffer.TextRuns[data.TextRunIndex];
+                TextAttributes textAttributes = textRun.TextAttributes;
+                TextDecorations textDecorations = textRun.TextDecorations;
                 LayoutMode layoutMode = buffer.TextOptions.LayoutMode;
                 ColorFontSupport colorFontSupport = buffer.TextOptions.ColorFontSupport;
                 if (fontMetrics.TryGetGlyphMetrics(data.CodePoint, textAttributes, textDecorations, layoutMode, colorFontSupport, out FontGlyphMetrics? metrics))

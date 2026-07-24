@@ -91,8 +91,8 @@ internal struct GlyphShapingData
     /// <summary>
     /// Initializes a new instance of the <see cref="GlyphShapingData"/> struct.
     /// </summary>
-    /// <param name="textRun">The text run.</param>
-    public GlyphShapingData(TextRun textRun) => this.TextRun = textRun;
+    /// <param name="textRunIndex">The index of the text run this glyph belongs to.</param>
+    public GlyphShapingData(ushort textRunIndex) => this.TextRunIndex = textRunIndex;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GlyphShapingData"/> struct.
@@ -106,7 +106,7 @@ internal struct GlyphShapingData
         this.CodePoint = data.CodePoint;
         this.CodePointCount = data.CodePointCount;
         this.Direction = data.Direction;
-        this.TextRun = data.TextRun;
+        this.TextRunIndex = data.TextRunIndex;
         this.LigatureId = data.LigatureId;
         this.IsLigated = data.IsLigated;
         this.LigatureComponent = data.LigatureComponent;
@@ -201,9 +201,11 @@ internal struct GlyphShapingData
     }
 
     /// <summary>
-    /// Gets or sets the text run this glyph belongs to.
+    /// Gets or sets the index of the text run this glyph belongs to, resolved against
+    /// the buffer's run list. An index keeps the record free of object references, so
+    /// the garbage collector never scans the pooled glyph arrays.
     /// </summary>
-    public TextRun TextRun { get; set; }
+    public ushort TextRunIndex { get; set; }
 
     /// <summary>
     /// Gets or sets the id of any ligature this glyph is a member of.
@@ -306,7 +308,7 @@ internal struct GlyphShapingData
 
     private string DebuggerDisplay
         => FormattableString
-        .Invariant($" {this.GlyphId} : {this.CodePoint.ToDebuggerDisplay()} : {CodePoint.GetScriptClass(this.CodePoint)} : {this.Direction} : {this.TextRun.TextAttributes} : {this.LigatureId} : {this.LigatureComponent} : {this.IsDecomposed}");
+        .Invariant($" {this.GlyphId} : {this.CodePoint.ToDebuggerDisplay()} : {CodePoint.GetScriptClass(this.CodePoint)} : {this.Direction} : run {this.TextRunIndex} : {this.LigatureId} : {this.LigatureComponent} : {this.IsDecomposed}");
 
     /// <summary>
     /// Clears the registered and enabled feature masks while preserving the applied

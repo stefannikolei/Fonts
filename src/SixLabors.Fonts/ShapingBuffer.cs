@@ -134,6 +134,13 @@ internal sealed class ShapingBuffer
     public int LigatureId { get; set; } = 1;
 
     /// <summary>
+    /// Gets the text runs covering the pass's input. Records store run indices into
+    /// this list; the substitution and positioning buffers of a pass must share one
+    /// list so the indices agree when records are seeded across buffers.
+    /// </summary>
+    public IReadOnlyList<TextRun> TextRuns { get; private set; } = Array.Empty<TextRun>();
+
+    /// <summary>
     /// Gets the reusable scratch the substitution table uses to merge a stage group's
     /// lookups into lookup-index order. Cleared by each group merge; kept on the pooled
     /// buffer so application allocates nothing.
@@ -168,6 +175,14 @@ internal sealed class ShapingBuffer
     /// <returns>The <see cref="GlyphMetricsEntry"/>.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ref GlyphMetricsEntry MetricsAt(int index) => ref this.metrics[index];
+
+    /// <summary>
+    /// Assigns the text runs for the pass. Must run on both of a pass's buffers
+    /// before any glyph is added, so record run indices resolve identically across
+    /// them.
+    /// </summary>
+    /// <param name="textRuns">The resolved text runs covering the input.</param>
+    public void SetTextRuns(IReadOnlyList<TextRun> textRuns) => this.TextRuns = textRuns;
 
     /// <summary>
     /// Resets the buffer for reuse by a new shaping pass: adopts the new options,
@@ -302,13 +317,13 @@ internal sealed class ShapingBuffer
     /// <param name="glyphId">The id of the glyph to add.</param>
     /// <param name="codePoint">The codepoint the glyph represents.</param>
     /// <param name="direction">The resolved text direction for the codepoint.</param>
-    /// <param name="textRun">The text run this glyph belongs to.</param>
+    /// <param name="textRunIndex">The index of the text run this glyph belongs to.</param>
     /// <param name="offset">The zero-based index within the input codepoint buffer.</param>
-    public void AddGlyph(ushort glyphId, CodePoint codePoint, TextDirection direction, TextRun textRun, int offset)
+    public void AddGlyph(ushort glyphId, CodePoint codePoint, TextDirection direction, ushort textRunIndex, int offset)
     {
         this.glyphDigest.Add(glyphId);
         ref GlyphShapingData slot = ref this.Append();
-        slot = new(textRun)
+        slot = new(textRunIndex)
         {
             CodePointIndex = offset,
             CodePoint = codePoint,
@@ -322,12 +337,12 @@ internal sealed class ShapingBuffer
     /// </summary>
     /// <param name="codePoint">The object replacement codepoint used for Unicode processing.</param>
     /// <param name="bidiRun">The resolved bidi run for the placeholder.</param>
-    /// <param name="textRun">The text run this placeholder belongs to.</param>
+    /// <param name="textRunIndex">The index of the text run this placeholder belongs to.</param>
     /// <param name="offset">The zero-based index within the input codepoint buffer.</param>
-    public void AddPlaceholder(CodePoint codePoint, BidiRun bidiRun, TextRun textRun, int offset)
+    public void AddPlaceholder(CodePoint codePoint, BidiRun bidiRun, ushort textRunIndex, int offset)
     {
         ref GlyphShapingData slot = ref this.Append();
-        slot = new(textRun)
+        slot = new(textRunIndex)
         {
             CodePointIndex = offset,
             CodePoint = codePoint,
@@ -703,7 +718,7 @@ internal sealed class ShapingBuffer
                 // Placeholders are synthetic glyphs: they need layout metrics but must not
                 // go through font glyph lookup, fallback resolution, or GPOS positioning.
                 this.CopyPlaceholderBidiRun(workspace, source.CodePointIndex);
-                FontGlyphMetrics placeholderMetrics = PlaceholderGlyphMetrics.Create(font, source.TextRun, this.TextOptions.Dpi);
+                FontGlyphMetrics placeholderMetrics = PlaceholderGlyphMetrics.Create(font, this.TextRuns[source.TextRunIndex], this.TextOptions.Dpi);
 
                 this.glyphDigest.Add(placeholderMetrics.GlyphId);
                 ref GlyphShapingData placeholderSlot = ref this.Append();
@@ -718,8 +733,9 @@ internal sealed class ShapingBuffer
                 continue;
             }
 
-            TextAttributes textAttributes = source.TextRun.TextAttributes;
-            TextDecorations textDecorations = source.TextRun.TextDecorations;
+            TextRun sourceRun = this.TextRuns[source.TextRunIndex];
+            TextAttributes textAttributes = sourceRun.TextAttributes;
+            TextDecorations textDecorations = sourceRun.TextDecorations;
 
             bool isVertical = AdvancedTypographicUtils.IsVerticalGlyph(codePoint, layoutMode)
                 || (source.AppliedFeatureMask & verticalMask) != 0;
@@ -786,8 +802,9 @@ internal sealed class ShapingBuffer
                     ushort id = shape.GlyphId;
                     CodePoint codePoint = shape.CodePoint;
 
-                    TextAttributes textAttributes = shape.TextRun.TextAttributes;
-                    TextDecorations textDecorations = shape.TextRun.TextDecorations;
+                    TextRun shapeRun = this.TextRuns[shape.TextRunIndex];
+                    TextAttributes textAttributes = shapeRun.TextAttributes;
+                    TextDecorations textDecorations = shapeRun.TextDecorations;
 
                     bool isVertical = AdvancedTypographicUtils.IsVerticalGlyph(codePoint, layoutMode)
                         || (shape.AppliedFeatureMask & verticalMask) != 0;

@@ -497,8 +497,9 @@ internal sealed class HangulShaper : DefaultShaper
         // Move tone mark to the beginning of the previous syllable, unless it is zero width
         // We don't have access to the glyphs metrics as an array when substituting so we have to loop.
         FontMetrics fontMetrics = this.fontMetrics;
-        TextAttributes textAttributes = data.TextRun.TextAttributes;
-        TextDecorations textDecorations = data.TextRun.TextDecorations;
+        TextRun textRun = buffer.TextRuns[data.TextRunIndex];
+        TextAttributes textAttributes = textRun.TextAttributes;
+        TextDecorations textDecorations = textRun.TextDecorations;
         LayoutMode layoutMode = buffer.TextOptions.LayoutMode;
         ColorFontSupport colorFontSupport = buffer.TextOptions.ColorFontSupport;
         if (fontMetrics.TryGetGlyphMetrics(data.CodePoint, textAttributes, textDecorations, layoutMode, colorFontSupport, out FontGlyphMetrics? metrics)
@@ -527,8 +528,9 @@ internal sealed class HangulShaper : DefaultShaper
 
         if (fontMetrics.TryGetGlyphId(new(DottedCircle), out ushort id))
         {
-            TextAttributes textAttributes = data.TextRun.TextAttributes;
-            TextDecorations textDecorations = data.TextRun.TextDecorations;
+            TextRun textRun = buffer.TextRuns[data.TextRunIndex];
+            TextAttributes textAttributes = textRun.TextAttributes;
+            TextDecorations textDecorations = textRun.TextDecorations;
             LayoutMode layoutMode = buffer.TextOptions.LayoutMode;
             ColorFontSupport colorFontSupport = buffer.TextOptions.ColorFontSupport;
             if (fontMetrics.TryGetGlyphMetrics(data.CodePoint, textAttributes, textDecorations, layoutMode, colorFontSupport, out FontGlyphMetrics? metrics)

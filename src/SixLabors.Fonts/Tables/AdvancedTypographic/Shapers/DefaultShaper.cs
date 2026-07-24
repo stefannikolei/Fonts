@@ -128,21 +128,34 @@ internal class DefaultShaper : BaseShaper
         // Add variation Features.
         this.AddFeature(buffer, index, count, RvnrTag);
 
-        // Add directional features.
-        for (int i = index; i < index + count; i++)
+        // Add directional features once per direction span. The plan registers a
+        // direction's features across the whole span in a single range registration,
+        // producing the same per-glyph masks as per-glyph registration while
+        // resolving each feature's mask bit once.
+        int end = index + count;
+        int spanStart = index;
+        while (spanStart < end)
         {
-            ref GlyphShapingData shapingData = ref buffer[i];
-
-            if (shapingData.Direction == TextDirection.LeftToRight)
+            TextDirection direction = buffer[spanStart].Direction;
+            int spanEnd = spanStart + 1;
+            while (spanEnd < end && buffer[spanEnd].Direction == direction)
             {
-                this.AddFeature(buffer, i, 1, LtraTag);
-                this.AddFeature(buffer, i, 1, LtrmTag);
+                spanEnd++;
+            }
+
+            int spanCount = spanEnd - spanStart;
+            if (direction == TextDirection.LeftToRight)
+            {
+                this.AddFeature(buffer, spanStart, spanCount, LtraTag);
+                this.AddFeature(buffer, spanStart, spanCount, LtrmTag);
             }
             else
             {
-                this.AddFeature(buffer, i, 1, RtlaTag);
-                this.AddFeature(buffer, i, 1, RtlmTag);
+                this.AddFeature(buffer, spanStart, spanCount, RtlaTag);
+                this.AddFeature(buffer, spanStart, spanCount, RtlmTag);
             }
+
+            spanStart = spanEnd;
         }
 
         // TODO: Fractional feature should be assigned here but disabled.

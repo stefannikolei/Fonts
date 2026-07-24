@@ -18,6 +18,7 @@ public ref struct SpanGraphemeEnumerator
 {
     private ReadOnlySpan<char> source;
     private readonly TerminalWidthOptions terminalWidthOptions;
+    private readonly bool countOnly;
     private int sourceOffset;
 
     /// <summary>
@@ -38,6 +39,26 @@ public ref struct SpanGraphemeEnumerator
     {
         this.source = source;
         this.terminalWidthOptions = terminalWidthOptions;
+        this.countOnly = false;
+        this.sourceOffset = 0;
+        this.Current = default;
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="SpanGraphemeEnumerator"/> struct
+    /// that walks cluster boundaries without producing cluster metadata.
+    /// </summary>
+    /// <param name="source">The buffer to read from.</param>
+    /// <param name="countOnly">
+    /// Whether enumeration only advances over boundaries. When set,
+    /// <see cref="Current"/> stays default and no width, emoji, or flag metadata is
+    /// computed, leaving a pure boundary walk for callers that only need a count.
+    /// </param>
+    internal SpanGraphemeEnumerator(ReadOnlySpan<char> source, bool countOnly)
+    {
+        this.source = source;
+        this.terminalWidthOptions = TerminalWidthOptions.Default;
+        this.countOnly = countOnly;
         this.sourceOffset = 0;
         this.Current = default;
     }
@@ -67,6 +88,7 @@ public ref struct SpanGraphemeEnumerator
         // outside Processor so Processor remains a simple UTF-16/code-point reader.
         IndicConjunctState indicConjunctState = default;
         TerminalWidthState terminalWidthState = new(this.terminalWidthOptions);
+        bool boundariesOnly = this.countOnly;
         int utf16Offset = this.sourceOffset;
 
         // Accept the current scalar into the cluster and advance to the next scalar.
@@ -74,7 +96,11 @@ public ref struct SpanGraphemeEnumerator
         void ConsumeCurrentAndAdvance(ref Processor p)
         {
             indicConjunctState.Consume(p.CurrentCodePoint);
-            terminalWidthState.Consume(p.CurrentCodePoint, p.CurrentType);
+            if (!boundariesOnly)
+            {
+                terminalWidthState.Consume(p.CurrentCodePoint, p.CurrentType);
+            }
+
             p.MoveNext();
         }
 
@@ -253,15 +279,18 @@ public ref struct SpanGraphemeEnumerator
 
         Return:
 
-        terminalWidthState.Complete();
-        ReadOnlySpan<char> grapheme = this.source[..processor.CharsConsumed];
-        this.Current = new GraphemeCluster(
-            grapheme,
-            utf16Offset,
-            terminalWidthState.CodePointCount,
-            terminalWidthState.TerminalCellWidth,
-            terminalWidthState.Flags,
-            terminalWidthState.FirstCodePoint);
+        if (!boundariesOnly)
+        {
+            terminalWidthState.Complete();
+            ReadOnlySpan<char> grapheme = this.source[..processor.CharsConsumed];
+            this.Current = new GraphemeCluster(
+                grapheme,
+                utf16Offset,
+                terminalWidthState.CodePointCount,
+                terminalWidthState.TerminalCellWidth,
+                terminalWidthState.Flags,
+                terminalWidthState.FirstCodePoint);
+        }
 
         this.source = this.source[processor.CharsConsumed..];
         this.sourceOffset += processor.CharsConsumed;

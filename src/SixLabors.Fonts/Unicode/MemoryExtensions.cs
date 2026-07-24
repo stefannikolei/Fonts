@@ -224,7 +224,7 @@ public static class MemoryExtensions
     public static int GetGraphemeCount(this ReadOnlySpan<char> span)
     {
         int count = 0;
-        SpanGraphemeEnumerator enumerator = new(span);
+        SpanGraphemeEnumerator enumerator = new(span, countOnly: true);
         while (enumerator.MoveNext())
         {
             count++;
@@ -241,7 +241,7 @@ public static class MemoryExtensions
     public static int GetGraphemeCount(this Span<char> span)
     {
         int count = 0;
-        SpanGraphemeEnumerator enumerator = new(span);
+        SpanGraphemeEnumerator enumerator = new(span, countOnly: true);
         while (enumerator.MoveNext())
         {
             count++;

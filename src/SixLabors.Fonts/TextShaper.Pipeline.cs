@@ -37,7 +37,9 @@ public static partial class TextShaper
     internal static IReadOnlyList<TextRun> BuildTextRuns(ReadOnlySpan<char> text, TextOptions options)
     {
         int start = 0;
+        var graphemeProbe = ShapingProbe.Enter();
         int end = text.GetGraphemeCount();
+        ShapingProbe.Exit(ShapingProbe.GraphemeCount, graphemeProbe);
         if (end == 0)
         {
             return [];
@@ -48,7 +50,7 @@ public static partial class TextShaper
             TextRun textRun = new()
             {
                 Start = 0,
-                End = text.GetGraphemeCount(),
+                End = end,
                 Font = options.Font
             };
 

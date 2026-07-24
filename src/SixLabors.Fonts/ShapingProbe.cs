@@ -28,6 +28,7 @@ public static class ShapingProbe
     public const int PlanMain = 14;
     public const int PlanPost = 15;
     public const int PlanAssign = 16;
+    public const int GraphemeCount = 17;
 
     private static readonly string[] Names =
     [
@@ -48,6 +49,7 @@ public static class ShapingProbe
         "    plan: features",
         "    plan: postprocessing",
         "    plan: assign",
+        "  runs: grapheme count",
     ];
 
     private static readonly long[] Ticks = new long[Names.Length];

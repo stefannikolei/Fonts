@@ -223,6 +223,37 @@ public static class MemoryExtensions
     /// <returns>The number of grapheme clusters.</returns>
     public static int GetGraphemeCount(this ReadOnlySpan<char> span)
     {
+        // ASCII text has single-char clusters except the CR LF pair: no ASCII
+        // character extends, prepends, or joins, and controls break on both sides.
+        // The count is therefore the length minus the CR LF pairs, found with two
+        // vectorized scans instead of the boundary state machine.
+        if (!span.ContainsAnyExceptInRange((char)0, (char)0x7F))
+        {
+            int pairs = 0;
+            int searchStart = 0;
+            while (true)
+            {
+                int offset = span[searchStart..].IndexOf('\r');
+                if (offset < 0)
+                {
+                    break;
+                }
+
+                int absolute = searchStart + offset;
+                if (absolute + 1 < span.Length && span[absolute + 1] == '\n')
+                {
+                    pairs++;
+                    searchStart = absolute + 2;
+                }
+                else
+                {
+                    searchStart = absolute + 1;
+                }
+            }
+
+            return span.Length - pairs;
+        }
+
         int count = 0;
         SpanGraphemeEnumerator enumerator = new(span, true);
         while (enumerator.MoveNext())

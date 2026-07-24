@@ -113,14 +113,14 @@ internal sealed class ShapingBuffer
     /// lookups into lookup-index order. Cleared by each group merge; kept on the pooled
     /// buffer so application allocates nothing.
     /// </summary>
-    internal List<(Tag Feature, ushort Index, Tables.AdvancedTypographic.GSub.LookupTable LookupTable, ulong Mask)> GSubLookupScratch { get; } = new(16);
+    public List<(Tag Feature, ushort Index, Tables.AdvancedTypographic.GSub.LookupTable LookupTable, ulong Mask)> GSubLookupScratch { get; } = new(16);
 
     /// <summary>
     /// Gets the reusable scratch the positioning table uses to merge a stage group's
     /// lookups into lookup-index order. Cleared by each group merge; kept on the pooled
     /// buffer so application allocates nothing.
     /// </summary>
-    internal List<(Tag Feature, ushort Index, Tables.AdvancedTypographic.GPos.LookupTable LookupTable, ulong Mask)> GPosLookupScratch { get; } = new(16);
+    public List<(Tag Feature, ushort Index, Tables.AdvancedTypographic.GPos.LookupTable LookupTable, ulong Mask)> GPosLookupScratch { get; } = new(16);
 
     /// <summary>
     /// Gets an interior reference to the glyph shaping data at the specified index.

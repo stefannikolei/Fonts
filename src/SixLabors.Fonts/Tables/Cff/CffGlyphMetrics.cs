@@ -30,7 +30,7 @@ internal class CffGlyphMetrics : FontGlyphMetrics
     /// <param name="textAttributes">The text attributes.</param>
     /// <param name="textDecorations">The text decorations.</param>
     /// <param name="glyphType">The glyph type.</param>
-    internal CffGlyphMetrics(
+    public CffGlyphMetrics(
         StreamFontMetrics fontMetrics,
         ushort glyphId,
         CodePoint codePoint,

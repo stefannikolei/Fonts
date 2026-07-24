@@ -98,13 +98,13 @@ internal struct GlyphShapingData
     /// <summary>
     /// Gets or sets the cached glyph shaping class, avoiding repeated GDEF lookups.
     /// </summary>
-    internal GlyphShapingClass CachedShapingClass { get; set; }
+    public GlyphShapingClass CachedShapingClass { get; set; }
 
     /// <summary>
     /// Gets or sets the cache key for <see cref="CachedShapingClass"/>.
     /// A value of <c>-1</c> indicates the cache is invalid. Valid entries store the glyph id.
     /// </summary>
-    internal int ShapingClassCacheKey { get; set; } = -1;
+    public int ShapingClassCacheKey { get; set; } = -1;
 
     /// <summary>
     /// Gets or sets the zero-based index within the input codepoint collection of the
@@ -228,5 +228,5 @@ internal struct GlyphShapingData
         this.FeatureMask = 0;
     }
 
-    internal string ToDebuggerDisplay() => this.DebuggerDisplay;
+    public string ToDebuggerDisplay() => this.DebuggerDisplay;
 }

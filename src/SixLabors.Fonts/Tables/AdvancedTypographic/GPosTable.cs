@@ -41,7 +41,7 @@ internal class GPosTable : Table
     /// <summary>
     /// The OpenType table tag for the GPOS table.
     /// </summary>
-    internal const string TableName = "GPOS";
+    public const string TableName = "GPOS";
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GPosTable"/> class.
@@ -101,7 +101,7 @@ internal class GPosTable : Table
     /// </summary>
     /// <param name="reader">The big endian binary reader.</param>
     /// <returns>The <see cref="GPosTable"/>.</returns>
-    internal static GPosTable Load(BigEndianBinaryReader reader)
+    public static GPosTable Load(BigEndianBinaryReader reader)
     {
         // GPOS Header, Version 1.0
         // +----------+-------------------+-----------------------------------------------------------+

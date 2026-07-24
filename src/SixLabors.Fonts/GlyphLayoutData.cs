@@ -15,7 +15,7 @@ namespace SixLabors.Fonts;
 [DebuggerDisplay("{DebuggerDisplay,nq}")]
 internal struct GlyphLayoutData
 {
-    internal const int NoHyphenationMarker = -1;
+    public const int NoHyphenationMarker = -1;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GlyphLayoutData"/> struct.

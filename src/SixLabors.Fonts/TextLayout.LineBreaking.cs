@@ -584,7 +584,7 @@ internal static partial class TextLayout
     /// <param name="font">The font used to shape and render the marker.</param>
     /// <param name="options">The text options used for layout.</param>
     /// <returns>The generated marker entry.</returns>
-    internal static GlyphLayoutData CreateGeneratedMarker(
+    public static GlyphLayoutData CreateGeneratedMarker(
         PositionedGlyphMetrics anchor,
         float pointSize,
         BidiRun bidiRun,

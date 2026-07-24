@@ -98,7 +98,7 @@ internal class DefaultShaper : BaseShaper
     /// </summary>
     /// <param name="script">The script classification.</param>
     /// <param name="textOptions">The text options.</param>
-    internal DefaultShaper(ScriptClass script, TextOptions textOptions)
+    public DefaultShaper(ScriptClass script, TextOptions textOptions)
         : this(script, MarkZeroingMode.PostGpos, textOptions)
     {
     }

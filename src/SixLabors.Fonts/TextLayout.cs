@@ -255,7 +255,7 @@ internal static partial class TextLayout
     /// Use <see cref="float.PositiveInfinity"/> to disable culling at this edge.
     /// </param>
     /// <param name="visitor">The visitor that receives each positioned glyph.</param>
-    internal static void LayoutText<TVisitor>(
+    public static void LayoutText<TVisitor>(
         TextBox textBox,
         TextOptions options,
         float wrappingLength,
@@ -1320,7 +1320,7 @@ internal static partial class TextLayout
     /// <param name="textAlignment">Per-line alignment within the block.</param>
     /// <param name="direction">The resolved text direction for this line.</param>
     /// <returns>The X offset to add to the line's pen location.</returns>
-    internal static float CalculateLineOffsetX(
+    public static float CalculateLineOffsetX(
         float lineAdvance,
         float maxScaledAdvance,
         HorizontalAlignment horizontalAlignment,
@@ -1384,7 +1384,7 @@ internal static partial class TextLayout
     /// <param name="textAlignment">Per-line alignment within the block.</param>
     /// <param name="direction">The resolved text direction for this line.</param>
     /// <returns>The Y offset to add to the line's pen location.</returns>
-    internal static float CalculateLineOffsetY(
+    public static float CalculateLineOffsetY(
         float lineAdvance,
         float maxScaledAdvance,
         VerticalAlignment verticalAlignment,

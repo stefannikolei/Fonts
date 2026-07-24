@@ -24,7 +24,7 @@ internal sealed class PlaceholderGlyphMetrics : FontGlyphMetrics
     /// <param name="pointSize">The point size used for layout.</param>
     /// <param name="dpi">The resolution used to convert placeholder pixels into layout units.</param>
     /// <param name="textRun">The text run this placeholder belongs to.</param>
-    internal PlaceholderGlyphMetrics(
+    public PlaceholderGlyphMetrics(
         StreamFontMetrics font,
         TextPlaceholder placeholder,
         float pointSize,
@@ -58,7 +58,7 @@ internal sealed class PlaceholderGlyphMetrics : FontGlyphMetrics
     /// <param name="textRun">The placeholder text run.</param>
     /// <param name="dpi">The resolution used to convert placeholder pixels into layout units.</param>
     /// <returns>The placeholder metrics.</returns>
-    internal static PlaceholderGlyphMetrics Create(Font font, TextRun textRun, float dpi)
+    public static PlaceholderGlyphMetrics Create(Font font, TextRun textRun, float dpi)
     {
         FontMetrics fontMetrics = font.FontMetrics;
         StreamFontMetrics streamFontMetrics = fontMetrics is FileFontMetrics fileFontMetrics

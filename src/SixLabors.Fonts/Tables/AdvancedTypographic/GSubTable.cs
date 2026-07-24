@@ -26,7 +26,7 @@ internal class GSubTable : Table
     /// <summary>
     /// The OpenType table tag for the GSUB table.
     /// </summary>
-    internal const string TableName = "GSUB";
+    public const string TableName = "GSUB";
 
     /// <summary>
     /// The invalid but widely shipped language system record tag 'dflt'.
@@ -91,7 +91,7 @@ internal class GSubTable : Table
     /// </summary>
     /// <param name="reader">The big endian binary reader.</param>
     /// <returns>The <see cref="GSubTable"/>.</returns>
-    internal static GSubTable Load(BigEndianBinaryReader reader)
+    public static GSubTable Load(BigEndianBinaryReader reader)
     {
         // GSUB Header, Version 1.0
         // +----------+-------------------+-----------------------------------------------------------+
@@ -427,7 +427,7 @@ internal class GSubTable : Table
     /// </param>
     /// <param name="value">When this method returns, contains the list of feature lookups if found.</param>
     /// <returns><see langword="true"/> if lookups were found; otherwise, <see langword="false"/>.</returns>
-    internal bool TryGetFeatureLookups(
+    public bool TryGetFeatureLookups(
         FontMetrics fontMetrics,
         in Tag stageFeature,
         ScriptClass script,

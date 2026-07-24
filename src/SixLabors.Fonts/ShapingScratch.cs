@@ -39,7 +39,7 @@ internal sealed class ShapingScratch
     /// </summary>
     /// <param name="options">The text options for the pass.</param>
     /// <returns>The reusable buffers, sharing one feature map.</returns>
-    internal (ShapingBuffer Workspace, ShapingBuffer Result) Prepare(TextOptions options)
+    public (ShapingBuffer Workspace, ShapingBuffer Result) Prepare(TextOptions options)
     {
         if (this.featureMap is null)
         {

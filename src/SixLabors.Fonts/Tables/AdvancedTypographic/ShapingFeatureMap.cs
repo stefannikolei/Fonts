@@ -67,7 +67,7 @@ internal sealed class ShapingFeatureMap
     /// Resets the map for reuse by a new shaping pass, emptying the tag registry and
     /// the single-entry memo.
     /// </summary>
-    internal void Reset()
+    public void Reset()
     {
         this.tags.Clear();
         this.lastTagValue = 0;

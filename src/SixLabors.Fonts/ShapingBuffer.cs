@@ -825,7 +825,7 @@ internal sealed class ShapingBuffer
     /// substitution and read after the seed into the positioning phase.
     /// </summary>
     /// <returns>The combined mask, or zero when no vertical feature was registered.</returns>
-    internal ulong GetVerticalFeatureMask()
+    public ulong GetVerticalFeatureMask()
         => this.FeatureMap.GetMask(KnownFeatureTags.VerticalAlternates)
         | this.FeatureMap.GetMask(KnownFeatureTags.VerticalAlternatesForRotation)
         | this.FeatureMap.GetMask(KnownFeatureTags.VerticalKerning);

@@ -15,7 +15,7 @@ internal sealed class KerningTable : Table
     /// <summary>
     /// The table tag name identifying the 'kern' table.
     /// </summary>
-    internal const string TableName = "kern";
+    public const string TableName = "kern";
 
     /// <summary>
     /// The array of kerning subtables contained in this table.

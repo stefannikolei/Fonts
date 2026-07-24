@@ -14,6 +14,34 @@ namespace SixLabors.Fonts.Tables.AdvancedTypographic.Shapers;
 /// </summary>
 internal sealed class UniversalShaper : DefaultShaper
 {
+    /// <summary>
+    /// The generated category name table, captured once: the generated property
+    /// allocates a fresh array on every access.
+    /// </summary>
+    private static readonly string[] CategoryNames = UniversalShapingData.Categories;
+
+    /// <summary>
+    /// Symbol indices for the categories compared during reordering, resolved once from
+    /// the generated table so per-glyph category tests are integer comparisons. The
+    /// symbol index is the value the state machine consumes, so glyphs never
+    /// materialize category name strings.
+    /// </summary>
+    private static readonly int CategoryB = Array.IndexOf(CategoryNames, "B");
+
+    private static readonly int CategoryGB = Array.IndexOf(CategoryNames, "GB");
+
+    private static readonly int CategoryH = Array.IndexOf(CategoryNames, "H");
+
+    private static readonly int CategoryHVM = Array.IndexOf(CategoryNames, "HVM");
+
+    private static readonly int CategoryIS = Array.IndexOf(CategoryNames, "IS");
+
+    private static readonly int CategoryR = Array.IndexOf(CategoryNames, "R");
+
+    private static readonly int CategoryVPre = Array.IndexOf(CategoryNames, "VPre");
+
+    private static readonly int CategoryVMPre = Array.IndexOf(CategoryNames, "VMPre");
+
     /// <summary>The state machine for Universal Shaping Engine syllable identification.</summary>
     private static readonly StateMachine StateMachine =
         new(UniversalShapingData.StateTable, UniversalShapingData.AcceptingStates, UniversalShapingData.Tags);
@@ -200,25 +228,24 @@ internal sealed class UniversalShaper : DefaultShaper
         {
             ++syllable;
 
-            // Create shaper info
+            // Create shaper info. The symbol index is stored directly: it is the value
+            // the state machine consumes and the key into the generated name table.
+            SyllableType syllableType = SyllableTypeMap.FromTag(match.Tags[0]);
+            if (syllableType == SyllableType.BrokenCluster)
+            {
+                this.hasBrokenClusters = true;
+            }
+
             for (int i = match.StartIndex; i <= match.EndIndex; i++)
             {
                 ref GlyphShapingData data = ref buffer[i + index];
-                CodePoint codePoint = data.CodePoint;
-                string category = UniversalShapingData.Categories[UnicodeData.GetUniversalShapingSymbolCount((uint)codePoint.Value)];
-
-                string syllableType = match.Tags[0];
-
-                if (syllableType == "broken_cluster")
-                {
-                    this.hasBrokenClusters = true;
-                }
-
-                data.UniversalShapingEngineInfo = new(category, syllableType, syllable);
+                data.Syllable.UseCategory = UnicodeData.GetUniversalShapingSymbolCount((uint)data.CodePoint.Value);
+                data.Syllable.Type = syllableType;
+                data.Syllable.Number = syllable;
             }
 
             // Assign rphf feature
-            int limit = buffer[match.StartIndex + index].UniversalShapingEngineInfo!.Category == "R"
+            int limit = buffer[match.StartIndex + index].Syllable.UseCategory == CategoryR
                 ? 1
                 : Math.Min(3, match.EndIndex - match.StartIndex);
 
@@ -271,9 +298,9 @@ internal sealed class UniversalShaper : DefaultShaper
             if (data.IsSubstituted && (data.RegisteredFeatureMask & rphfMask) != 0)
             {
                 // Mark a substituted repha.
-                if (data.UniversalShapingEngineInfo != null)
+                if (data.Syllable.Type != SyllableType.None)
                 {
-                    data.UniversalShapingEngineInfo.Category = "R";
+                    data.Syllable.UseCategory = CategoryR;
                 }
             }
         }
@@ -299,9 +326,9 @@ internal sealed class UniversalShaper : DefaultShaper
             if (data.IsSubstituted)
             {
                 // Mark a substituted pref as VPre, as they behave the same way.
-                if (data.UniversalShapingEngineInfo != null)
+                if (data.Syllable.Type != SyllableType.None)
                 {
-                    data.UniversalShapingEngineInfo.Category = "VPre";
+                    data.Syllable.UseCategory = CategoryVPre;
                 }
             }
         }
@@ -333,34 +360,31 @@ internal sealed class UniversalShaper : DefaultShaper
                 Span<ushort> glyphs = stackalloc ushort[2];
                 while (start < max)
                 {
-                    ref GlyphShapingData data = ref buffer[start];
-                    UniversalShapingEngineInfo? info = data.UniversalShapingEngineInfo;
-                    string? type = info?.SyllableType;
-
-                    if (type == "broken_cluster")
+                    if (buffer[start].Syllable.Type == SyllableType.BrokenCluster)
                     {
                         // Insert after possible Repha.
                         int i = start;
                         for (i = start; i < end; i++)
                         {
-                            if (buffer[i].UniversalShapingEngineInfo?.Category != "R")
+                            ref GlyphShapingData candidate = ref buffer[i];
+                            if (candidate.Syllable.Type == SyllableType.None || candidate.Syllable.UseCategory != CategoryR)
                             {
                                 break;
                             }
                         }
 
-                        ref GlyphShapingData current = ref buffer[i];
-                        UniversalShapingEngineInfo currentInfo = current.UniversalShapingEngineInfo!;
-                        glyphs[0] = current.GlyphId;
-                        glyphs[1] = circleId;
+                        {
+                            ref GlyphShapingData current = ref buffer[i];
+                            glyphs[0] = current.GlyphId;
+                            glyphs[1] = circleId;
+                        }
 
                         buffer.Replace(i, glyphs, KnownFeatureTags.GlyphCompositionDecomposition);
 
-                        // Update shaping info for newly inserted data.
-                        ref GlyphShapingData dotted = ref buffer[i + 1];
-                        dotted.UniversalShapingEngineInfo!.Category = "B";
-                        dotted.UniversalShapingEngineInfo.SyllableType = currentInfo.SyllableType;
-                        dotted.UniversalShapingEngineInfo.Syllable = currentInfo.Syllable;
+                        // Update shaping info for newly inserted data. The insertion
+                        // copied the source record, so type and syllable number are
+                        // already correct; only the category changes.
+                        buffer[i + 1].Syllable.UseCategory = CategoryB;
 
                         end++;
                         max++;
@@ -378,25 +402,22 @@ internal sealed class UniversalShaper : DefaultShaper
         while (start < max)
         {
             ref GlyphShapingData data = ref buffer[start];
-            UniversalShapingEngineInfo? info = data.UniversalShapingEngineInfo;
-            string? type = info?.SyllableType;
 
             // Only a few syllable types need reordering.
-            if (type is not "virama_terminated_cluster" and not "standard_cluster" and not "broken_cluster")
+            if (data.Syllable.Type is not SyllableType.ViramaTerminatedCluster and not SyllableType.StandardCluster and not SyllableType.BrokenCluster)
             {
                 // TODO: Check this. Harfbuzz seems to test more categories and returns.
                 goto Increment;
             }
 
             // Move things forward
-            if (info?.Category == "R" && end - start > 1)
+            if (data.Syllable.UseCategory == CategoryR && end - start > 1)
             {
                 // Got a repha. Reorder it to after first base, before first halant.
                 for (int i = start + 1; i < end; i++)
                 {
                     ref GlyphShapingData current = ref buffer[i];
-                    info = current.UniversalShapingEngineInfo;
-                    if (IsBase(info) || IsHalant(ref current))
+                    if (IsBase(ref current) || IsHalant(ref current))
                     {
                         // If we hit a halant, move before it; otherwise it's a base: move to it's
                         // place, and shift things in between backward.
@@ -415,9 +436,8 @@ internal sealed class UniversalShaper : DefaultShaper
             for (int i = start, j = start; i < end; i++)
             {
                 ref GlyphShapingData current = ref buffer[i];
-                info = current.UniversalShapingEngineInfo;
 
-                if (IsBase(info) || IsHalant(ref current))
+                if (IsBase(ref current) || IsHalant(ref current))
                 {
                     // If we hit a halant, move after it; otherwise move to the beginning, and
                     // shift things in between forward.
@@ -430,7 +450,8 @@ internal sealed class UniversalShaper : DefaultShaper
                         j = i;
                     }
                 }
-                else if ((info?.Category == "VPre" || info?.Category == "VMPre")
+                else if (current.Syllable.Type != SyllableType.None
+                    && (current.Syllable.UseCategory == CategoryVPre || current.Syllable.UseCategory == CategoryVMPre)
                     && current.LigatureComponent <= 0 // Only move the first component of a MultipleSubst
                     && j < i)
                 {
@@ -458,10 +479,10 @@ internal sealed class UniversalShaper : DefaultShaper
             return index;
         }
 
-        int? syllable = buffer[index].UniversalShapingEngineInfo?.Syllable;
+        int syllable = buffer[index].Syllable.Number;
         while (++index < count)
         {
-            if (buffer[index].UniversalShapingEngineInfo?.Syllable != syllable)
+            if (buffer[index].Syllable.Number != syllable)
             {
                 break;
             }
@@ -476,13 +497,16 @@ internal sealed class UniversalShaper : DefaultShaper
     /// <param name="data">The glyph shaping data.</param>
     /// <returns><see langword="true"/> if the glyph is a halant or equivalent.</returns>
     private static bool IsHalant(ref GlyphShapingData data)
-        => (data.UniversalShapingEngineInfo?.Category is "H" or "HVM" or "IS") && !data.IsLigated;
+        => data.Syllable.Type != SyllableType.None
+        && (data.Syllable.UseCategory == CategoryH || data.Syllable.UseCategory == CategoryHVM || data.Syllable.UseCategory == CategoryIS)
+        && !data.IsLigated;
 
     /// <summary>
-    /// Determines whether the shaping info represents a base consonant or generic base.
+    /// Determines whether the glyph is a base consonant or generic base.
     /// </summary>
-    /// <param name="info">The universal shaping engine info.</param>
+    /// <param name="data">The glyph shaping data.</param>
     /// <returns><see langword="true"/> if the glyph is a base.</returns>
-    private static bool IsBase(UniversalShapingEngineInfo? info)
-        => info?.Category is "B" or "GB";
+    private static bool IsBase(ref GlyphShapingData data)
+        => data.Syllable.Type != SyllableType.None
+        && (data.Syllable.UseCategory == CategoryB || data.Syllable.UseCategory == CategoryGB);
 }

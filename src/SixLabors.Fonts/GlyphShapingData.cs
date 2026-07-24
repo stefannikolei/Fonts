@@ -16,12 +16,19 @@ namespace SixLabors.Fonts;
 [DebuggerDisplay("{DebuggerDisplay,nq}")]
 internal struct GlyphShapingData
 {
-#pragma warning disable SA1401 // Field exposed so positioning mutates the embedded bounds in place.
+#pragma warning disable SA1401 // Fields exposed so shaping mutates embedded values in place.
     /// <summary>
     /// The shaping bounds. A field rather than a property so positioning lookups
     /// mutate the embedded value in place and re-seeding is plain value assignment.
     /// </summary>
     public GlyphShapingBounds Bounds;
+
+    /// <summary>
+    /// The syllable classification assigned by the complex-script shapers, stored by
+    /// value so classification never allocates. A <see cref="SyllableInfo.Type"/> of
+    /// <see cref="SyllableType.None"/> means no classification has been assigned.
+    /// </summary>
+    public SyllableInfo Syllable;
 #pragma warning restore SA1401
 
     private ushort glyphId;
@@ -57,22 +64,7 @@ internal struct GlyphShapingData
         this.IsPositioned = data.IsPositioned;
         this.IsKerned = data.IsKerned;
 
-        if (data.UniversalShapingEngineInfo != null)
-        {
-            this.UniversalShapingEngineInfo = new(
-                data.UniversalShapingEngineInfo.Category,
-                data.UniversalShapingEngineInfo.SyllableType,
-                data.UniversalShapingEngineInfo.Syllable);
-        }
-
-        if (data.IndicShapingEngineInfo != null)
-        {
-            this.IndicShapingEngineInfo = new(
-                data.IndicShapingEngineInfo.Category,
-                data.IndicShapingEngineInfo.Position,
-                data.IndicShapingEngineInfo.SyllableType,
-                data.IndicShapingEngineInfo.Syllable);
-        }
+        this.Syllable = data.Syllable;
 
         if (!clearFeatures)
         {
@@ -219,16 +211,6 @@ internal struct GlyphShapingData
     /// </summary>
     public bool IsKerned { get; set; }
 
-    /// <summary>
-    /// Gets or sets the universal shaping information.
-    /// </summary>
-    public UniversalShapingEngineInfo? UniversalShapingEngineInfo { get; set; }
-
-    /// <summary>
-    /// Gets or sets the Indic shaping information.
-    /// </summary>
-    public IndicShapingEngineInfo? IndicShapingEngineInfo { get; set; }
-
     private string DebuggerDisplay
         => FormattableString
         .Invariant($" {this.GlyphId} : {this.CodePoint.ToDebuggerDisplay()} : {CodePoint.GetScriptClass(this.CodePoint)} : {this.Direction} : {this.TextRun.TextAttributes} : {this.LigatureId} : {this.LigatureComponent} : {this.IsDecomposed}");
@@ -247,48 +229,4 @@ internal struct GlyphShapingData
     }
 
     internal string ToDebuggerDisplay() => this.DebuggerDisplay;
-}
-
-/// <summary>
-/// Represents information required for universal shaping.
-/// </summary>
-internal class UniversalShapingEngineInfo
-{
-    public UniversalShapingEngineInfo(string category, string syllableType, int syllable)
-    {
-        this.Category = category;
-        this.SyllableType = syllableType;
-        this.Syllable = syllable;
-    }
-
-    public string Category { get; set; }
-
-    public string SyllableType { get; set; }
-
-    public int Syllable { get; set; }
-}
-
-internal class IndicShapingEngineInfo
-{
-    public IndicShapingEngineInfo(
-        Categories category,
-        Positions position,
-        string syllableType,
-        int syllable)
-    {
-        this.Category = category;
-        this.Position = position;
-        this.SyllableType = syllableType;
-        this.Syllable = syllable;
-    }
-
-    public Categories Category { get; set; }
-
-    public MyanmarCategories MyanmarCategory => (MyanmarCategories)this.Category;
-
-    public Positions Position { get; set; }
-
-    public string SyllableType { get; set; }
-
-    public int Syllable { get; set; }
 }

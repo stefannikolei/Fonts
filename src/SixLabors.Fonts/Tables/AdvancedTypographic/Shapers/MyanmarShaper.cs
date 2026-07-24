@@ -134,7 +134,10 @@ internal sealed class MyanmarShaper : DefaultShaper
                 for (int i = last; i < match.StartIndex; i++)
                 {
                     ref GlyphShapingData data = ref buffer[i + index];
-                    data.IndicShapingEngineInfo = new(Categories.X, Positions.End, "non_indic_cluster", syllable);
+                    data.Syllable.IndicCategory = Categories.X;
+                    data.Syllable.IndicPosition = Positions.End;
+                    data.Syllable.Type = SyllableType.NonIndicCluster;
+                    data.Syllable.Number = syllable;
                 }
             }
 
@@ -146,18 +149,17 @@ internal sealed class MyanmarShaper : DefaultShaper
                 ref GlyphShapingData data = ref buffer[i + index];
                 CodePoint codePoint = data.CodePoint;
 
-                string syllableType = match.Tags[0];
+                SyllableType syllableType = SyllableTypeMap.FromTag(match.Tags[0]);
 
-                if (syllableType == "broken_cluster")
+                if (syllableType == SyllableType.BrokenCluster)
                 {
                     this.hasBrokenClusters = true;
                 }
 
-                data.IndicShapingEngineInfo = new(
-                    (Categories)IndicShapingCategory(codePoint),
-                    (Positions)IndicShapingPosition(codePoint),
-                    syllableType,
-                    syllable);
+                data.Syllable.IndicCategory = (Categories)IndicShapingCategory(codePoint);
+                data.Syllable.IndicPosition = (Positions)IndicShapingPosition(codePoint);
+                data.Syllable.Type = syllableType;
+                data.Syllable.Number = syllable;
             }
 
             last = match.EndIndex + 1;
@@ -169,7 +171,10 @@ internal sealed class MyanmarShaper : DefaultShaper
             for (int i = last; i < count; i++)
             {
                 ref GlyphShapingData data = ref buffer[i + index];
-                data.IndicShapingEngineInfo = new(Categories.X, Positions.End, "non_indic_cluster", syllable);
+                data.Syllable.IndicCategory = Categories.X;
+                data.Syllable.IndicPosition = Positions.End;
+                data.Syllable.Type = SyllableType.NonIndicCluster;
+                data.Syllable.Number = syllable;
             }
         }
     }
@@ -200,17 +205,13 @@ internal sealed class MyanmarShaper : DefaultShaper
                 Span<ushort> glyphs = stackalloc ushort[2];
                 while (start < max)
                 {
-                    ref GlyphShapingData data = ref buffer[start];
-                    IndicShapingEngineInfo? dataInfo = data.IndicShapingEngineInfo;
-                    string? type = dataInfo?.SyllableType;
-
-                    if (type == "broken_cluster")
+                    if (buffer[start].Syllable.Type == SyllableType.BrokenCluster)
                     {
                         // Insert after possible Repha.
                         int i = start;
                         for (i = start; i < end; i++)
                         {
-                            if (buffer[i].IndicShapingEngineInfo?.Category != Categories.Repha)
+                            if (buffer[i].Syllable.IndicCategory != Categories.Repha)
                             {
                                 break;
                             }
@@ -224,7 +225,7 @@ internal sealed class MyanmarShaper : DefaultShaper
 
                         // Update shaping info for newly inserted data.
                         ref GlyphShapingData dotted = ref buffer[i + 1];
-                        dotted.IndicShapingEngineInfo!.Category = Categories.Dotted_Circle;
+                        dotted.Syllable.IndicCategory = Categories.Dotted_Circle;
 
                         end++;
                         max++;
@@ -241,15 +242,11 @@ internal sealed class MyanmarShaper : DefaultShaper
 
         while (start < max)
         {
-            ref GlyphShapingData data = ref buffer[start];
-            IndicShapingEngineInfo? dataInfo = data.IndicShapingEngineInfo;
-            string? type = dataInfo?.SyllableType;
-
-            switch (type)
+            switch (buffer[start].Syllable.Type)
             {
                 // We already inserted dotted-circles, so just call the consonant_syllable.
-                case "broken_cluster":
-                case "consonant_syllable":
+                case SyllableType.BrokenCluster:
+                case SyllableType.ConsonantSyllable:
                     ReorderConsonantSyllable(buffer, start, end);
                     break;
                 default:
@@ -274,9 +271,9 @@ internal sealed class MyanmarShaper : DefaultShaper
         {
             int limit = start;
             if (start + 3 <= end &&
-                buffer[start].IndicShapingEngineInfo?.MyanmarCategory == MyanmarCategories.Ra &&
-                buffer[start + 1].IndicShapingEngineInfo?.MyanmarCategory == MyanmarCategories.As &&
-                buffer[start + 2].IndicShapingEngineInfo?.MyanmarCategory == MyanmarCategories.H)
+                buffer[start].Syllable.MyanmarCategory == MyanmarCategories.Ra &&
+                buffer[start + 1].Syllable.MyanmarCategory == MyanmarCategories.As &&
+                buffer[start + 2].Syllable.MyanmarCategory == MyanmarCategories.H)
             {
                 limit += 3;
                 basePosition = start;
@@ -305,17 +302,17 @@ internal sealed class MyanmarShaper : DefaultShaper
             int i = start;
             for (; i < start + (hasReph ? 3 : 0); i++)
             {
-                buffer[i].IndicShapingEngineInfo!.Position = Positions.After_Main;
+                buffer[i].Syllable.IndicPosition = Positions.After_Main;
             }
 
             for (; i < basePosition; i++)
             {
-                buffer[i].IndicShapingEngineInfo!.Position = Positions.Pre_C;
+                buffer[i].Syllable.IndicPosition = Positions.Pre_C;
             }
 
             if (i < end)
             {
-                buffer[i].IndicShapingEngineInfo!.Position = Positions.Base_C;
+                buffer[i].Syllable.IndicPosition = Positions.Base_C;
                 i++;
             }
 
@@ -325,62 +322,61 @@ internal sealed class MyanmarShaper : DefaultShaper
             for (; i < end; i++)
             {
                 ref GlyphShapingData data = ref buffer[i];
-                IndicShapingEngineInfo info = data.IndicShapingEngineInfo!;
 
                 // Pre-base reordering
-                if (info.MyanmarCategory == MyanmarCategories.MR)
+                if (data.Syllable.MyanmarCategory == MyanmarCategories.MR)
                 {
-                    info.Position = Positions.Pre_C;
+                    data.Syllable.IndicPosition = Positions.Pre_C;
                     continue;
                 }
 
                 // Left matra
-                if (info.MyanmarCategory == MyanmarCategories.VPre)
+                if (data.Syllable.MyanmarCategory == MyanmarCategories.VPre)
                 {
-                    info.Position = Positions.Pre_M;
+                    data.Syllable.IndicPosition = Positions.Pre_M;
                     continue;
                 }
 
-                if (info.MyanmarCategory == MyanmarCategories.VS)
+                if (data.Syllable.MyanmarCategory == MyanmarCategories.VS)
                 {
-                    info.Position = buffer[i - 1].IndicShapingEngineInfo!.Position;
+                    data.Syllable.IndicPosition = buffer[i - 1].Syllable.IndicPosition;
                     continue;
                 }
 
-                if (pos == Positions.After_Main && info.MyanmarCategory == MyanmarCategories.VBlw)
+                if (pos == Positions.After_Main && data.Syllable.MyanmarCategory == MyanmarCategories.VBlw)
                 {
                     pos = Positions.Below_C;
-                    info.Position = pos;
+                    data.Syllable.IndicPosition = pos;
                     continue;
                 }
 
-                if (pos == Positions.Below_C && info.MyanmarCategory == MyanmarCategories.A)
+                if (pos == Positions.Below_C && data.Syllable.MyanmarCategory == MyanmarCategories.A)
                 {
-                    info.Position = Positions.Before_Sub;
+                    data.Syllable.IndicPosition = Positions.Before_Sub;
                     continue;
                 }
 
-                if (pos == Positions.Below_C && info.MyanmarCategory == MyanmarCategories.VBlw)
+                if (pos == Positions.Below_C && data.Syllable.MyanmarCategory == MyanmarCategories.VBlw)
                 {
-                    info.Position = pos;
+                    data.Syllable.IndicPosition = pos;
                     continue;
                 }
 
-                if (pos == Positions.Below_C && info.MyanmarCategory != MyanmarCategories.A)
+                if (pos == Positions.Below_C && data.Syllable.MyanmarCategory != MyanmarCategories.A)
                 {
                     pos = Positions.After_Sub;
-                    info.Position = pos;
+                    data.Syllable.IndicPosition = pos;
                     continue;
                 }
 
-                info.Position = pos;
+                data.Syllable.IndicPosition = pos;
             }
         }
 
         buffer.Sort(start, end, (a, b) =>
         {
-            int pa = a.IndicShapingEngineInfo?.Position != null ? (int)a.IndicShapingEngineInfo.Position : 0;
-            int pb = b.IndicShapingEngineInfo?.Position != null ? (int)b.IndicShapingEngineInfo.Position : 0;
+            int pa = (int)a.Syllable.IndicPosition;
+            int pb = (int)b.Syllable.IndicPosition;
             return pa - pb;
         });
 
@@ -390,7 +386,7 @@ internal sealed class MyanmarShaper : DefaultShaper
 
         for (int i = start; i < end; i++)
         {
-            if (buffer[i].IndicShapingEngineInfo?.Position == Positions.Pre_M)
+            if (buffer[i].Syllable.IndicPosition == Positions.Pre_M)
             {
                 if (firstLeftMatra == end)
                 {
@@ -411,7 +407,7 @@ internal sealed class MyanmarShaper : DefaultShaper
             int i = firstLeftMatra;
             for (int j = i; j <= lastLeftMatra; j++)
             {
-                if (buffer[j].IndicShapingEngineInfo?.MyanmarCategory == MyanmarCategories.VPre)
+                if (buffer[j].Syllable.MyanmarCategory == MyanmarCategories.VPre)
                 {
                     buffer.ReverseRange(i, j + 1);
                     i = j + 1;
@@ -426,7 +422,7 @@ internal sealed class MyanmarShaper : DefaultShaper
     /// <param name="data">The glyph shaping data.</param>
     /// <returns><see langword="true"/> if the glyph is a consonant.</returns>
     private static bool IsConsonant(ref GlyphShapingData data)
-        => data.IndicShapingEngineInfo != null && (FlagUnsafe(data.IndicShapingEngineInfo.MyanmarCategory) & MyanmarConsonantFlags) != 0;
+        => data.Syllable.Type != SyllableType.None && (FlagUnsafe(data.Syllable.MyanmarCategory) & MyanmarConsonantFlags) != 0;
 
     /// <summary>
     /// Finds the start index of the next syllable in the buffer.
@@ -442,10 +438,10 @@ internal sealed class MyanmarShaper : DefaultShaper
             return index;
         }
 
-        int? syllable = buffer[index].IndicShapingEngineInfo?.Syllable;
+        int syllable = buffer[index].Syllable.Number;
         while (++index < count)
         {
-            if (buffer[index].IndicShapingEngineInfo?.Syllable != syllable)
+            if (buffer[index].Syllable.Number != syllable)
             {
                 break;
             }

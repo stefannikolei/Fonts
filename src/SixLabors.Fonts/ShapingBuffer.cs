@@ -141,6 +141,14 @@ internal sealed class ShapingBuffer
     public IReadOnlyList<TextRun> TextRuns { get; private set; } = Array.Empty<TextRun>();
 
     /// <summary>
+    /// Gets the shaping segments recorded during substitution: each script segment's
+    /// final range, script, and the shaper that planned it. The in-place positioning
+    /// pass reuses these so one plan drives both tables; the list stays empty when
+    /// records were seeded across buffers and positioning must segment for itself.
+    /// </summary>
+    public List<(int Index, int Count, ScriptClass Script, Tables.AdvancedTypographic.Shapers.BaseShaper Shaper)> SegmentShapers { get; } = new();
+
+    /// <summary>
     /// Gets the reusable scratch the substitution table uses to merge a stage group's
     /// lookups into lookup-index order. Cleared by each group merge; kept on the pooled
     /// buffer so application allocates nothing.
@@ -233,7 +241,9 @@ internal sealed class ShapingBuffer
                 hasFallBacks = true;
             }
 
-            slot.ClearFeatures();
+            // Feature masks persist deliberately: the in-place positioning pass
+            // reuses the substitution pass's plan, whose registrations already cover
+            // the positioning features.
             slot.Bounds = isVertical
                 ? new(0, 0, 0, glyphMetrics.AdvanceHeight)
                 : new(0, 0, glyphMetrics.AdvanceWidth, 0);
@@ -257,6 +267,7 @@ internal sealed class ShapingBuffer
         this.LigatureId = 1;
         this.glyphDigest = default;
         this.placeholderBidiRuns.Clear();
+        this.SegmentShapers.Clear();
         this.TextOptions = textOptions;
         this.LanguageTags = ResolveLanguageTags(textOptions);
     }
@@ -270,6 +281,7 @@ internal sealed class ShapingBuffer
         this.count = 0;
         this.LigatureId = 1;
         this.placeholderBidiRuns.Clear();
+        this.SegmentShapers.Clear();
     }
 
     /// <summary>

@@ -316,6 +316,11 @@ internal class GSubTable : Table
 
                 stageIndex = groupEnd;
             }
+
+            // Record the segment with its post-substitution range so the in-place
+            // positioning pass can reuse the shaper and its plan; one plan then
+            // drives both tables.
+            buffer.SegmentShapers.Add((index, count, current, shaper));
         }
     }
 

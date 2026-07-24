@@ -34,6 +34,12 @@ internal struct GlyphShapingData
     private ushort glyphId;
 
     /// <summary>
+    /// Packed boolean shaping state. Single bits keep the record narrow; the bool
+    /// properties are the only readers and writers.
+    /// </summary>
+    private ushort flags;
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="GlyphShapingData"/> struct.
     /// </summary>
     /// <param name="textRun">The text run.</param>
@@ -139,7 +145,11 @@ internal struct GlyphShapingData
     /// <summary>
     /// Gets or sets a value indicating whether the glyph is ligated.
     /// </summary>
-    public bool IsLigated { get; set; }
+    public bool IsLigated
+    {
+        readonly get => (this.flags & 1) != 0;
+        set => this.flags = value ? (ushort)(this.flags | 1) : (ushort)(this.flags & ~1);
+    }
 
     /// <summary>
     /// Gets or sets the ligature component index of the glyph.
@@ -183,28 +193,48 @@ internal struct GlyphShapingData
     /// <summary>
     /// Gets or sets a value indicating whether this glyph is the result of a substitution.
     /// </summary>
-    public bool IsSubstituted { get; set; }
+    public bool IsSubstituted
+    {
+        readonly get => (this.flags & (1 << 1)) != 0;
+        set => this.flags = value ? (ushort)(this.flags | (1 << 1)) : (ushort)(this.flags & ~(1 << 1));
+    }
 
     /// <summary>
     /// Gets or sets a value indicating whether this glyph is the result of a decomposition substitution
     /// </summary>
-    public bool IsDecomposed { get; set; }
+    public bool IsDecomposed
+    {
+        readonly get => (this.flags & (1 << 2)) != 0;
+        set => this.flags = value ? (ushort)(this.flags | (1 << 2)) : (ushort)(this.flags & ~(1 << 2));
+    }
 
     /// <summary>
     /// Gets or sets a value indicating whether this glyph represents an inline placeholder.
     /// A placeholder's bidi run lives on the buffer, keyed by codepoint offset.
     /// </summary>
-    public bool IsPlaceholder { get; set; }
+    public bool IsPlaceholder
+    {
+        readonly get => (this.flags & (1 << 3)) != 0;
+        set => this.flags = value ? (ushort)(this.flags | (1 << 3)) : (ushort)(this.flags & ~(1 << 3));
+    }
 
     /// <summary>
     /// Gets or sets a value indicating whether this glyph has been positioned.
     /// </summary>
-    public bool IsPositioned { get; set; }
+    public bool IsPositioned
+    {
+        readonly get => (this.flags & (1 << 4)) != 0;
+        set => this.flags = value ? (ushort)(this.flags | (1 << 4)) : (ushort)(this.flags & ~(1 << 4));
+    }
 
     /// <summary>
     /// Gets or sets a value indicating whether this glyph has been kerned.
     /// </summary>
-    public bool IsKerned { get; set; }
+    public bool IsKerned
+    {
+        readonly get => (this.flags & (1 << 5)) != 0;
+        set => this.flags = value ? (ushort)(this.flags | (1 << 5)) : (ushort)(this.flags & ~(1 << 5));
+    }
 
     private string DebuggerDisplay
         => FormattableString

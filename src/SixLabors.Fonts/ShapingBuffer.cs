@@ -155,6 +155,40 @@ internal sealed class ShapingBuffer
     private FontMetrics? shapingClassCacheOwner;
 
     /// <summary>
+    /// The bit offset of the script class in a feature lookups cache tag.
+    /// </summary>
+    private const int FeatureLookupsCacheScriptShift = 32;
+
+    /// <summary>
+    /// The feature lookups cache tag bit distinguishing a populated slot from an
+    /// empty one, since a zero tag could otherwise read as a valid all-zero lookup.
+    /// </summary>
+    private const ulong FeatureLookupsCacheMarkerFlag = 1UL << 63;
+
+    /// <summary>
+    /// Validation tags for the substitution-phase feature lookups cache. A slot's tag
+    /// packs the marker, the feature tag, and the script class, so a hit is one load
+    /// and one compare instead of a dictionary probe that hashes the language
+    /// candidates per query.
+    /// </summary>
+    private readonly ulong[] subFeatureLookupsCacheTags = new ulong[128];
+
+    /// <summary>
+    /// The resolved lookup lists for each slot of
+    /// <see cref="subFeatureLookupsCacheTags"/>, held untyped because the
+    /// substitution and positioning tables declare distinct lookup list types.
+    /// </summary>
+    private readonly object?[] subFeatureLookupsCacheValues = new object?[128];
+
+    /// <summary>
+    /// The layout table instance the substitution-phase entries belong to. Consulting
+    /// from a different table clears the cache before use; a reset clears the owner
+    /// because the language candidates the entries were resolved under belong to the
+    /// pass.
+    /// </summary>
+    private object? subFeatureLookupsCacheOwner;
+
+    /// <summary>
     /// The bidi runs recorded for inline placeholders, keyed by codepoint offset.
     /// Placeholder state lives here rather than on every glyph record because only
     /// placeholders carry a bidi run of their own, and only the copy-out reads it.
@@ -365,6 +399,10 @@ internal sealed class ShapingBuffer
         this.SegmentShapers.Clear();
         this.TextOptions = textOptions;
         this.LanguageTags = ResolveLanguageTags(textOptions);
+
+        // Cached feature resolutions were made under the previous pass's language
+        // candidates, so a new pass must not serve them.
+        this.subFeatureLookupsCacheOwner = null;
     }
 
     /// <summary>
@@ -1092,6 +1130,71 @@ internal sealed class ShapingBuffer
         => this.shapingClassCacheEntries[glyphId & 0xFF] = ShapingClassCacheMarkerFlag
             | glyphId
             | ((ulong)shapingClass.Props << ShapingClassCachePropsShift);
+
+    /// <summary>
+    /// Looks up a resolved feature lookup list through a direct-mapped cache in front
+    /// of the substitution table's own cache, whose probes hash the language
+    /// candidate array per query. A hit is one load and one compare.
+    /// </summary>
+    /// <param name="table">The layout table performing the resolution.</param>
+    /// <param name="feature">The feature tag.</param>
+    /// <param name="script">The script class the feature resolves under.</param>
+    /// <param name="lookups">When this method returns, contains the cached lookup list if found.</param>
+    /// <returns><see langword="true"/> if a cached list was found.</returns>
+    public bool TryGetFeatureLookupsCached(object table, Tag feature, ScriptClass script, out object? lookups)
+    {
+        if (!ReferenceEquals(this.subFeatureLookupsCacheOwner, table))
+        {
+            Array.Clear(this.subFeatureLookupsCacheTags);
+            this.subFeatureLookupsCacheOwner = table;
+        }
+
+        ulong tag = FeatureLookupsCacheMarkerFlag
+            | feature.Value
+            | ((ulong)script << FeatureLookupsCacheScriptShift);
+
+        int slot = FeatureLookupsCacheSlot(feature, script);
+        if (this.subFeatureLookupsCacheTags[slot] == tag)
+        {
+            lookups = this.subFeatureLookupsCacheValues[slot];
+            return true;
+        }
+
+        lookups = null;
+        return false;
+    }
+
+    /// <summary>
+    /// Stores a resolved feature lookup list in the direct-mapped feature lookups
+    /// cache. Must be called after <see cref="TryGetFeatureLookupsCached"/> has
+    /// established the cache owner for the same table, and never for resolutions
+    /// that depend on live variation coordinates.
+    /// </summary>
+    /// <param name="feature">The feature tag.</param>
+    /// <param name="script">The script class the feature resolved under.</param>
+    /// <param name="lookups">The resolved lookup list.</param>
+    public void SetFeatureLookupsCached(Tag feature, ScriptClass script, object lookups)
+    {
+        int slot = FeatureLookupsCacheSlot(feature, script);
+        this.subFeatureLookupsCacheTags[slot] = FeatureLookupsCacheMarkerFlag
+            | feature.Value
+            | ((ulong)script << FeatureLookupsCacheScriptShift);
+        this.subFeatureLookupsCacheValues[slot] = lookups;
+    }
+
+    /// <summary>
+    /// Computes the direct-map slot for a feature and script. Folds all four tag
+    /// bytes so features sharing trailing characters spread across slots rather than
+    /// thrashing one.
+    /// </summary>
+    /// <param name="feature">The feature tag.</param>
+    /// <param name="script">The script class.</param>
+    /// <returns>The slot index.</returns>
+    private static int FeatureLookupsCacheSlot(Tag feature, ScriptClass script)
+    {
+        uint value = feature.Value;
+        return (int)((value ^ (value >> 8) ^ (value >> 16) ^ (value >> 24) ^ (uint)script) & 127);
+    }
 
     /// <summary>
     /// Resolves glyph metrics through a direct-mapped cache in front of the font's own

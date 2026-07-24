@@ -488,7 +488,7 @@ internal sealed class IndicShaper : DefaultShaper
             // base consonants.
             if (start + 3 <= end &&
                 indicConfiguration.RephPosition != Positions.Ra_To_Become_Reph &&
-                gSubTable?.TryGetFeatureLookups(fontMetrics, in RphfTag, this.ScriptClass, buffer.LanguageTags, out _) == true &&
+                gSubTable?.TryGetFeatureLookups(fontMetrics, in RphfTag, this.ScriptClass, buffer, out _) == true &&
                 ((indicConfiguration.RephMode == RephMode.Implicit && !IsJoiner(ref buffer[start + 2])) ||
                  (indicConfiguration.RephMode == RephMode.Explicit && buffer[start + 2].Syllable.IndicCategory == Categories.ZWJ)))
             {
@@ -887,7 +887,7 @@ internal sealed class IndicShaper : DefaultShaper
 
             const int prefLen = 2;
             if (basePosition + prefLen < end &&
-                gSubTable?.TryGetFeatureLookups(fontMetrics, in PrefTag, this.ScriptClass, buffer.LanguageTags, out _) == true)
+                gSubTable?.TryGetFeatureLookups(fontMetrics, in PrefTag, this.ScriptClass, buffer, out _) == true)
             {
                 // Find a Halant,Ra sequence and mark it for pre-base reordering processing.
                 for (int i = basePosition + 1; i + prefLen - 1 < end; i++)
@@ -906,7 +906,7 @@ internal sealed class IndicShaper : DefaultShaper
                         // This allows distinguishing the following cases with MS Khmer fonts:
                         // U+1784,U+17D2,U+179A,U+17D2,U+1782
                         // U+1784,U+17D2,U+1782,U+17D2,U+179A
-                        if (gSubTable.TryGetFeatureLookups(fontMetrics, in CfarTag, this.ScriptClass, buffer.LanguageTags, out _))
+                        if (gSubTable.TryGetFeatureLookups(fontMetrics, in CfarTag, this.ScriptClass, buffer, out _))
                         {
                             while (i < end)
                             {
@@ -1004,7 +1004,7 @@ internal sealed class IndicShaper : DefaultShaper
     private bool WouldSubstitute(ShapingBuffer buffer, in Tag featureTag, ReadOnlySpan<ushort> glyphs)
     {
         if (!this.fontMetrics.TryGetGSubTable(out GSubTable? gSubTable) ||
-            !gSubTable.TryGetFeatureLookups(this.fontMetrics, in featureTag, this.ScriptClass, buffer.LanguageTags, out List<(Tag Feature, ushort Index, LookupTable LookupTable)>? lookups))
+            !gSubTable.TryGetFeatureLookups(this.fontMetrics, in featureTag, this.ScriptClass, buffer, out List<(Tag Feature, ushort Index, LookupTable LookupTable)>? lookups))
         {
             return false;
         }
@@ -1097,7 +1097,7 @@ internal sealed class IndicShaper : DefaultShaper
             // applied (see below), the shaping engine performs some final glyph
             // reordering before applying all the remaining font features to the entire
             // cluster.
-            bool tryPref = gSubTable?.TryGetFeatureLookups(fontMetrics, in PrefTag, this.ScriptClass, buffer.LanguageTags, out _) == true;
+            bool tryPref = gSubTable?.TryGetFeatureLookups(fontMetrics, in PrefTag, this.ScriptClass, buffer, out _) == true;
 
             // Find base consonant again.
             int basePosition = start;

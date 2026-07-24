@@ -252,7 +252,7 @@ internal class GSubTable : Table
                 {
                     Tag featureTag = stages[s].FeatureTag;
                     var lookupProbe = ShapingProbe.Enter();
-                    bool found = this.TryGetFeatureLookups(fontMetrics, in featureTag, current, buffer.LanguageTags, out List<(Tag Feature, ushort Index, LookupTable LookupTable)>? lookups);
+                    bool found = this.TryGetFeatureLookups(fontMetrics, in featureTag, current, buffer, out List<(Tag Feature, ushort Index, LookupTable LookupTable)>? lookups);
                     ShapingProbe.Exit(ShapingProbe.LookupResolve, lookupProbe);
                     if (!found || lookups is null)
                     {
@@ -421,14 +421,15 @@ internal class GSubTable : Table
     }
 
     /// <summary>
-    /// Tries to get the feature lookups for the given stage feature, script, and language.
+    /// Tries to get the feature lookups for the given stage feature, script, and the
+    /// buffer's language candidates.
     /// </summary>
     /// <param name="fontMetrics">The font metrics.</param>
     /// <param name="stageFeature">The feature tag for the current shaping stage.</param>
     /// <param name="script">The script class.</param>
-    /// <param name="languageTags">
-    /// The candidate OpenType language system tags, most specific first. An empty array
-    /// selects the default language system.
+    /// <param name="buffer">
+    /// The glyph shaping buffer carrying the language candidates and the per-pass
+    /// resolution cache.
     /// </param>
     /// <param name="value">When this method returns, contains the list of feature lookups if found.</param>
     /// <returns><see langword="true"/> if lookups were found; otherwise, <see langword="false"/>.</returns>
@@ -436,7 +437,7 @@ internal class GSubTable : Table
         FontMetrics fontMetrics,
         in Tag stageFeature,
         ScriptClass script,
-        Tag[] languageTags,
+        ShapingBuffer buffer,
         [NotNullWhen(true)] out List<(Tag Feature, ushort Index, LookupTable LookupTable)>? value)
     {
         if (this.ScriptList is null)
@@ -445,11 +446,22 @@ internal class GSubTable : Table
             return false;
         }
 
+        Tag[] languageTags = buffer.LanguageTags;
+
         // Feature variations resolve against the font's live variation coordinates, so
         // caching would mix results across differently configured variable fonts.
         if (this.FeatureVariations is not null)
         {
             value = this.ResolveFeatureLookups(fontMetrics, stageFeature, script, languageTags);
+            return value.Count > 0;
+        }
+
+        // The buffer fronts the table cache with a direct-mapped cache whose hit is
+        // one load and one compare, skipping the dictionary probe that hashes the
+        // language candidates per query.
+        if (buffer.TryGetFeatureLookupsCached(this, stageFeature, script, out object? cached))
+        {
+            value = (List<(Tag Feature, ushort Index, LookupTable LookupTable)>)cached!;
             return value.Count > 0;
         }
 
@@ -464,6 +476,7 @@ internal class GSubTable : Table
             this.featureLookupsCache.TryAdd(key, value);
         }
 
+        buffer.SetFeatureLookupsCached(stageFeature, script, value);
         return value.Count > 0;
     }
 

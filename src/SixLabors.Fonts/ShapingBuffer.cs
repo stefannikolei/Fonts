@@ -1346,7 +1346,9 @@ internal sealed class ShapingBuffer
 
     /// <summary>
     /// Inserts one record and its metrics entry at the given index, shifting later
-    /// entries in both streams right.
+    /// entries right. The metrics and positioning streams shift only on a positioning
+    /// buffer: substitution-phase edits precede stream seeding, so their contents are
+    /// undefined and copying them would be pure waste per edit.
     /// </summary>
     /// <param name="index">The zero-based index at which to insert.</param>
     /// <param name="item">The record to insert.</param>
@@ -1361,24 +1363,34 @@ internal sealed class ShapingBuffer
         }
 
         Array.Copy(this.data, index, this.data, index + 1, this.count - index);
-        Array.Copy(this.metrics, index, this.metrics, index + 1, this.count - index);
-        Array.Copy(this.positions, index, this.positions, index + 1, this.count - index);
+        if (this.Role == ShapingBufferRole.Positioning)
+        {
+            Array.Copy(this.metrics, index, this.metrics, index + 1, this.count - index);
+            Array.Copy(this.positions, index, this.positions, index + 1, this.count - index);
+            this.positions[index] = default;
+        }
+
         this.data[index] = item;
         this.metrics[index] = metricsEntry;
-        this.positions[index] = default;
         this.count++;
     }
 
     /// <summary>
-    /// Removes the record and metrics entry at the given index, shifting later entries
-    /// left. Stale entries beyond the count are overwritten by later appends.
+    /// Removes the record at the given index, shifting later entries left. The
+    /// metrics and positioning streams shift only on a positioning buffer, matching
+    /// the insertion contract. Stale entries beyond the count are overwritten by
+    /// later appends.
     /// </summary>
     /// <param name="index">The zero-based index to remove at.</param>
     private void RemoveAt(int index)
     {
         Array.Copy(this.data, index + 1, this.data, index, this.count - index - 1);
-        Array.Copy(this.metrics, index + 1, this.metrics, index, this.count - index - 1);
-        Array.Copy(this.positions, index + 1, this.positions, index, this.count - index - 1);
+        if (this.Role == ShapingBufferRole.Positioning)
+        {
+            Array.Copy(this.metrics, index + 1, this.metrics, index, this.count - index - 1);
+            Array.Copy(this.positions, index + 1, this.positions, index, this.count - index - 1);
+        }
+
         this.count--;
     }
 

@@ -293,8 +293,8 @@ internal class DefaultShaper : BaseShaper
         int count,
         Tag feature,
         bool enabled = true,
-        Action<ShapingBuffer, int, int>? preAction = null,
-        Action<ShapingBuffer, int, int>? postAction = null)
+        Action<ShapePlan, ShapingBuffer, int, int>? preAction = null,
+        Action<ShapePlan, ShapingBuffer, int, int>? postAction = null)
     {
         if (this.kerningMode == KerningMode.None)
         {
@@ -304,7 +304,7 @@ internal class DefaultShaper : BaseShaper
             }
         }
 
-        buffer.AddShapingFeatureRange(index, count, new TagEntry(feature, enabled));
+        buffer.AddShapingFeatureRange(index, count, new TagEntry(feature, enabled), this.Features.GetOrAddMask(feature));
 
         // First registration wins, matching the previous set semantics: a duplicate
         // tag keeps the originally supplied pre and post actions.

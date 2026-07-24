@@ -141,9 +141,8 @@ public static partial class TextShaper
     }
 
     /// <summary>
-    /// Shapes <paramref name="text"/> using caller-supplied shaping collections. Both
-    /// collections must share one <see cref="ShapingFeatureMap"/> and already reflect
-    /// <paramref name="options"/>.
+    /// Shapes <paramref name="text"/> using caller-supplied shaping buffers that
+    /// already reflect <paramref name="options"/>.
     /// </summary>
     /// <param name="text">The text to process.</param>
     /// <param name="options">The text options used while shaping.</param>
@@ -387,7 +386,7 @@ public static partial class TextShaper
         // deduplicates into a run table and per-glyph state splits into parallel
         // identity and geometry arrays of pure values, so the scratch can go back to
         // the pool before consumption and no metrics reference survives shaping.
-        ulong verticalMask = shaped.GetVerticalFeatureMask();
+        ulong verticalMask = ShapePlanFeatures.VerticalFeatureMask;
         int count = shaped.Count;
         ShapedGlyphInfo[] infos = new ShapedGlyphInfo[count];
         ShapedGlyphPosition[] positions = new ShapedGlyphPosition[count];

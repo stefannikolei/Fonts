@@ -13,14 +13,16 @@ namespace SixLabors.Fonts.Tables.AdvancedTypographic.Shapers;
 internal readonly struct ShapingStage : IEquatable<ShapingStage>
 {
     /// <summary>
-    /// The optional action to invoke before the feature is applied.
+    /// The optional action to invoke before the feature is applied. Actions receive
+    /// the plan whose segment is being shaped, so pause work never depends on
+    /// ambient state.
     /// </summary>
-    private readonly Action<ShapingBuffer, int, int>? preAction;
+    private readonly Action<ShapePlan, ShapingBuffer, int, int>? preAction;
 
     /// <summary>
     /// The optional action to invoke after the feature is applied.
     /// </summary>
-    private readonly Action<ShapingBuffer, int, int>? postAction;
+    private readonly Action<ShapePlan, ShapingBuffer, int, int>? postAction;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ShapingStage"/> struct.
@@ -28,7 +30,7 @@ internal readonly struct ShapingStage : IEquatable<ShapingStage>
     /// <param name="featureTag">The OpenType feature tag for this stage.</param>
     /// <param name="preAction">An optional action to invoke before the feature is applied.</param>
     /// <param name="postAction">An optional action to invoke after the feature is applied.</param>
-    public ShapingStage(Tag featureTag, Action<ShapingBuffer, int, int>? preAction, Action<ShapingBuffer, int, int>? postAction)
+    public ShapingStage(Tag featureTag, Action<ShapePlan, ShapingBuffer, int, int>? preAction, Action<ShapePlan, ShapingBuffer, int, int>? postAction)
     {
         this.FeatureTag = featureTag;
         this.preAction = preAction;
@@ -57,20 +59,22 @@ internal readonly struct ShapingStage : IEquatable<ShapingStage>
     /// <summary>
     /// Invokes the pre-processing action for this shaping stage, if one was provided.
     /// </summary>
+    /// <param name="plan">The plan whose segment is being shaped.</param>
     /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based index of the first element.</param>
     /// <param name="count">The number of elements.</param>
-    public void PreProcessFeature(ShapingBuffer buffer, int index, int count)
-        => this.preAction?.Invoke(buffer, index, count);
+    public void PreProcessFeature(ShapePlan plan, ShapingBuffer buffer, int index, int count)
+        => this.preAction?.Invoke(plan, buffer, index, count);
 
     /// <summary>
     /// Invokes the post-processing action for this shaping stage, if one was provided.
     /// </summary>
+    /// <param name="plan">The plan whose segment is being shaped.</param>
     /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based index of the first element.</param>
     /// <param name="count">The number of elements.</param>
-    public void PostProcessFeature(ShapingBuffer buffer, int index, int count)
-        => this.postAction?.Invoke(buffer, index, count);
+    public void PostProcessFeature(ShapePlan plan, ShapingBuffer buffer, int index, int count)
+        => this.postAction?.Invoke(plan, buffer, index, count);
 
     /// <inheritdoc />
     public override bool Equals(object? obj)

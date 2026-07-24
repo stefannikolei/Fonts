@@ -254,9 +254,7 @@ internal class GPosTable : Table
 
             // Plan positioning features for each glyph. Records seeded across buffers
             // had their feature registrations cleared, so this pass re-plans.
-            buffer.CurrentPlan = shapePlan;
             shapePlan.Shaper.Plan(buffer, index, count);
-            buffer.CurrentPlan = null;
 
             updated |= this.PositionSegment(
                 fontMetrics,
@@ -276,35 +274,6 @@ internal class GPosTable : Table
         }
 
         return updated;
-    }
-
-    /// <summary>
-    /// Fills the merge scratch from a plan group's prebuilt lookup list, combining
-    /// the per-pass masks of every feature that registered each lookup. The prebuilt
-    /// list already carries lookup-index order and deduplication, so this is a copy
-    /// with mask lookups rather than a merge.
-    /// </summary>
-    /// <param name="group">The plan stage group to read.</param>
-    /// <param name="featureMap">The pass's feature bit assignment.</param>
-    /// <param name="merged">The merge scratch to fill.</param>
-    private static void FillMergedFromPlan(
-        ShapePlanStageGroup<LookupTable> group,
-        ShapingFeatureMap featureMap,
-        List<(Tag Feature, ushort Index, LookupTable LookupTable, ulong Mask)> merged)
-    {
-        merged.Clear();
-        List<(Tag Feature, ushort Index, LookupTable LookupTable, Tag[] Contributing)> lookups = group.Lookups;
-        for (int i = 0; i < lookups.Count; i++)
-        {
-            (Tag feature, ushort lookupIndex, LookupTable lookupTable, Tag[] contributing) = lookups[i];
-            ulong mask = 0;
-            for (int c = 0; c < contributing.Length; c++)
-            {
-                mask |= featureMap.GetMask(contributing[c]);
-            }
-
-            merged.Add((feature, lookupIndex, lookupTable, mask));
-        }
     }
 
     /// <summary>
@@ -346,22 +315,17 @@ internal class GPosTable : Table
         // feature's lookups apply together in lookup-list order, the order the
         // specification defines for lookups within a single application pass. A
         // lookup registered by several of the group's features applies once with
-        // their glyph masks combined. Group boundaries and merged lookup lists are
-        // prebuilt on the plan; only the per-pass masks are combined here.
-        buffer.CurrentPlan = shapePlan;
+        // their glyph masks combined. Group boundaries, merged lookup lists, and
+        // entry masks are all prebuilt on the plan.
         List<ShapePlanStageGroup<LookupTable>> groups = shapePlan.GetOrBuildGPosStageGroups(this);
         List<ShapingStage> shapingStages = shapePlan.Stages;
         SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, default, 0);
-        List<(Tag Feature, ushort Index, LookupTable LookupTable, ulong Mask)> merged = buffer.GPosLookupScratch;
         for (int g = 0; g < groups.Count; g++)
         {
             ShapePlanStageGroup<LookupTable> group = groups[g];
+            List<(Tag Feature, ushort Index, LookupTable LookupTable, ulong Mask)> merged = group.Lookups;
 
-            shapingStages[group.Start].PreProcessFeature(buffer, index, count);
-
-            var lookupProbe = ShapingProbe.Enter();
-            FillMergedFromPlan(group, buffer.FeatureMap, merged);
-            ShapingProbe.Exit(ShapingProbe.LookupResolve, lookupProbe);
+            shapingStages[group.Start].PreProcessFeature(shapePlan, buffer, index, count);
 
             for (int m = 0; m < merged.Count; m++)
             {
@@ -407,11 +371,10 @@ internal class GPosTable : Table
                 ShapingProbe.ExitFeature("GPOS", feature, featureStart, featureApplies);
             }
 
-            shapingStages[group.End - 1].PostProcessFeature(buffer, index, count);
+            shapingStages[group.End - 1].PostProcessFeature(shapePlan, buffer, index, count);
         }
 
         EndLookups:
-        buffer.CurrentPlan = null;
         if (shapePlan.Shaper.MarkZeroingMode == MarkZeroingMode.PostGpos)
         {
             ZeroMarkAdvances(fontMetrics, buffer, index, count);

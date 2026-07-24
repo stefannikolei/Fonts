@@ -19,12 +19,7 @@ namespace SixLabors.Fonts;
 /// </remarks>
 internal sealed class ShapingScratch
 {
-    /// <summary>
-    /// The pass-wide feature bit assignment, reset per call.
-    /// </summary>
-    private ShapingFeatureMap? featureMap;
-
-    /// <summary>
+        /// <summary>
     /// The per-font-run workspace buffer glyphs are substituted in.
     /// </summary>
     private ShapingBuffer? workspace;
@@ -41,15 +36,13 @@ internal sealed class ShapingScratch
     /// <returns>The reusable buffers, sharing one feature map.</returns>
     public (ShapingBuffer Workspace, ShapingBuffer Result) Prepare(TextOptions options)
     {
-        if (this.featureMap is null)
+        if (this.workspace is null)
         {
-            this.featureMap = new();
-            this.workspace = new(options, this.featureMap, ShapingBufferRole.Substitution);
-            this.result = new(options, this.featureMap, ShapingBufferRole.Positioning);
+            this.workspace = new(options, ShapingBufferRole.Substitution);
+            this.result = new(options, ShapingBufferRole.Positioning);
         }
         else
         {
-            this.featureMap.Reset();
             this.workspace!.Reset(options);
             this.result!.Reset(options);
 

@@ -154,6 +154,7 @@ internal sealed class LookupType4Format1SubTable : LookupSubTable
         GSubTable table,
         ShapingBuffer buffer,
         Tag feature,
+        ulong lookupMask,
         int index,
         int count)
     {
@@ -182,7 +183,7 @@ internal sealed class LookupType4Format1SubTable : LookupSubTable
                 continue;
             }
 
-            if (!AdvancedTypographicUtils.MatchInputSequence(iterator, feature, 1, ligatureTable.ComponentGlyphs, matchBuffer))
+            if (!AdvancedTypographicUtils.MatchInputSequence(iterator, lookupMask, 1, ligatureTable.ComponentGlyphs, matchBuffer))
             {
                 continue;
             }

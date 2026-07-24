@@ -255,10 +255,11 @@ internal sealed class UniversalShaper : DefaultShaper
     /// <summary>
     /// Identifies syllables using the Universal Shaping Engine state machine and assigns shaping info to each glyph.
     /// </summary>
+    /// <param name="plan">The plan whose segment is being shaped.</param>
     /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private void SetupSyllables(ShapingBuffer buffer, int index, int count)
+    private void SetupSyllables(ShapePlan plan, ShapingBuffer buffer, int index, int count)
     {
         if (buffer.Role != ShapingBufferRole.Substitution)
         {
@@ -303,7 +304,7 @@ internal sealed class UniversalShaper : DefaultShaper
 
             for (int i = match.StartIndex; i < match.StartIndex + limit; i++)
             {
-                buffer.AddShapingFeature(i + index, new TagEntry(RcltTag, true));
+                buffer.AddShapingFeature(i + index, new TagEntry(RcltTag, true), this.Features.GetOrAddMask(RcltTag));
             }
         }
     }
@@ -311,10 +312,11 @@ internal sealed class UniversalShaper : DefaultShaper
     /// <summary>
     /// Clears substitution flags on all glyphs in the range, preparing for the next substitution pass.
     /// </summary>
+    /// <param name="plan">The plan whose segment is being shaped.</param>
     /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private static void ClearSubstitutionFlags(ShapingBuffer buffer, int index, int count)
+    private static void ClearSubstitutionFlags(ShapePlan plan, ShapingBuffer buffer, int index, int count)
     {
         if (buffer.Role != ShapingBufferRole.Substitution)
         {
@@ -332,10 +334,11 @@ internal sealed class UniversalShaper : DefaultShaper
     /// <summary>
     /// Records glyphs substituted by the 'rphf' feature by marking their category as repha ("R").
     /// </summary>
+    /// <param name="plan">The plan whose segment is being shaped.</param>
     /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private static void RecordRhpf(ShapingBuffer buffer, int index, int count)
+    private static void RecordRhpf(ShapePlan plan, ShapingBuffer buffer, int index, int count)
     {
         if (buffer.Role != ShapingBufferRole.Substitution)
         {
@@ -343,7 +346,7 @@ internal sealed class UniversalShaper : DefaultShaper
         }
 
         int end = index + count;
-        ulong rphfMask = buffer.FeatureMap.GetMask(RphfTag);
+        ulong rphfMask = plan.Features.GetMask(RphfTag);
         for (int i = index; i < end; i++)
         {
             ref GlyphShapingData data = ref buffer[i];
@@ -361,10 +364,11 @@ internal sealed class UniversalShaper : DefaultShaper
     /// <summary>
     /// Records glyphs substituted by the 'pref' feature by marking their category as pre-base vowel ("VPre").
     /// </summary>
+    /// <param name="plan">The plan whose segment is being shaped.</param>
     /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private static void RecordPref(ShapingBuffer buffer, int index, int count)
+    private static void RecordPref(ShapePlan plan, ShapingBuffer buffer, int index, int count)
     {
         if (buffer.Role != ShapingBufferRole.Substitution)
         {
@@ -390,10 +394,11 @@ internal sealed class UniversalShaper : DefaultShaper
     /// Reorders glyphs within syllables, handling repha movement, pre-base vowel movement,
     /// and dotted circle insertion for broken clusters.
     /// </summary>
+    /// <param name="plan">The plan whose segment is being shaped.</param>
     /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private void Reorder(ShapingBuffer buffer, int index, int count)
+    private void Reorder(ShapePlan plan, ShapingBuffer buffer, int index, int count)
     {
         if (buffer.Role != ShapingBufferRole.Substitution)
         {

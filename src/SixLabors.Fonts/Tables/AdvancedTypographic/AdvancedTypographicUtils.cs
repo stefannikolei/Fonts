@@ -98,6 +98,7 @@ internal static class AdvancedTypographicUtils
     /// <param name="fontMetrics">The font metrics.</param>
     /// <param name="table">The GSUB table.</param>
     /// <param name="feature">The feature tag being applied.</param>
+    /// <param name="lookupMask">The applying lookup's combined mask, inherited by the nested lookups.</param>
     /// <param name="lookupFlags">The lookup flags for glyph filtering.</param>
     /// <param name="markFilteringSet">The mark filtering set index.</param>
     /// <param name="records">The sequence lookup records specifying which lookups to apply at which positions.</param>
@@ -109,6 +110,7 @@ internal static class AdvancedTypographicUtils
         FontMetrics fontMetrics,
         GSubTable table,
         Tag feature,
+        ulong lookupMask,
         LookupFlags lookupFlags,
         ushort markFilteringSet,
         SequenceLookupRecord[] records,
@@ -131,7 +133,7 @@ internal static class AdvancedTypographicUtils
             iterator.Index = index;
             iterator.Increment(sequenceIndex);
             GSub.LookupTable lookup = table.LookupList.LookupTables[lookupIndex];
-            _ = lookup.TrySubstitution(fontMetrics, table, buffer, feature, iterator.Index, count - (iterator.Index - index));
+            _ = lookup.TrySubstitution(fontMetrics, table, buffer, feature, lookupMask, iterator.Index, count - (iterator.Index - index));
 
             // Account for substitutions changing the length of the buffer.
             if (buffer.Count != currentCount)
@@ -188,18 +190,16 @@ internal static class AdvancedTypographicUtils
     }
 
     /// <summary>
-    /// Matches an input glyph sequence by glyph ID, verifying that each glyph has the specified feature enabled.
+    /// Matches an input glyph sequence by glyph ID, verifying that each glyph has the applying lookup enabled.
     /// </summary>
     /// <param name="iterator">The skipping glyph iterator.</param>
-    /// <param name="feature">The feature tag that must be enabled on matched glyphs.</param>
+    /// <param name="featureMask">The applying lookup's combined mask; matched glyphs must have it enabled.</param>
     /// <param name="increment">The initial increment from the iterator's current position.</param>
     /// <param name="sequence">The array of glyph IDs to match.</param>
     /// <param name="matches">A span to store matched glyph indices, or default if not needed.</param>
     /// <returns><see langword="true"/> if the entire sequence was matched; otherwise, <see langword="false"/>.</returns>
-    public static bool MatchInputSequence(SkippingGlyphIterator iterator, Tag feature, ushort increment, ushort[] sequence, Span<int> matches)
+    public static bool MatchInputSequence(SkippingGlyphIterator iterator, ulong featureMask, ushort increment, ushort[] sequence, Span<int> matches)
     {
-        ulong featureMask = iterator.Collection.FeatureMap.GetMask(feature);
-
         // The mask travels as match state so the lambda stays static: a capturing
         // lambda here would allocate a closure and delegate on every ligature attempt.
         return Match(
@@ -478,7 +478,7 @@ internal static class AdvancedTypographicUtils
         markPosition.Bounds.X = baseXY.XCoordinate - markXY.XCoordinate;
         markPosition.Bounds.Y = baseXY.YCoordinate - markXY.YCoordinate;
         markPosition.MarkAttachment = baseGlyphIndex;
-        markData.AppliedFeatureMask |= buffer.FeatureMap.GetOrAddMask(feature);
+        markData.AppliedFeatureMask |= ShapePlanFeatures.GetVerticalMask(feature);
     }
 
     /// <summary>
@@ -512,7 +512,7 @@ internal static class AdvancedTypographicUtils
         }
 
         ref GlyphShapingData current = ref buffer[index];
-        current.AppliedFeatureMask |= buffer.FeatureMap.GetOrAddMask(feature);
+        current.AppliedFeatureMask |= ShapePlanFeatures.GetVerticalMask(feature);
     }
 
     /// <summary>

@@ -116,6 +116,13 @@ internal sealed class ShapePlan
     public Tag[] LanguageTags { get; }
 
     /// <summary>
+    /// Gets the plan's feature bit assignment, shared with the shaper that created
+    /// it. Bits are assigned in stage-list order when the groups are built and
+    /// append-only afterwards, so plans of the same identity assign identical bits.
+    /// </summary>
+    public ShapePlanFeatures Features => this.Shaper.Features;
+
+    /// <summary>
     /// Gets a value indicating whether the plan may be cached. A substitution table
     /// carrying feature variations resolves against live variation coordinates, so
     /// its plans must be rebuilt per operation.
@@ -204,12 +211,21 @@ internal sealed class ShapePlan
         this.gposStageGroups = null;
         this.resolvedGsubFeatures.Clear();
 
+        // Assign every stage feature its mask bit in stage-list order before any
+        // group is resolved. This single assignment point keeps layouts identical
+        // between plans of the same identity, which keeps applied masks portable
+        // across the pass's buffers.
+        for (int s = 0; s < this.Stages.Count; s++)
+        {
+            _ = this.Features.GetOrAddMask(this.Stages[s].FeatureTag);
+        }
+
         List<ShapePlanStageGroup<GSub.LookupTable>> groups = new();
         GSubTable? gsubTable = this.gsubTable;
         FontMetrics fontMetrics = this.FontMetrics;
         ScriptClass script = this.Script;
         Tag[] languageTags = this.LanguageTags;
-        BuildStageGroups(
+        this.BuildStageGroups(
             this.Stages,
             groups,
             (in Tag featureTag, out List<(Tag Feature, ushort Index, GSub.LookupTable LookupTable)>? lookups) =>
@@ -242,7 +258,7 @@ internal sealed class ShapePlan
         FontMetrics fontMetrics = this.FontMetrics;
         ScriptClass script = this.Script;
         Tag[] languageTags = this.LanguageTags;
-        BuildStageGroups(
+        this.BuildStageGroups(
             this.Stages,
             groups,
             (in Tag featureTag, out List<(Tag Feature, ushort Index, GPos.LookupTable LookupTable)>? lookups) =>
@@ -289,14 +305,14 @@ internal sealed class ShapePlan
     /// <summary>
     /// Computes the pause-delimited stage groups over the stage list and resolves
     /// each group's features into a merged lookup list sorted by lookup index. A
-    /// lookup registered by several of a group's features gains each feature in its
-    /// contributing set instead of a second entry.
+    /// lookup registered by several of a group's features gains their combined
+    /// plan-assigned mask instead of a second entry.
     /// </summary>
     /// <typeparam name="TLookup">The layout table's lookup type.</typeparam>
     /// <param name="stages">The stage list to group.</param>
     /// <param name="groups">The group list to fill.</param>
     /// <param name="resolver">The per-feature lookup resolver for the table.</param>
-    private static void BuildStageGroups<TLookup>(
+    private void BuildStageGroups<TLookup>(
         List<ShapingStage> stages,
         List<ShapePlanStageGroup<TLookup>> groups,
         ShapePlanLookupResolver<TLookup> resolver)
@@ -327,12 +343,13 @@ internal sealed class ShapePlan
             }
 
             // Resolve each stage feature in the group to its lookups and fold
-            // them into one list ordered by lookup index. The scan below runs
+            // them into one list ordered by lookup index, freezing each entry's
+            // combined mask from the plan's assignments. The scan below runs
             // backwards from the tail because resolved lookups arrive mostly
             // ascending, so the insertion point is almost always at or near the
             // end.
             ShapePlanStageGroup<TLookup> group = new(stageIndex, groupEnd);
-            List<(Tag Feature, ushort Index, TLookup LookupTable, Tag[] Contributing)> merged = group.Lookups;
+            List<(Tag Feature, ushort Index, TLookup LookupTable, ulong Mask)> merged = group.Lookups;
             for (int s = stageIndex; s < groupEnd; s++)
             {
                 Tag featureTag = stages[s].FeatureTag;
@@ -341,28 +358,22 @@ internal sealed class ShapePlan
                     continue;
                 }
 
+                ulong featureMask = this.Features.GetOrAddMask(featureTag);
                 foreach ((Tag Feature, ushort Index, TLookup LookupTable) featureLookup in lookups)
                 {
                     // Scan from the tail toward the head. Three outcomes: the
-                    // lookup index is already present, so this feature joins its
-                    // contributing set and no entry is added; a smaller index is
-                    // found, so the new entry inserts directly after it; or the
-                    // head is reached, so the new entry inserts first.
+                    // lookup index is already present, so this feature's mask
+                    // joins the entry; a smaller index is found, so the new entry
+                    // inserts directly after it; or the head is reached, so the
+                    // new entry inserts first.
                     int insertAt = merged.Count;
                     bool alreadyMerged = false;
                     while (insertAt > 0)
                     {
-                        (Tag Feature, ushort Index, TLookup LookupTable, Tag[] Contributing) prior = merged[insertAt - 1];
+                        (Tag Feature, ushort Index, TLookup LookupTable, ulong Mask) prior = merged[insertAt - 1];
                         if (prior.Index == featureLookup.Index)
                         {
-                            // Same lookup registered by another of the group's
-                            // features: record the feature so apply time can
-                            // combine both features' masks, exactly as two
-                            // separate entries would have.
-                            Tag[] contributing = new Tag[prior.Contributing.Length + 1];
-                            prior.Contributing.CopyTo(contributing, 0);
-                            contributing[^1] = featureTag;
-                            merged[insertAt - 1] = (prior.Feature, prior.Index, prior.LookupTable, contributing);
+                            merged[insertAt - 1] = (prior.Feature, prior.Index, prior.LookupTable, prior.Mask | featureMask);
                             alreadyMerged = true;
                             break;
                         }
@@ -377,7 +388,7 @@ internal sealed class ShapePlan
 
                     if (!alreadyMerged)
                     {
-                        merged.Insert(insertAt, (featureLookup.Feature, featureLookup.Index, featureLookup.LookupTable, new[] { featureTag }));
+                        merged.Insert(insertAt, (featureLookup.Feature, featureLookup.Index, featureLookup.LookupTable, featureMask));
                     }
                 }
             }

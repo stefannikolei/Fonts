@@ -123,6 +123,7 @@ internal sealed class LookupType3Format1SubTable : LookupSubTable
         GSubTable table,
         ShapingBuffer buffer,
         Tag feature,
+        ulong lookupMask,
         int index,
         int count)
     {

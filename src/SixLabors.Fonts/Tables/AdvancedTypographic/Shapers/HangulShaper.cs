@@ -193,7 +193,7 @@ internal sealed class HangulShaper : DefaultShaper
             // Uniscribe does not apply 'calt' for Hangul, and certain fonts
             // (Noto Sans CJK, Source Sans Han, etc) apply all of jamo lookups
             // in calt, which is not desirable.
-            buffer.DisableShapingFeature(i, CaltTag);
+            buffer.DisableShapingFeature(i, this.Features.GetMask(CaltTag));
         }
 
         // Apply the state machine to map glyphs to features.
@@ -268,22 +268,22 @@ internal sealed class HangulShaper : DefaultShaper
                 switch (GetSyllableType(codePoint))
                 {
                     case L:
-                        buffer.EnableShapingFeature(i, LjmoTag);
+                        buffer.EnableShapingFeature(i, this.Features.GetMask(LjmoTag));
                         break;
                     case V:
-                        buffer.EnableShapingFeature(i, VjmoTag);
+                        buffer.EnableShapingFeature(i, this.Features.GetMask(VjmoTag));
                         break;
                     case T:
-                        buffer.EnableShapingFeature(i, TjmoTag);
+                        buffer.EnableShapingFeature(i, this.Features.GetMask(TjmoTag));
                         break;
                     case LV:
-                        buffer.EnableShapingFeature(i, LjmoTag);
-                        buffer.EnableShapingFeature(i, VjmoTag);
+                        buffer.EnableShapingFeature(i, this.Features.GetMask(LjmoTag));
+                        buffer.EnableShapingFeature(i, this.Features.GetMask(VjmoTag));
                         break;
                     case LVT:
-                        buffer.EnableShapingFeature(i, LjmoTag);
-                        buffer.EnableShapingFeature(i, VjmoTag);
-                        buffer.EnableShapingFeature(i, TjmoTag);
+                        buffer.EnableShapingFeature(i, this.Features.GetMask(LjmoTag));
+                        buffer.EnableShapingFeature(i, this.Features.GetMask(VjmoTag));
+                        buffer.EnableShapingFeature(i, this.Features.GetMask(TjmoTag));
                         break;
                 }
             }
@@ -364,8 +364,8 @@ internal sealed class HangulShaper : DefaultShaper
             ii[0] = ljmo;
 
             buffer.Replace(index, ii, KnownFeatureTags.GlyphCompositionDecomposition);
-            buffer.EnableShapingFeature(index, LjmoTag);
-            buffer.EnableShapingFeature(index + 1, VjmoTag);
+            buffer.EnableShapingFeature(index, this.Features.GetMask(LjmoTag));
+            buffer.EnableShapingFeature(index + 1, this.Features.GetMask(VjmoTag));
             return index + 1;
         }
 
@@ -375,9 +375,9 @@ internal sealed class HangulShaper : DefaultShaper
         iii[0] = ljmo;
 
         buffer.Replace(index, iii, KnownFeatureTags.GlyphCompositionDecomposition);
-        buffer.EnableShapingFeature(index, LjmoTag);
-        buffer.EnableShapingFeature(index + 1, VjmoTag);
-        buffer.EnableShapingFeature(index + 2, TjmoTag);
+        buffer.EnableShapingFeature(index, this.Features.GetMask(LjmoTag));
+        buffer.EnableShapingFeature(index + 1, this.Features.GetMask(VjmoTag));
+        buffer.EnableShapingFeature(index + 2, this.Features.GetMask(TjmoTag));
         return index + 2;
     }
 
@@ -456,17 +456,17 @@ internal sealed class HangulShaper : DefaultShaper
         // Didn't compose (either a non-combining component or unsupported by font).
         if (ljmo >= 0)
         {
-            buffer.EnableShapingFeature(ljmo, LjmoTag);
+            buffer.EnableShapingFeature(ljmo, this.Features.GetMask(LjmoTag));
         }
 
         if (vjmo >= 0)
         {
-            buffer.EnableShapingFeature(vjmo, VjmoTag);
+            buffer.EnableShapingFeature(vjmo, this.Features.GetMask(VjmoTag));
         }
 
         if (tjmo >= 0)
         {
-            buffer.EnableShapingFeature(tjmo, TjmoTag);
+            buffer.EnableShapingFeature(tjmo, this.Features.GetMask(TjmoTag));
         }
 
         if (prevType == LV)

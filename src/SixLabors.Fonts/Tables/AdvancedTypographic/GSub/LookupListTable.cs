@@ -194,6 +194,7 @@ internal sealed class LookupTable
     /// <param name="table">The GSUB table.</param>
     /// <param name="buffer">The glyph substitution buffer.</param>
     /// <param name="feature">The feature tag to apply.</param>
+    /// <param name="lookupMask">The applying lookup's combined mask.</param>
     /// <param name="index">The index in the buffer at which to attempt substitution.</param>
     /// <param name="count">The number of glyphs in the input sequence to consider.</param>
     /// <returns><see langword="true"/> if a substitution was performed; otherwise, <see langword="false"/>.</returns>
@@ -202,6 +203,7 @@ internal sealed class LookupTable
         GSubTable table,
         ShapingBuffer buffer,
         Tag feature,
+        ulong lookupMask,
         int index,
         int count)
     {
@@ -221,7 +223,7 @@ internal sealed class LookupTable
                 ShapingProbe.SubTableProbes++;
             }
 
-            if (subTable.TrySubstitution(fontMetrics, table, buffer, feature, index, count))
+            if (subTable.TrySubstitution(fontMetrics, table, buffer, feature, lookupMask, index, count))
             {
                 // A lookup is finished for a glyph after the client locates the target
                 // glyph or glyph context and performs a substitution, if specified.
@@ -341,6 +343,7 @@ internal abstract class LookupSubTable
     /// <param name="table">The GSUB table.</param>
     /// <param name="buffer">The glyph substitution buffer.</param>
     /// <param name="feature">The feature tag to apply.</param>
+    /// <param name="lookupMask">The applying lookup's combined mask.</param>
     /// <param name="index">The index in the buffer at which to attempt substitution.</param>
     /// <param name="count">The number of glyphs in the input sequence to consider.</param>
     /// <returns><see langword="true"/> if a substitution was performed; otherwise, <see langword="false"/>.</returns>
@@ -349,6 +352,7 @@ internal abstract class LookupSubTable
         GSubTable table,
         ShapingBuffer buffer,
         Tag feature,
+        ulong lookupMask,
         int index,
         int count);
 

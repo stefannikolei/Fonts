@@ -5,8 +5,9 @@ namespace SixLabors.Fonts.Tables.AdvancedTypographic;
 
 /// <summary>
 /// One pause-delimited stage group of a shape plan: the stage index range it covers
-/// and the group's lookups merged into lookup-index order, each entry recording every
-/// feature that registered it so per-pass masks can be combined at apply time.
+/// and the group's lookups merged into lookup-index order, each entry carrying the
+/// combined plan-assigned mask of every feature that registered it, frozen when the
+/// plan is built.
 /// </summary>
 /// <typeparam name="TLookup">The layout table's lookup type.</typeparam>
 internal sealed class ShapePlanStageGroup<TLookup>
@@ -38,9 +39,8 @@ internal sealed class ShapePlanStageGroup<TLookup>
 
     /// <summary>
     /// Gets the group's lookups merged across its stage features into lookup-index
-    /// order. A lookup registered by several features appears once, with every
-    /// registering feature recorded so apply-time masks combine exactly as separate
-    /// entries would have.
+    /// order. A lookup registered by several features appears once with their
+    /// plan-assigned masks combined, so application consumes the list directly.
     /// </summary>
-    public List<(Tag Feature, ushort Index, TLookup LookupTable, Tag[] Contributing)> Lookups { get; }
+    public List<(Tag Feature, ushort Index, TLookup LookupTable, ulong Mask)> Lookups { get; }
 }

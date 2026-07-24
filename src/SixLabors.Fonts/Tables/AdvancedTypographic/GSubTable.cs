@@ -198,7 +198,6 @@ internal class GSubTable : Table
             ShapePlan shapePlan = buffer.GetOrCreatePlan(current, unicodeScriptTag, fontMetrics);
             ShapingProbe.Exit(ShapingProbe.SubShaperCreate, createProbe);
 
-            buffer.CurrentPlan = shapePlan;
             BaseShaper shaper = shapePlan.Shaper;
 
             // Plan substitution features for each glyph.
@@ -217,19 +216,18 @@ internal class GSubTable : Table
             // feature's lookups apply together in lookup-list order, the order the
             // specification defines for lookups within a single application pass. A
             // lookup registered by several of the group's features applies once with
-            // their glyph masks combined. Group boundaries and merged lookup lists
-            // are prebuilt on the plan; only the per-pass masks are combined here.
+            // their glyph masks combined. Group boundaries, merged lookup lists, and
+            // entry masks are all prebuilt on the plan.
             List<ShapePlanStageGroup<LookupTable>> groups = shapePlan.GetOrBuildGSubStageGroups();
             List<ShapingStage> stages = shapePlan.Stages;
             SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, default, 0);
-            List<(Tag Feature, ushort Index, LookupTable LookupTable, ulong Mask)> merged = buffer.GSubLookupScratch;
             for (int g = 0; g < groups.Count; g++)
             {
                 ShapePlanStageGroup<LookupTable> group = groups[g];
 
                 collectionCount = buffer.Count;
                 var preProbe = ShapingProbe.Enter();
-                stages[group.Start].PreProcessFeature(buffer, index, count);
+                stages[group.Start].PreProcessFeature(shapePlan, buffer, index, count);
                 ShapingProbe.Exit(ShapingProbe.SubStagePrePost, preProbe);
 
                 // Account for substitutions changing the length of the buffer.
@@ -237,16 +235,12 @@ internal class GSubTable : Table
                 count += delta;
                 i += delta;
 
-                var lookupProbe = ShapingProbe.Enter();
-                FillMergedFromPlan(group, buffer.FeatureMap, merged);
-                ShapingProbe.Exit(ShapingProbe.LookupResolve, lookupProbe);
-
                 var applyProbe = ShapingProbe.Enter();
                 this.ApplyMergedLookups(
                     fontMetrics,
                     buffer,
                     ref iterator,
-                    merged,
+                    group.Lookups,
                     index,
                     ref count,
                     ref i,
@@ -258,7 +252,7 @@ internal class GSubTable : Table
 
                 collectionCount = buffer.Count;
                 var postProbe = ShapingProbe.Enter();
-                stages[group.End - 1].PostProcessFeature(buffer, index, count);
+                stages[group.End - 1].PostProcessFeature(shapePlan, buffer, index, count);
                 ShapingProbe.Exit(ShapingProbe.SubStagePrePost, postProbe);
 
                 // Account for substitutions changing the length of the buffer.
@@ -266,8 +260,6 @@ internal class GSubTable : Table
                 count += delta;
                 i += delta;
             }
-
-            buffer.CurrentPlan = null;
 
             // Record the segment with its post-substitution range so the in-place
             // positioning pass can reuse the plan; one plan then drives both tables.
@@ -357,7 +349,7 @@ internal class GSubTable : Table
                 }
 
                 collectionCount = buffer.Count;
-                featureLookupTable.TrySubstitution(fontMetrics, this, buffer, feature, iterator.Index, count - (iterator.Index - index));
+                featureLookupTable.TrySubstitution(fontMetrics, this, buffer, feature, featureMask, iterator.Index, count - (iterator.Index - index));
                 featureApplies++;
                 iterator.Next();
 
@@ -368,35 +360,6 @@ internal class GSubTable : Table
             }
 
             ShapingProbe.ExitFeature("GSUB", feature, featureStart, featureApplies);
-        }
-    }
-
-    /// <summary>
-    /// Fills the merge scratch from a plan group's prebuilt lookup list, combining
-    /// the per-pass masks of every feature that registered each lookup. The prebuilt
-    /// list already carries lookup-index order and deduplication, so this is a copy
-    /// with mask lookups rather than a merge.
-    /// </summary>
-    /// <param name="group">The plan stage group to read.</param>
-    /// <param name="featureMap">The pass's feature bit assignment.</param>
-    /// <param name="merged">The merge scratch to fill.</param>
-    private static void FillMergedFromPlan(
-        ShapePlanStageGroup<LookupTable> group,
-        ShapingFeatureMap featureMap,
-        List<(Tag Feature, ushort Index, LookupTable LookupTable, ulong Mask)> merged)
-    {
-        merged.Clear();
-        List<(Tag Feature, ushort Index, LookupTable LookupTable, Tag[] Contributing)> lookups = group.Lookups;
-        for (int i = 0; i < lookups.Count; i++)
-        {
-            (Tag feature, ushort lookupIndex, LookupTable lookupTable, Tag[] contributing) = lookups[i];
-            ulong mask = 0;
-            for (int c = 0; c < contributing.Length; c++)
-            {
-                mask |= featureMap.GetMask(contributing[c]);
-            }
-
-            merged.Add((feature, lookupIndex, lookupTable, mask));
         }
     }
 

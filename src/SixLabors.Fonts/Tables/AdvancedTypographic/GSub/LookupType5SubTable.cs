@@ -88,6 +88,7 @@ internal sealed class LookupType5Format1SubTable : LookupSubTable
         GSubTable table,
         ShapingBuffer buffer,
         Tag feature,
+        ulong lookupMask,
         int index,
         int count)
     {
@@ -126,6 +127,7 @@ internal sealed class LookupType5Format1SubTable : LookupSubTable
                 fontMetrics,
                 table,
                 feature,
+                lookupMask,
                 this.LookupFlags,
                 this.MarkFilteringSet,
                 ruleTable.SequenceLookupRecords,
@@ -241,6 +243,7 @@ internal sealed class LookupType5Format2SubTable : LookupSubTable
         GSubTable table,
         ShapingBuffer buffer,
         Tag feature,
+        ulong lookupMask,
         int index,
         int count)
     {
@@ -289,6 +292,7 @@ internal sealed class LookupType5Format2SubTable : LookupSubTable
                 fontMetrics,
                 table,
                 feature,
+                lookupMask,
                 this.LookupFlags,
                 this.MarkFilteringSet,
                 ruleTable.SequenceLookupRecords,
@@ -411,6 +415,7 @@ internal sealed class LookupType5Format3SubTable : LookupSubTable
         GSubTable table,
         ShapingBuffer buffer,
         Tag feature,
+        ulong lookupMask,
         int index,
         int count)
     {
@@ -432,6 +437,7 @@ internal sealed class LookupType5Format3SubTable : LookupSubTable
             fontMetrics,
             table,
             feature,
+            lookupMask,
             this.LookupFlags,
             this.MarkFilteringSet,
             this.sequenceLookupRecords,

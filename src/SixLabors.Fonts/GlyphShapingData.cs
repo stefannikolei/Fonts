@@ -240,9 +240,10 @@ internal struct GlyphShapingData
 
     /// <summary>
     /// Gets or sets the mask of features a shaper has registered for this glyph, enabled
-    /// or not. Bits are assigned by the shaping pass's <see cref="ShapingFeatureMap"/>.
-    /// Enabling a feature only ever reveals a registered bit; a feature that was never
-    /// registered for the glyph cannot be enabled.
+    /// or not. Bits are assigned by the owning plan's
+    /// <see cref="Tables.AdvancedTypographic.ShapePlanFeatures"/>. Enabling a feature
+    /// only ever reveals a registered bit; a feature that was never registered for the
+    /// glyph cannot be enabled.
     /// </summary>
     public ulong RegisteredFeatureMask { get; set; }
 
@@ -255,10 +256,10 @@ internal struct GlyphShapingData
 
     /// <summary>
     /// Gets or sets the mask of features whose lookups actually changed this glyph.
-    /// Read after shaping, for example to detect that a vertical alternate was
-    /// substituted. Survives the copy into the positioning collection, which is why the
-    /// substitution and positioning collections must share one
-    /// <see cref="ShapingFeatureMap"/>.
+    /// Only the vertical trio is recorded, in the reserved bits every plan shares,
+    /// because vertical alternate detection is the sole consumer; the record
+    /// therefore survives the copy into the positioning buffer regardless of which
+    /// plan wrote it.
     /// </summary>
     public ulong AppliedFeatureMask { get; set; }
 

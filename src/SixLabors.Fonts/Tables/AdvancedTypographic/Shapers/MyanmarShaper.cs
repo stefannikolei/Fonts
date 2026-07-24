@@ -139,10 +139,11 @@ internal sealed class MyanmarShaper : DefaultShaper
     /// <summary>
     /// Identifies Myanmar syllables using the state machine and assigns shaping info to each glyph.
     /// </summary>
+    /// <param name="plan">The plan whose segment is being shaped.</param>
     /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private void SetupSyllables(ShapingBuffer buffer, int index, int count)
+    private void SetupSyllables(ShapePlan plan, ShapingBuffer buffer, int index, int count)
     {
         if (buffer.Role != ShapingBufferRole.Substitution)
         {
@@ -232,10 +233,11 @@ internal sealed class MyanmarShaper : DefaultShaper
     /// Performs the initial reordering pass for Myanmar consonant syllables, including
     /// dotted circle insertion for broken clusters.
     /// </summary>
+    /// <param name="plan">The plan whose segment is being shaped.</param>
     /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private void InitialReorder(ShapingBuffer buffer, int index, int count)
+    private void InitialReorder(ShapePlan plan, ShapingBuffer buffer, int index, int count)
     {
         if (buffer.Role != ShapingBufferRole.Substitution)
         {

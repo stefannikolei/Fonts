@@ -102,6 +102,7 @@ internal sealed class LookupType1Format1SubTable : LookupSubTable
         GSubTable table,
         ShapingBuffer buffer,
         Tag feature,
+        ulong lookupMask,
         int index,
         int count)
     {
@@ -196,6 +197,7 @@ internal sealed class LookupType1Format2SubTable : LookupSubTable
         GSubTable table,
         ShapingBuffer buffer,
         Tag feature,
+        ulong lookupMask,
         int index,
         int count)
     {

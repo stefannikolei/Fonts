@@ -12,6 +12,14 @@ namespace SixLabors.Fonts.Tables.AdvancedTypographic.Shapers;
 internal abstract class BaseShaper
 {
     /// <summary>
+    /// Gets the feature bit assignment for the plan this shaper belongs to. The
+    /// shaper creates it and the owning plan adopts it, so both hold the same
+    /// non-null instance for their whole lifetime; a shaper exists only inside a
+    /// plan, so feature state is never reachable without one.
+    /// </summary>
+    public ShapePlanFeatures Features { get; } = new();
+
+    /// <summary>
     /// Gets or sets the script classification for this shaper.
     /// </summary>
     public ScriptClass ScriptClass { get; protected set; }

@@ -168,18 +168,16 @@ internal sealed class ShapingBuffer
     /// Cleared when a reset adopts a different options instance, whose values the
     /// plans captured when built.
     /// </summary>
-    private readonly List<(ScriptClass Script, Tag ScriptTag, FontMetrics FontMetrics, Tables.AdvancedTypographic.ShapePlan Plan)> planCache = new(4);
+    private readonly List<(ScriptClass Script, Tag ScriptTag, FontMetrics FontMetrics, ShapePlan Plan)> planCache = new(4);
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ShapingBuffer"/> class.
     /// </summary>
     /// <param name="textOptions">The text options.</param>
-    /// <param name="featureMap">The feature bit assignment shared by the shaping pass.</param>
     /// <param name="role">The shaping phase this buffer serves.</param>
-    public ShapingBuffer(TextOptions textOptions, ShapingFeatureMap featureMap, ShapingBufferRole role)
+    public ShapingBuffer(TextOptions textOptions, ShapingBufferRole role)
     {
         this.TextOptions = textOptions;
-        this.FeatureMap = featureMap;
         this.Role = role;
         this.LanguageTags = ResolveLanguageTags(textOptions);
     }
@@ -209,13 +207,6 @@ internal sealed class ShapingBuffer
     public Tag[] LanguageTags { get; private set; }
 
     /// <summary>
-    /// Gets the feature bit assignment shared by every buffer of the shaping pass.
-    /// See <see cref="ShapingFeatureMap"/> for the mask model and why the instance must
-    /// be shared across the substitution and positioning phases.
-    /// </summary>
-    public ShapingFeatureMap FeatureMap { get; }
-
-    /// <summary>
     /// Gets the approximate membership filter over every glyph id the buffer has ever
     /// contained. The digest only grows: substituted-away ids remain, keeping a
     /// definitive negative from <see cref="GlyphSetDigest.MightIntersect"/> sound while
@@ -241,28 +232,7 @@ internal sealed class ShapingBuffer
     /// pass reuses these so one plan drives both tables; the list stays empty when
     /// records were seeded across buffers and positioning must segment for itself.
     /// </summary>
-    public List<(int Index, int Count, ScriptClass Script, Tables.AdvancedTypographic.ShapePlan Plan)> SegmentPlans { get; } = new();
-
-    /// <summary>
-    /// Gets or sets the plan for the segment currently being shaped. Pause actions
-    /// run inside segment processing and query it for prebuilt feature resolutions;
-    /// the layout tables set it around each segment and clear it after.
-    /// </summary>
-    public Tables.AdvancedTypographic.ShapePlan? CurrentPlan { get; set; }
-
-    /// <summary>
-    /// Gets the reusable scratch the substitution table uses to merge a stage group's
-    /// lookups into lookup-index order. Cleared by each group merge; kept on the pooled
-    /// buffer so application allocates nothing.
-    /// </summary>
-    public List<(Tag Feature, ushort Index, Tables.AdvancedTypographic.GSub.LookupTable LookupTable, ulong Mask)> GSubLookupScratch { get; } = new(16);
-
-    /// <summary>
-    /// Gets the reusable scratch the positioning table uses to merge a stage group's
-    /// lookups into lookup-index order. Cleared by each group merge; kept on the pooled
-    /// buffer so application allocates nothing.
-    /// </summary>
-    public List<(Tag Feature, ushort Index, Tables.AdvancedTypographic.GPos.LookupTable LookupTable, ulong Mask)> GPosLookupScratch { get; } = new(16);
+    public List<(int Index, int Count, ScriptClass Script, ShapePlan Plan)> SegmentPlans { get; } = new();
 
     /// <summary>
     /// Gets an interior reference to the glyph shaping data at the specified index.
@@ -331,7 +301,7 @@ internal sealed class ShapingBuffer
         LayoutMode layoutMode = this.TextOptions.LayoutMode;
         ColorFontSupport colorFontSupport = this.TextOptions.ColorFontSupport;
 
-        ulong verticalMask = this.GetVerticalFeatureMask();
+        ulong verticalMask = ShapePlanFeatures.VerticalFeatureMask;
 
         for (int i = 0; i < this.count; i++)
         {
@@ -379,7 +349,6 @@ internal sealed class ShapingBuffer
         this.glyphDigest = default;
         this.placeholderBidiRuns.Clear();
         this.SegmentPlans.Clear();
-        this.CurrentPlan = null;
 
         // Cached plans captured option values when built, so a different options
         // instance invalidates them.
@@ -419,7 +388,9 @@ internal sealed class ShapingBuffer
     }
 
     /// <summary>
-    /// Adds the shaping feature to the record at the given index.
+    /// Adds the shaping feature to the record at the given index. The caller
+    /// supplies the feature's plan-assigned mask bit; the shaper that registers a
+    /// feature owns the plan whose bit it is, so the mask is always in scope.
     /// </summary>
     /// <remarks>
     /// Registration only ever accumulates: adding a disabled entry for an already
@@ -427,9 +398,9 @@ internal sealed class ShapingBuffer
     /// </remarks>
     /// <param name="index">The zero-based index of the record.</param>
     /// <param name="feature">The feature to apply.</param>
-    public void AddShapingFeature(int index, TagEntry feature)
+    /// <param name="mask">The feature's plan-assigned mask bit.</param>
+    public void AddShapingFeature(int index, TagEntry feature, ulong mask)
     {
-        ulong mask = this.FeatureMap.GetOrAddMask(feature.Tag);
         ref GlyphShapingData item = ref this.data[index];
         item.RegisteredFeatureMask |= mask;
         if (feature.Enabled)
@@ -439,16 +410,17 @@ internal sealed class ShapingBuffer
     }
 
     /// <summary>
-    /// Adds the shaping feature to every record in the given range, resolving the
-    /// feature's mask bit once for the whole range. Shaper plans register each stage
-    /// feature across the full run, so the per-glyph work must be a single bitwise OR.
+    /// Adds the shaping feature to every record in the given range. The caller
+    /// resolves the feature's mask bit once for the whole range: shaper plans
+    /// register each stage feature across the full run, so the per-glyph work must
+    /// be a single bitwise OR.
     /// </summary>
     /// <param name="index">The zero-based index of the first record.</param>
     /// <param name="count">The number of records in the range.</param>
     /// <param name="feature">The feature to apply.</param>
-    public void AddShapingFeatureRange(int index, int count, TagEntry feature)
+    /// <param name="mask">The feature's plan-assigned mask bit.</param>
+    public void AddShapingFeatureRange(int index, int count, TagEntry feature, ulong mask)
     {
-        ulong mask = this.FeatureMap.GetOrAddMask(feature.Tag);
         int end = index + count;
         for (int i = index; i < end; i++)
         {
@@ -462,32 +434,32 @@ internal sealed class ShapingBuffer
     }
 
     /// <summary>
-    /// Enables a previously added shaping feature.
+    /// Enables a previously added shaping feature by its plan-assigned mask bit.
     /// </summary>
     /// <remarks>
     /// Intersecting with the registered mask preserves the contract that enabling a
     /// feature a shaper never added for this record is a no-op.
     /// </remarks>
     /// <param name="index">The zero-based index of the record.</param>
-    /// <param name="feature">The feature to enable.</param>
-    public void EnableShapingFeature(int index, Tag feature)
+    /// <param name="mask">The feature's plan-assigned mask bit.</param>
+    public void EnableShapingFeature(int index, ulong mask)
     {
         ref GlyphShapingData item = ref this.data[index];
-        item.FeatureMask |= item.RegisteredFeatureMask & this.FeatureMap.GetMask(feature);
+        item.FeatureMask |= item.RegisteredFeatureMask & mask;
     }
 
     /// <summary>
-    /// Disables a previously added shaping feature.
+    /// Disables a previously added shaping feature by its plan-assigned mask bit.
     /// </summary>
     /// <remarks>
-    /// An unregistered tag yields a zero mask whose complement clears nothing.
+    /// An unassigned feature yields a zero mask whose complement clears nothing.
     /// </remarks>
     /// <param name="index">The zero-based index of the record.</param>
-    /// <param name="feature">The feature to disable.</param>
-    public void DisableShapingFeature(int index, Tag feature)
+    /// <param name="mask">The feature's plan-assigned mask bit.</param>
+    public void DisableShapingFeature(int index, ulong mask)
     {
         ref GlyphShapingData item = ref this.data[index];
-        item.FeatureMask &= ~this.FeatureMap.GetMask(feature);
+        item.FeatureMask &= ~mask;
     }
 
     /// <summary>
@@ -716,7 +688,7 @@ internal sealed class ShapingBuffer
         current.LigatureId = 0;
         current.LigatureComponent = -1;
         current.IsSubstituted = true;
-        current.AppliedFeatureMask |= this.FeatureMap.GetOrAddMask(feature);
+        current.AppliedFeatureMask |= ShapePlanFeatures.GetVerticalMask(feature);
     }
 
     /// <summary>
@@ -764,7 +736,7 @@ internal sealed class ShapingBuffer
         current.IsLigated = true;
         current.LigatureComponent = -1;
         current.IsSubstituted = true;
-        current.AppliedFeatureMask |= this.FeatureMap.GetOrAddMask(feature);
+        current.AppliedFeatureMask |= ShapePlanFeatures.GetVerticalMask(feature);
     }
 
     /// <summary>
@@ -810,7 +782,7 @@ internal sealed class ShapingBuffer
         current.LigatureId = 0;
         current.LigatureComponent = -1;
         current.IsSubstituted = true;
-        current.AppliedFeatureMask |= this.FeatureMap.GetOrAddMask(feature);
+        current.AppliedFeatureMask |= ShapePlanFeatures.GetVerticalMask(feature);
     }
 
     /// <summary>
@@ -835,7 +807,7 @@ internal sealed class ShapingBuffer
             if (glyphIds.Length > 1)
             {
                 GlyphShapingData template = this.data[index];
-                ulong mask = this.FeatureMap.GetOrAddMask(feature);
+                ulong mask = ShapePlanFeatures.GetVerticalMask(feature);
                 for (int i = 1; i < glyphIds.Length; i++)
                 {
                     GlyphShapingData inserted = new(template, false)
@@ -889,7 +861,7 @@ internal sealed class ShapingBuffer
         LayoutMode layoutMode = this.TextOptions.LayoutMode;
         ColorFontSupport colorFontSupport = this.TextOptions.ColorFontSupport;
 
-        ulong verticalMask = this.GetVerticalFeatureMask();
+        ulong verticalMask = ShapePlanFeatures.VerticalFeatureMask;
 
         for (int i = 0; i < workspace.count; i++)
         {
@@ -967,7 +939,7 @@ internal sealed class ShapingBuffer
         ColorFontSupport colorFontSupport = this.TextOptions.ColorFontSupport;
         bool hasFallBacks = false;
 
-        ulong verticalMask = this.GetVerticalFeatureMask();
+        ulong verticalMask = ShapePlanFeatures.VerticalFeatureMask;
 
         for (int i = 0; i < this.count; i++)
         {
@@ -1128,20 +1100,20 @@ internal sealed class ShapingBuffer
     /// <param name="script">The script class to shape.</param>
     /// <param name="unicodeScriptTag">The resolved OpenType script tag.</param>
     /// <param name="fontMetrics">The font metrics the plan binds to.</param>
-    /// <returns>The <see cref="Tables.AdvancedTypographic.ShapePlan"/>.</returns>
-    public Tables.AdvancedTypographic.ShapePlan GetOrCreatePlan(ScriptClass script, Tag unicodeScriptTag, FontMetrics fontMetrics)
+    /// <returns>The <see cref="ShapePlan"/>.</returns>
+    public ShapePlan GetOrCreatePlan(ScriptClass script, Tag unicodeScriptTag, FontMetrics fontMetrics)
     {
-        List<(ScriptClass Script, Tag ScriptTag, FontMetrics FontMetrics, Tables.AdvancedTypographic.ShapePlan Plan)> cache = this.planCache;
+        List<(ScriptClass Script, Tag ScriptTag, FontMetrics FontMetrics, ShapePlan Plan)> cache = this.planCache;
         for (int i = 0; i < cache.Count; i++)
         {
-            (ScriptClass cachedScript, Tag cachedTag, FontMetrics cachedMetrics, Tables.AdvancedTypographic.ShapePlan cachedPlan) = cache[i];
+            (ScriptClass cachedScript, Tag cachedTag, FontMetrics cachedMetrics, ShapePlan cachedPlan) = cache[i];
             if (cachedScript == script && cachedTag == unicodeScriptTag && ReferenceEquals(cachedMetrics, fontMetrics))
             {
                 return cachedPlan;
             }
         }
 
-        Tables.AdvancedTypographic.ShapePlan plan = Tables.AdvancedTypographic.ShapePlan.Build(fontMetrics, script, unicodeScriptTag, this.TextOptions, this.LanguageTags);
+        ShapePlan plan = ShapePlan.Build(fontMetrics, script, unicodeScriptTag, this.TextOptions, this.LanguageTags);
         if (plan.IsCacheable)
         {
             cache.Add((script, unicodeScriptTag, fontMetrics, plan));
@@ -1226,7 +1198,7 @@ internal sealed class ShapingBuffer
         }
 
         bool isVertical = AdvancedTypographicUtils.IsVerticalGlyph(m.CodePoint, this.TextOptions.LayoutMode)
-            || (this.data[index].AppliedFeatureMask & this.GetVerticalFeatureMask()) != 0;
+            || (this.data[index].AppliedFeatureMask & ShapePlanFeatures.VerticalFeatureMask) != 0;
 
         // Advance heights grow downward but font-space grows upward, hence the negation.
         this.positions[index].Bounds.Width += dx;
@@ -1245,17 +1217,6 @@ internal sealed class ShapingBuffer
     /// <returns><see langword="true"/> if the record should be processed.</returns>
     public bool ShouldProcess(FontMetrics fontMetrics, int index)
         => !this.positions[index].IsPositioned && this.metrics[index].Metrics.FontMetrics == fontMetrics;
-
-    /// <summary>
-    /// Gets the combined mask of the three vertical alternate features. Computed from
-    /// the shared feature map so it stays valid for applied bits written during
-    /// substitution and read after the seed into the positioning phase.
-    /// </summary>
-    /// <returns>The combined mask, or zero when no vertical feature was registered.</returns>
-    public ulong GetVerticalFeatureMask()
-        => this.FeatureMap.GetMask(KnownFeatureTags.VerticalAlternates)
-        | this.FeatureMap.GetMask(KnownFeatureTags.VerticalAlternatesForRotation)
-        | this.FeatureMap.GetMask(KnownFeatureTags.VerticalKerning);
 
     /// <summary>
     /// Resolves the candidate OpenType language system tags for the options' culture.

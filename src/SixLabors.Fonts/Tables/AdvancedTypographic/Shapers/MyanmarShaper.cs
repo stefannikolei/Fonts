@@ -14,6 +14,18 @@ namespace SixLabors.Fonts.Tables.AdvancedTypographic.Shapers;
 internal sealed class MyanmarShaper : DefaultShaper
 {
     /// <summary>
+    /// The bit shift extracting the shaping category from a packed Indic shaping
+    /// property word; the category occupies the upper byte.
+    /// </summary>
+    private const int MyanmarCategoryShift = 8;
+
+    /// <summary>
+    /// The mask extracting the zero-based shaping position from a packed Indic
+    /// shaping property word; the position occupies the lower byte.
+    /// </summary>
+    private const int MyanmarPositionMask = 0xFF;
+
+    /// <summary>
     /// The state machine for Myanmar syllable identification.
     /// </summary>
     private static readonly StateMachine StateMachine =
@@ -140,6 +152,7 @@ internal sealed class MyanmarShaper : DefaultShaper
         this.hasBrokenClusters = false;
 
         Span<int> values = count <= 64 ? stackalloc int[count] : new int[count];
+        Span<ushort> shapingProps = count <= 64 ? stackalloc ushort[count] : new ushort[count];
 
         for (int i = index; i < index + count; i++)
         {
@@ -151,12 +164,13 @@ internal sealed class MyanmarShaper : DefaultShaper
             // machine expects its input alphabet to be dense 0..N-1, matching the
             // sequential IDs assigned in GenerateMyanmarShapingData.
             //
-            // CategoryToSymbolId[(int)my] performs this mapping, ensuring that
-            // every codepoint is presented to the DFA using the correct compact
-            // symbol index.
+            // The property word is fetched once per glyph and stashed: the match
+            // loop below derives both the category and position lanes from it
+            // rather than walking the trie again.
             CodePoint codePoint = buffer[i].CodePoint;
-            MyanmarCategories my = (MyanmarCategories)IndicShapingCategory(codePoint);
-            values[i - index] = CategoryToSymbolId[(int)my];
+            ushort props = (ushort)UnicodeData.GetIndicShapingProperties((uint)codePoint.Value);
+            shapingProps[i - index] = props;
+            values[i - index] = CategoryToSymbolId[props >> MyanmarCategoryShift];
         }
 
         int syllable = 0;
@@ -189,10 +203,10 @@ internal sealed class MyanmarShaper : DefaultShaper
             for (int i = match.StartIndex; i <= match.EndIndex; i++)
             {
                 ref GlyphShapingData data = ref buffer[i + index];
-                CodePoint codePoint = data.CodePoint;
+                ushort props = shapingProps[i];
 
-                data.Syllable.IndicCategory = (Categories)IndicShapingCategory(codePoint);
-                data.Syllable.IndicPosition = (Positions)IndicShapingPosition(codePoint);
+                data.Syllable.IndicCategory = (Categories)(props >> MyanmarCategoryShift);
+                data.Syllable.IndicPosition = (Positions)((props & MyanmarPositionMask) + 1);
                 data.Syllable.Type = syllableType;
                 data.Syllable.Number = syllable;
             }
@@ -491,7 +505,7 @@ internal sealed class MyanmarShaper : DefaultShaper
     /// <param name="codePoint">The code point.</param>
     /// <returns>The shaping category value.</returns>
     private static int IndicShapingCategory(CodePoint codePoint)
-        => UnicodeData.GetIndicShapingProperties((uint)codePoint.Value) >> 8;
+        => UnicodeData.GetIndicShapingProperties((uint)codePoint.Value) >> MyanmarCategoryShift;
 
     /// <summary>
     /// Gets the Indic shaping position for a code point. The trie stores the position
@@ -501,7 +515,7 @@ internal sealed class MyanmarShaper : DefaultShaper
     /// <param name="codePoint">The code point.</param>
     /// <returns>The shaping position ordinal.</returns>
     private static int IndicShapingPosition(CodePoint codePoint)
-        => (UnicodeData.GetIndicShapingProperties((uint)codePoint.Value) & 0xFF) + 1;
+        => (UnicodeData.GetIndicShapingProperties((uint)codePoint.Value) & MyanmarPositionMask) + 1;
 
     /// <summary>
     /// Builds a lookup table mapping Myanmar shaping category codes to compact DFA symbol indices.

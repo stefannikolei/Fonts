@@ -291,7 +291,7 @@ internal sealed class UniversalShaper : DefaultShaper
             for (int i = match.StartIndex; i <= match.EndIndex; i++)
             {
                 ref GlyphShapingData data = ref buffer[i + index];
-                data.Syllable.UseCategory = UnicodeData.GetUniversalShapingSymbolCount((uint)data.CodePoint.Value);
+                data.Syllable.UseCategory = values[i];
                 data.Syllable.Type = syllableType;
                 data.Syllable.Number = syllable;
             }

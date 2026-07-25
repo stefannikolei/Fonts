@@ -190,16 +190,20 @@ internal sealed class HangulShaper : DefaultShaper
     {
         base.PlanPostprocessingFeatures(buffer, index, count);
 
-        // Uniscribe does not apply contextual alternates for Hangul, and certain
-        // fonts (Noto Sans CJK, Source Han Sans, etc) apply all of the jamo
-        // lookups through the feature, which is not desirable. The feature is
-        // disabled for the whole plan, so its lookups are never collected.
-        this.Features.DisableFeature(CaltTag);
+        // Certain fonts (Noto Sans CJK, Source Han Sans, etc) apply all of the
+        // jamo lookups through contextual alternates, which is not desirable.
+        // The feature is demoted from global to a varying feature whose mask is
+        // off by default: no glyph applies it unless a later range registration
+        // enables it, and feature assignment clears it on jamo even then, so the
+        // jamo lookups such fonts hide behind the feature can never fire there.
+        buffer.AddShapingFeatureRange(index, count, new TagEntry(CaltTag, false), this.Features.GetOrAddMask(CaltTag));
     }
 
     /// <inheritdoc/>
     protected override void AssignFeatures(ShapingBuffer buffer, int index, int count)
     {
+        int entryCount = buffer.Count;
+
         // Apply the state machine to map glyphs to features.
         if (buffer.Role == ShapingBufferRole.Substitution)
         {
@@ -290,6 +294,21 @@ internal sealed class HangulShaper : DefaultShaper
                         buffer.EnableShapingFeature(i, this.Features.GetMask(TjmoTag));
                         break;
                 }
+            }
+        }
+
+        // Keep contextual alternates away from jamo, running after composition
+        // and decomposition so the check sees the segment's final code points:
+        // composed syllables keep the feature while the jamo lookups some fonts
+        // hide behind it can never fire on the jamo themselves.
+        count += buffer.Count - entryCount;
+        int end = index + count;
+        for (int i = index; i < end && i < buffer.Count; i++)
+        {
+            int type = GetSyllableType(buffer[i].CodePoint);
+            if (type is L or V or T)
+            {
+                buffer.DisableShapingFeature(i, this.Features.GetMask(CaltTag));
             }
         }
     }

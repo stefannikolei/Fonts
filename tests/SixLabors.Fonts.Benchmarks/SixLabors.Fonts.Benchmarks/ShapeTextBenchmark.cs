@@ -47,6 +47,7 @@ public class ShapeTextBenchmark : IDisposable
 {
     private string text = string.Empty;
     private TextOptions textOptions = null!;
+    private TextShapingBuffer shapingBuffer = null!;
     private Blob? blob;
     private HBFace? face;
     private HBFont? hbFont;
@@ -83,6 +84,7 @@ public class ShapeTextBenchmark : IDisposable
 
         Font font = new FontCollection().Add(fontPath).CreateFont(16);
         this.textOptions = new TextOptions(font);
+        this.shapingBuffer = new TextShapingBuffer();
 
         this.blob = Blob.FromFile(fontPath);
         this.face = new HBFace(this.blob, 0);
@@ -92,16 +94,18 @@ public class ShapeTextBenchmark : IDisposable
     }
 
     /// <summary>
-    /// Shapes the text with <see cref="TextShaper"/> and sums the resulting advances.
+    /// Shapes the text with <see cref="TextShaper"/>, reusing one buffer as production
+    /// text stacks do, and sums the resulting advances.
     /// </summary>
     /// <returns>The advance sum, returned so the shaped stream is fully consumed.</returns>
     [Benchmark]
     public int ShapeSixLaborsFonts()
     {
-        IReadOnlyList<ShapedGlyph> glyphs = TextShaper.Shape(this.text, this.textOptions);
+        TextShaper.Shape(this.text, this.textOptions, this.shapingBuffer);
 
+        ReadOnlySpan<ShapedGlyph> glyphs = this.shapingBuffer.Glyphs;
         int advanceSum = 0;
-        for (int i = 0; i < glyphs.Count; i++)
+        for (int i = 0; i < glyphs.Length; i++)
         {
             advanceSum += glyphs[i].AdvanceWidth;
         }

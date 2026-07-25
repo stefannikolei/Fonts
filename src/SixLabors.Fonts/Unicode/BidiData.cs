@@ -17,14 +17,6 @@ internal partial class BidiData
     private ArrayBuilder<sbyte> tempLevelBuffer;
     private readonly List<int> paragraphPositions = new();
 
-    /// <summary>
-    /// Gets a reusable per-thread instance. The internal builders grow to the
-    /// workload's high-water mark and <see cref="Init"/> resets them, so reuse makes
-    /// steady-state analysis allocation free, mirroring the lifetime of the
-    /// per-thread algorithm instance that consumes this data.
-    /// </summary>
-    public static ThreadLocal<BidiData> Instance { get; } = new(() => new BidiData());
-
     public sbyte ParagraphEmbeddingLevel { get; private set; }
 
     public bool HasBrackets { get; private set; }

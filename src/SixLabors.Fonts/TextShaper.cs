@@ -1,6 +1,8 @@
 // Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
+using System.Numerics;
+
 namespace SixLabors.Fonts;
 
 /// <summary>
@@ -59,36 +61,77 @@ public static partial class TextShaper
             return [];
         }
 
-        ShapedText shaped = ShapeText(text, options);
+        TextShapingBuffer buffer = new();
+        Shape(text, options, buffer);
+        return buffer.Glyphs.ToArray();
+    }
 
-        var probe = ShapingProbe.Enter();
-        ShapedGlyphInfo[] infos = shaped.Infos;
-        ShapedGlyphPosition[] positions = shaped.Positions;
-        ShapedTextRun[] runs = shaped.Runs;
-        List<ShapedGlyph> glyphs = new(infos.Length);
-        for (int i = 0; i < infos.Length; i++)
+    /// <inheritdoc cref="Shape(ReadOnlySpan{char}, TextOptions, TextShapingBuffer)"/>
+    public static void Shape(string text, TextOptions options, TextShapingBuffer buffer)
+    {
+        Guard.NotNull(text, nameof(text));
+
+        Shape(text.AsSpan(), options, buffer);
+    }
+
+    /// <summary>
+    /// Shapes the text into a positioned glyph stream, replacing the contents of the
+    /// supplied buffer. Reusing one buffer across calls keeps steady-state shaping
+    /// free of allocation; see <see cref="Shape(ReadOnlySpan{char}, TextOptions)"/>
+    /// for the shaping semantics and honored options.
+    /// </summary>
+    /// <param name="text">The text to shape.</param>
+    /// <param name="options">The text options.</param>
+    /// <param name="buffer">The buffer receiving the shaped glyphs in logical order.</param>
+    public static void Shape(ReadOnlySpan<char> text, TextOptions options, TextShapingBuffer buffer)
+    {
+        Guard.NotNull(options, nameof(options));
+        Guard.NotNull(buffer, nameof(buffer));
+
+        if (text.IsEmpty)
         {
-            ref readonly ShapedGlyphInfo info = ref infos[i];
-            if (info.IsPlaceholder)
-            {
-                // Placeholder runs reserve layout space for inline objects; they carry
-                // no glyph.
-                continue;
-            }
-
-            ref readonly ShapedGlyphPosition position = ref positions[i];
-            glyphs.Add(new ShapedGlyph(
-                runs[info.RunIndex].Font,
-                info.GlyphId,
-                info.CodePoint,
-                info.CodePointIndex,
-                info.CodePointCount,
-                position.AdvanceWidth,
-                position.AdvanceHeight,
-                position.Bearing + position.Offset));
+            buffer.Clear();
+            return;
         }
 
-        ShapingProbe.Exit(ShapingProbe.Projection, probe);
-        return glyphs;
+        ShapingScratch scratch = ScratchPool.Get();
+        try
+        {
+            ShapingBuffer shaped = ShapeCore(text, options, scratch, null);
+
+            var probe = ShapingProbe.Enter();
+            int count = shaped.Count;
+            Span<ShapedGlyph> destination = buffer.Reserve(count);
+            int written = 0;
+            for (int i = 0; i < count; i++)
+            {
+                ref GlyphShapingData shaping = ref shaped[i];
+                if (shaping.IsPlaceholder)
+                {
+                    // Placeholder runs reserve layout space for inline objects; they
+                    // carry no glyph.
+                    continue;
+                }
+
+                ref ShapingBuffer.GlyphMetricsEntry entry = ref shaped.MetricsAt(i);
+                ref GlyphShapingPosition position = ref shaped.PositionAt(i);
+                destination[written++] = new ShapedGlyph(
+                    entry.Font,
+                    entry.Metrics.GlyphId,
+                    shaping.CodePoint,
+                    shaping.CodePointIndex,
+                    shaping.CodePointCount,
+                    entry.GetAdvanceWidth(in position),
+                    entry.GetAdvanceHeight(in position),
+                    new Vector2(position.Bounds.X, position.Bounds.Y) + entry.Metrics.Offset);
+            }
+
+            buffer.Commit(written);
+            ShapingProbe.Exit(ShapingProbe.Projection, probe);
+        }
+        finally
+        {
+            ScratchPool.Return(scratch);
+        }
     }
 }

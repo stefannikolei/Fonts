@@ -83,8 +83,7 @@ public class TextRenderer
             return;
         }
 
-        ShapedText shaped = TextShaper.ShapeText(text, options);
-        LogicalTextLine logicalLine = TextLayout.ComposeLogicalLine(shaped, text, options);
+        LogicalTextLine logicalLine = TextLayout.ComposeLogicalLine(text, options);
         this.RenderText(logicalLine, options);
     }
 

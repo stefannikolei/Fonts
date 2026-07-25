@@ -6,11 +6,11 @@ using SixLabors.Fonts.Unicode;
 namespace SixLabors.Fonts;
 
 /// <summary>
-/// Contains the width-independent result of shaping text before logical line
-/// composition: a run table holding run-constant state once, and parallel per-glyph
-/// info and position arrays holding identities and pure numbers. The result is
-/// inert - it references no pipeline state - and consumers needing glyph metrics
-/// query the owning font by glyph id.
+/// The width-independent result of shaping text before logical line composition:
+/// a run table holding run-constant state once, and parallel per-glyph info and
+/// position arrays holding identities and pure numbers. The arrays are views over
+/// pooled scratch storage and may exceed the live counts; the view is valid only
+/// while the renting scope holds its scratch, so consumers copy what they retain.
 /// </summary>
 internal readonly struct ShapedText
 {
@@ -20,6 +20,7 @@ internal readonly struct ShapedText
     /// <param name="runs">The shaped run table.</param>
     /// <param name="infos">The per-glyph identity records, parallel to <paramref name="positions"/>.</param>
     /// <param name="positions">The per-glyph geometry records, parallel to <paramref name="infos"/>.</param>
+    /// <param name="glyphCount">The number of live entries in the per-glyph arrays.</param>
     /// <param name="bidiRuns">The resolved bidi runs covering the shaped text.</param>
     /// <param name="bidiMap">
     /// The code point index to bidi-run index mapping built during shaping. Entries for
@@ -30,6 +31,7 @@ internal readonly struct ShapedText
         ShapedTextRun[] runs,
         ShapedGlyphInfo[] infos,
         ShapedGlyphPosition[] positions,
+        int glyphCount,
         BidiRun[] bidiRuns,
         int[] bidiMap,
         LayoutMode layoutMode)
@@ -37,10 +39,16 @@ internal readonly struct ShapedText
         this.Runs = runs;
         this.Infos = infos;
         this.Positions = positions;
+        this.GlyphCount = glyphCount;
         this.BidiRuns = bidiRuns;
         this.BidiMap = bidiMap;
         this.LayoutMode = layoutMode;
     }
+
+    /// <summary>
+    /// Gets the number of live entries in <see cref="Infos"/> and <see cref="Positions"/>.
+    /// </summary>
+    public int GlyphCount { get; }
 
     /// <summary>
     /// Gets the shaped run table: run-constant state referenced per glyph by
@@ -108,7 +116,7 @@ internal readonly struct ShapedText
         isVerticalSubstitution = false;
         isDecomposed = false;
 
-        for (int i = searchIndex; i < infos.Length; i++)
+        for (int i = searchIndex; i < this.GlyphCount; i++)
         {
             if (infos[i].CodePointIndex == offset)
             {

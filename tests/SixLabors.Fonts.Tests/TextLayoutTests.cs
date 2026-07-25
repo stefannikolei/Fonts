@@ -1006,8 +1006,7 @@ public class TextLayoutTests
             ]
         };
 
-        ShapedText shapedText = TextShaper.ShapeText(text.AsSpan(), options);
-        LogicalTextLine logicalLine = TextLayout.ComposeLogicalLine(shapedText, text.AsSpan(), options);
+        LogicalTextLine logicalLine = TextLayout.ComposeLogicalLine(text.AsSpan(), options);
 
         GlyphLayoutData placeholder = default;
         GlyphLayoutData following = default;

@@ -16,13 +16,30 @@ internal static partial class TextLayout
     private const int StandardEllipsis = 0x2026;
 
     /// <summary>
+    /// Shapes the text and composes the logical <see cref="TextLine"/> before
+    /// width-dependent line breaking. Shaping runs on pooled pipeline state scoped
+    /// entirely to this call; composition copies everything the result retains.
+    /// </summary>
+    /// <param name="text">The source text.</param>
+    /// <param name="options">The text shaping and layout options.</param>
+    /// <returns>The logical text line and line break opportunities before line breaking.</returns>
+    public static LogicalTextLine ComposeLogicalLine(ReadOnlySpan<char> text, TextOptions options)
+    {
+        // Composition retains run references in its layout data, so the runs are
+        // built per call rather than reused from pooled state.
+        IReadOnlyList<TextRun> runs = TextShaper.BuildTextRuns(text, options);
+        using TextShaper.ShapedTextScope scope = TextShaper.ShapeText(text, options, runs);
+        return ComposeLogicalLine(scope.Shaped, text, options);
+    }
+
+    /// <summary>
     /// Composes the logical <see cref="TextLine"/> from shaped glyph data before width-dependent line breaking.
     /// </summary>
     /// <param name="shapedText">The width-independent shaping state.</param>
     /// <param name="text">The original source text.</param>
     /// <param name="options">The text shaping and layout options.</param>
     /// <returns>The logical text line and line break opportunities before line breaking.</returns>
-    public static LogicalTextLine ComposeLogicalLine(
+    private static LogicalTextLine ComposeLogicalLine(
         in ShapedText shapedText,
         ReadOnlySpan<char> text,
         TextOptions options)

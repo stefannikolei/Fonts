@@ -227,7 +227,7 @@ public static class MemoryExtensions
         // character extends, prepends, or joins, and controls break on both sides.
         // The count is therefore the length minus the CR LF pairs, found with two
         // vectorized scans instead of the boundary state machine.
-        if (!span.ContainsAnyExceptInRange((char)0, (char)0x7F))
+        if (System.Text.Ascii.IsValid(span))
         {
             int pairs = 0;
             int searchStart = 0;

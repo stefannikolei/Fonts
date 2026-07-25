@@ -407,15 +407,15 @@ internal sealed class ShapingBuffer
         this.placeholderBidiRuns.Clear();
         this.SegmentPlans.Clear();
 
-        // Cached plans captured option values when built, so a different options
-        // instance invalidates them.
+        // Cached plans and language tags captured option values when built, so only
+        // a different options instance invalidates them; this is the same identity
+        // contract the shaper and plan caches follow.
         if (!ReferenceEquals(this.TextOptions, textOptions))
         {
             this.planCache.Clear();
+            this.TextOptions = textOptions;
+            this.LanguageTags = ResolveLanguageTags(textOptions);
         }
-
-        this.TextOptions = textOptions;
-        this.LanguageTags = ResolveLanguageTags(textOptions);
     }
 
     /// <summary>

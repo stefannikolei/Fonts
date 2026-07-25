@@ -211,4 +211,85 @@ public class TextShaperTests
         Assert.Single(glyphs);
         Assert.Equal(expectedGlyphId, glyphs[0].GlyphId);
     }
+
+    [Fact]
+    public void Shape_ReusedBuffer_MatchesFreshShaping()
+    {
+        // One shared buffer across interleaved scripts and repeated rounds must
+        // produce records identical to the allocating overload every time, with
+        // each call fully replacing the previous contents.
+        Font latin = new FontCollection().Add(TestFonts.OpenSansFile).CreateFont(72);
+        Font arabic = new FontCollection().Add(TestFonts.ArabicFontFile).CreateFont(72);
+        Font devanagari = new FontCollection().Add(TestFonts.NotoSansDevanagariRegular).CreateFont(72);
+
+        (Font Font, string Text)[] cases =
+        [
+            (latin, "The quick brown fox; fifty fluffy waffles."),
+            (arabic, "سلام عليكم ورحمة الله"),
+            (devanagari, "क्षत्रिय द्वारा प्रकृति की रक्षा"),
+            (latin, "a"),
+        ];
+
+        TextShapingBuffer buffer = new();
+        for (int round = 0; round < 3; round++)
+        {
+            foreach ((Font font, string text) in cases)
+            {
+                TextOptions options = new(font);
+                IReadOnlyList<ShapedGlyph> expected = TextShaper.Shape(text, options);
+                TextShaper.Shape(text, options, buffer);
+
+                Assert.Equal(expected.Count, buffer.Count);
+                for (int i = 0; i < expected.Count; i++)
+                {
+                    ShapedGlyph expectedGlyph = expected[i];
+                    ShapedGlyph actual = buffer[i];
+                    Assert.Same(expectedGlyph.Font, actual.Font);
+                    Assert.Equal(expectedGlyph.GlyphId, actual.GlyphId);
+                    Assert.Equal(expectedGlyph.CodePoint, actual.CodePoint);
+                    Assert.Equal(expectedGlyph.CodePointIndex, actual.CodePointIndex);
+                    Assert.Equal(expectedGlyph.CodePointCount, actual.CodePointCount);
+                    Assert.Equal(expectedGlyph.AdvanceWidth, actual.AdvanceWidth);
+                    Assert.Equal(expectedGlyph.AdvanceHeight, actual.AdvanceHeight);
+                    Assert.Equal(expectedGlyph.Offset, actual.Offset);
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public void Shape_EmptyTextIntoBuffer_ClearsPreviousContents()
+    {
+        Font font = new FontCollection().Add(TestFonts.OpenSansFile).CreateFont(72);
+        TextShapingBuffer buffer = new();
+
+        TextShaper.Shape("Hxp", new TextOptions(font), buffer);
+        Assert.Equal(3, buffer.Count);
+
+        TextShaper.Shape(string.Empty, new TextOptions(font), buffer);
+        Assert.Equal(0, buffer.Count);
+        Assert.True(buffer.Glyphs.IsEmpty);
+    }
+
+    [Fact]
+    public void Shape_ReusedBuffer_SteadyStateDoesNotAllocate()
+    {
+        // After a warm-up call has grown every pooled structure to its high-water
+        // mark, repeated shaping through the same buffer must allocate nothing.
+        Font font = new FontCollection().Add(TestFonts.OpenSansFile).CreateFont(72);
+        TextOptions options = new(font);
+        const string text = "The quick brown fox; fifty fluffy waffles.";
+        TextShapingBuffer buffer = new();
+
+        for (int i = 0; i < 16; i++)
+        {
+            TextShaper.Shape(text, options, buffer);
+        }
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        TextShaper.Shape(text, options, buffer);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(0, allocated);
+    }
 }

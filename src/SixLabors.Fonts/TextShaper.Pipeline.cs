@@ -112,52 +112,78 @@ public static partial class TextShaper
     }
 
     /// <summary>
-    /// Shapes <paramref name="text"/> into shaping state that is independent of the wrapping length.
+    /// Materializes the fallback fonts for the pass. Lives apart from the pipeline
+    /// body so shaping without fallbacks never pays for the construction.
     /// </summary>
-    /// <remarks>
-    /// Performs the font-run build, bidi analysis, GSUB/GPOS shaping (including fallback font
-    /// resolution for unmapped codepoints). The result contains the positioned glyph buffer
-    /// and bidi state used by logical line composition.
-    /// </remarks>
+    /// <param name="options">The text options carrying the fallback families.</param>
+    /// <returns>The fallback fonts.</returns>
+    private static Font[] BuildFallbackFonts(TextOptions options)
+    {
+        IReadOnlyList<FontFamily> families = options.FallbackFontFamilies;
+        Font[] fonts = new Font[families.Count];
+        for (int i = 0; i < fonts.Length; i++)
+        {
+            fonts[i] = new Font(families[i], options.Font.Size, options.Font.RequestedStyle);
+        }
+
+        return fonts;
+    }
+
+    /// <summary>
+    /// Shapes <paramref name="text"/> into a scope that owns the pooled pipeline
+    /// state backing the shaped views.
+    /// </summary>
     /// <param name="text">The text to process.</param>
     /// <param name="options">The text options used while shaping.</param>
-    /// <returns>The wrapping-independent shaping state.</returns>
-    internal static ShapedText ShapeText(ReadOnlySpan<char> text, TextOptions options)
+    /// <param name="prebuiltRuns">
+    /// The resolved text runs when the caller retains run references beyond the
+    /// scope, or <see langword="null"/> to let the pass reuse pooled run state.
+    /// </param>
+    /// <returns>The scoped shaping result.</returns>
+    internal static ShapedTextScope ShapeText(
+        ReadOnlySpan<char> text,
+        TextOptions options,
+        IReadOnlyList<TextRun>? prebuiltRuns)
     {
-        // The single pooling site for the shaping pipeline: rent the reusable pipeline
-        // state, shape, copy the result out by value, and return the state before the
-        // caller sees the result. Every consumer of shaping goes through here and
-        // shares the pooled machinery without knowing it exists.
         ShapingScratch scratch = ScratchPool.Get();
         try
         {
-            (ShapingBuffer substitutions, ShapingBuffer positionings) = scratch.Prepare(options);
-            return ShapeText(text, options, substitutions, positionings);
+            ShapingBuffer shaped = ShapeCore(text, options, scratch, prebuiltRuns);
+            return new(ProjectShapedText(shaped, options.LayoutMode, scratch), scratch);
         }
-        finally
+        catch
         {
             ScratchPool.Return(scratch);
+            throw;
         }
     }
 
     /// <summary>
-    /// Shapes <paramref name="text"/> using caller-supplied shaping buffers that
-    /// already reflect <paramref name="options"/>.
+    /// Runs the shaping pipeline through positioning and the post-positioning
+    /// passes, leaving the positioned glyph records in the returned buffer and the
+    /// bidi state in the scratch. The projections that copy results out for their
+    /// consumers sit on top.
     /// </summary>
     /// <param name="text">The text to process.</param>
     /// <param name="options">The text options used while shaping.</param>
-    /// <param name="substitutions">The substitution buffer to shape into.</param>
-    /// <param name="positionings">The positioning buffer to shape into.</param>
-    /// <returns>The wrapping-independent shaping state.</returns>
-    private static ShapedText ShapeText(
+    /// <param name="scratch">The rented pipeline state.</param>
+    /// <param name="prebuiltRuns">
+    /// The resolved text runs when the caller retains run references beyond the
+    /// scratch scope, or <see langword="null"/> to let the pass reuse scratch-owned
+    /// run state.
+    /// </param>
+    /// <returns>The positioned buffer.</returns>
+    private static ShapingBuffer ShapeCore(
         ReadOnlySpan<char> text,
         TextOptions options,
-        ShapingBuffer substitutions,
-        ShapingBuffer positionings)
+        ShapingScratch scratch,
+        IReadOnlyList<TextRun>? prebuiltRuns)
     {
+        (ShapingBuffer substitutions, ShapingBuffer positionings) = scratch.Prepare(options);
+
         // Gather the font and fallbacks.
         Font[] fallbackFonts = (options.FallbackFontFamilies?.Count > 0)
-            ? [.. options.FallbackFontFamilies.Select(x => new Font(x, options.Font.Size, options.Font.RequestedStyle))]
+            ? BuildFallbackFonts(options)
             : [];
 
         LayoutMode layoutMode = options.LayoutMode;
@@ -165,8 +191,8 @@ public static partial class TextShaper
         var probe = ShapingProbe.Enter();
 
         // Analyse the text for bidi directional runs.
-        BidiAlgorithm bidi = BidiAlgorithm.Instance.Value!;
-        BidiData bidiData = BidiData.Instance.Value!;
+        BidiAlgorithm bidi = scratch.BidiAlgorithm;
+        BidiData bidiData = scratch.BidiData;
         bidiData.Init(text, (sbyte)options.TextDirection);
 
         if (options.TextBidiMode == TextBidiMode.Override)
@@ -203,28 +229,35 @@ public static partial class TextShaper
         // a left-to-right (or auto) paragraph direction, every resolved level is zero.
         // This is the overwhelmingly common case for Latin text and skips the full UAX#9
         // pass. An overridden or right-to-left paragraph always resolves levels.
-        BidiRun[] bidiRuns;
+        scratch.ClearBidiRuns();
         if (options.TextDirection != TextDirection.RightToLeft
             && options.TextBidiMode != TextBidiMode.Override
             && bidiData.IsUniformLeftToRight)
         {
-            bidiRuns = [new BidiRun(BidiCharacterType.LeftToRight, 0, 0, bidiData.Types.Length)];
+            scratch.AddBidiRun(new BidiRun(BidiCharacterType.LeftToRight, 0, 0, bidiData.Types.Length));
         }
         else
         {
             bidi.Process(bidiData);
-            bidiRuns = [.. BidiRun.CoalesceLevels(bidi.ResolvedLevels)];
+            foreach (BidiRun run in BidiRun.CoalesceLevels(bidi.ResolvedLevels))
+            {
+                scratch.AddBidiRun(in run);
+            }
         }
 
-        int[] bidiMap = new int[bidiData.Types.Length];
-        Array.Fill(bidiMap, -1);
+        BidiRun[] bidiRuns = scratch.BidiRuns;
+        int[] bidiMap = scratch.GetBidiMap(bidiData.Types.Length);
         ShapingProbe.Exit(ShapingProbe.Bidi, probe);
 
         probe = ShapingProbe.Enter();
 
         // Incrementally build out buffer of glyphs. Both buffers share the run list so
-        // per-glyph run indices agree when records are seeded across them.
-        IReadOnlyList<TextRun> textRuns = BuildTextRuns(text, options);
+        // per-glyph run indices agree when records are seeded across them. Callers
+        // retaining run references beyond the scratch scope supply their own runs;
+        // otherwise the synthesized whole-text run reuses scratch state.
+        IReadOnlyList<TextRun> textRuns = prebuiltRuns ?? ((options.TextRuns?.Count > 0)
+            ? BuildTextRuns(text, options)
+            : scratch.GetDefaultTextRuns(text.GetGraphemeCount(), options));
         substitutions.SetTextRuns(textRuns);
         positionings.SetTextRuns(textRuns);
         ShapingProbe.Exit(ShapingProbe.BuildTextRuns, probe);
@@ -384,15 +417,25 @@ public static partial class TextShaper
 
         ShapingProbe.Exit(ShapingProbe.Positioning, probe);
 
-        // Copy the shaped result out of the pooled collections: run-constant state
-        // deduplicates into a run table and per-glyph state splits into parallel
-        // identity and geometry arrays of pure values, so the scratch can go back to
-        // the pool before consumption and no metrics reference survives shaping.
+        return shaped;
+    }
+
+    /// <summary>
+    /// Copies the shaped result out of the pooled collections: run-constant state
+    /// deduplicates into a run table and per-glyph state splits into parallel
+    /// identity and geometry arrays of pure values held by the scratch, so the
+    /// views stay valid exactly as long as the caller holds the scratch.
+    /// </summary>
+    /// <param name="shaped">The positioned buffer.</param>
+    /// <param name="layoutMode">The layout mode used while shaping.</param>
+    /// <param name="scratch">The rented pipeline state holding the bidi results and projection storage.</param>
+    /// <returns>The wrapping-independent shaping state, valid within the scratch scope.</returns>
+    private static ShapedText ProjectShapedText(ShapingBuffer shaped, LayoutMode layoutMode, ShapingScratch scratch)
+    {
         uint verticalMask = ShapePlanFeatures.VerticalFeatureMask;
         int count = shaped.Count;
-        ShapedGlyphInfo[] infos = new ShapedGlyphInfo[count];
-        ShapedGlyphPosition[] positions = new ShapedGlyphPosition[count];
-        List<ShapedTextRun> runs = [];
+        (ShapedGlyphInfo[] infos, ShapedGlyphPosition[] positions) = scratch.GetProjection(count);
+        scratch.ClearRuns();
 
         Font? runFont = null;
         int runTextRunIndex = -1;
@@ -414,7 +457,7 @@ public static partial class TextShaper
                 runFont = entry.Font;
                 runTextRunIndex = shaping.TextRunIndex;
                 runBidiRun = shapingBidiRun;
-                runs.Add(new(entry.Font, entry.PointSize, shaped.TextRuns[shaping.TextRunIndex], shapingBidiRun));
+                scratch.AddRun(new(entry.Font, entry.PointSize, shaped.TextRuns[shaping.TextRunIndex], shapingBidiRun));
             }
 
             ShapedGlyphFlags flags = ShapedGlyphFlags.None;
@@ -443,7 +486,7 @@ public static partial class TextShaper
                 shaping.CodePoint,
                 shaping.CodePointCount,
                 entry.Metrics.GlyphId,
-                (ushort)(runs.Count - 1),
+                (ushort)(scratch.RunCount - 1),
                 flags);
 
             positions[i] = new(
@@ -453,7 +496,7 @@ public static partial class TextShaper
                 entry.Metrics.Offset);
         }
 
-        return new ShapedText([.. runs], infos, positions, bidiRuns, bidiMap, layoutMode);
+        return new ShapedText(scratch.Runs, infos, positions, count, scratch.BidiRuns, scratch.BidiMap, layoutMode);
     }
 
     /// <summary>
@@ -510,7 +553,7 @@ public static partial class TextShaper
                 hasInvisible = font is not null && font.FontMetrics.TryGetGlyphId(space, out invisible);
             }
 
-            if (!hasInvisible)
+            if (font is null || !hasInvisible)
             {
                 hasUnreplaceable = true;
                 continue;
@@ -519,7 +562,7 @@ public static partial class TextShaper
             // The projection reads the glyph id and default advance from the
             // metrics entry, so the invisible glyph's metrics replace it.
             TextRun textRun = shaped.TextRuns[data.TextRunIndex];
-            entry.Metrics = font!.FontMetrics.GetGlyphMetrics(space, invisible, textRun.TextAttributes, textRun.TextDecorations, layoutMode, colorFontSupport);
+            entry.Metrics = font.FontMetrics.GetGlyphMetrics(space, invisible, textRun.TextAttributes, textRun.TextDecorations, layoutMode, colorFontSupport);
             shaped.SetGlyphId(i, invisible);
             data.IsHidden = true;
         }
@@ -760,6 +803,40 @@ public static partial class TextShaper
                 buffer.Replace(i, glyphId, KnownFeatureTags.VerticalAlternates);
             }
         }
+    }
+
+    /// <summary>
+    /// A shaping result scoped to the pooled pipeline state backing its views.
+    /// Disposal returns the state to the pool and ends the views' validity, so
+    /// consumers copy what they retain before the scope closes.
+    /// </summary>
+    internal readonly ref struct ShapedTextScope
+    {
+        /// <summary>
+        /// The pooled pipeline state owned by the scope.
+        /// </summary>
+        private readonly ShapingScratch scratch;
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ShapedTextScope"/> struct.
+        /// </summary>
+        /// <param name="shaped">The shaped views.</param>
+        /// <param name="scratch">The pooled pipeline state backing the views.</param>
+        public ShapedTextScope(ShapedText shaped, ShapingScratch scratch)
+        {
+            this.Shaped = shaped;
+            this.scratch = scratch;
+        }
+
+        /// <summary>
+        /// Gets the wrapping-independent shaping state, valid until disposal.
+        /// </summary>
+        public ShapedText Shaped { get; }
+
+        /// <summary>
+        /// Returns the pooled pipeline state, ending the views' validity.
+        /// </summary>
+        public void Dispose() => ScratchPool.Return(this.scratch);
     }
 
     /// <summary>

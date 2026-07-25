@@ -47,6 +47,12 @@ internal sealed class ShapingBuffer
     private GlyphShapingPosition[] positions = new GlyphShapingPosition[64];
 
     /// <summary>
+    /// Shaper scratch storage handed out by <see cref="GetShaperScratch"/>, grown
+    /// to the workload's high-water mark. Contents are undefined between passes.
+    /// </summary>
+    private byte[] shaperScratch = [];
+
+    /// <summary>
     /// The approximate membership filter over every glyph id the buffer has ever
     /// contained. See <see cref="GlyphDigest"/> for the growth contract.
     /// </summary>
@@ -429,6 +435,23 @@ internal sealed class ShapingBuffer
         this.HasDefaultIgnorables = false;
         this.placeholderBidiRuns.Clear();
         this.SegmentPlans.Clear();
+    }
+
+    /// <summary>
+    /// Gets shaper scratch storage of at least the given length, grown to the
+    /// workload's high-water mark and retained. Contents are undefined on entry;
+    /// callers write every slot they read.
+    /// </summary>
+    /// <param name="length">The capacity required.</param>
+    /// <returns>The scratch storage; entries beyond the length are undefined.</returns>
+    public byte[] GetShaperScratch(int length)
+    {
+        if (this.shaperScratch.Length < length)
+        {
+            this.shaperScratch = new byte[Math.Max(length, Math.Max(64, this.shaperScratch.Length * 2))];
+        }
+
+        return this.shaperScratch;
     }
 
     /// <summary>

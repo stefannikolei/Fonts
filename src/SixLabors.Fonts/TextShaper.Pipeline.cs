@@ -239,9 +239,27 @@ public static partial class TextShaper
         else
         {
             bidi.Process(bidiData);
-            foreach (BidiRun run in BidiRun.CoalesceLevels(bidi.ResolvedLevels))
+
+            // Coalesce equal-level neighbours into runs inline: the levels walk is
+            // trivial and an enumerator here would be the pass's only allocation.
+            ArraySlice<sbyte> levels = bidi.ResolvedLevels;
+            if (levels.Length > 0)
             {
-                scratch.AddBidiRun(in run);
+                int startRun = 0;
+                sbyte runLevel = levels[0];
+                for (int i = 1; i < levels.Length; i++)
+                {
+                    if (levels[i] == runLevel)
+                    {
+                        continue;
+                    }
+
+                    scratch.AddBidiRun(new BidiRun((runLevel & 0x01) == 0 ? BidiCharacterType.LeftToRight : BidiCharacterType.RightToLeft, runLevel, startRun, i - startRun));
+                    startRun = i;
+                    runLevel = levels[i];
+                }
+
+                scratch.AddBidiRun(new BidiRun((runLevel & 0x01) == 0 ? BidiCharacterType.LeftToRight : BidiCharacterType.RightToLeft, runLevel, startRun, levels.Length - startRun));
             }
         }
 

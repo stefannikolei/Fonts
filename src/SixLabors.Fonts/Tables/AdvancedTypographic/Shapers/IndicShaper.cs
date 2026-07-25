@@ -182,6 +182,24 @@ internal sealed class IndicShaper : DefaultShaper
     private bool hasBrokenClusters;
 
     /// <summary>
+    /// The syllable setup pause, converted to a delegate once so per-pass feature
+    /// planning never allocates for the conversion.
+    /// </summary>
+    private readonly Action<ShapePlan, ShapingBuffer, int, int> setupSyllablesAction;
+
+    /// <summary>
+    /// The initial reorder pause, converted to a delegate once so per-pass feature
+    /// planning never allocates for the conversion.
+    /// </summary>
+    private readonly Action<ShapePlan, ShapingBuffer, int, int> initialReorderAction;
+
+    /// <summary>
+    /// The final reorder pause, converted to a delegate once so per-pass feature
+    /// planning never allocates for the conversion.
+    /// </summary>
+    private readonly Action<ShapePlan, ShapingBuffer, int, int> finalReorderAction;
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="IndicShaper"/> class.
     /// </summary>
     /// <param name="script">The script classification.</param>
@@ -192,6 +210,9 @@ internal sealed class IndicShaper : DefaultShaper
         : base(script, MarkZeroingMode.None, textOptions)
     {
         this.fontMetrics = fontMetrics;
+        this.setupSyllablesAction = this.SetupSyllables;
+        this.initialReorderAction = this.InitialReorder;
+        this.finalReorderAction = this.FinalReorder;
 
         if (IndicConfigurations.TryGetValue(script, out ShapingConfiguration value))
         {
@@ -209,10 +230,10 @@ internal sealed class IndicShaper : DefaultShaper
     /// <inheritdoc />
     protected override void PlanFeatures(ShapingBuffer buffer, int index, int count)
     {
-        this.EnableFeature(buffer, index, count, LoclTag, this.SetupSyllables, null);
+        this.EnableFeature(buffer, index, count, LoclTag, this.setupSyllablesAction, null);
         this.EnableFeature(buffer, index, count, CcmpTag);
 
-        this.EnableFeature(buffer, index, count, NuktTag, this.InitialReorder, null);
+        this.EnableFeature(buffer, index, count, NuktTag, this.initialReorderAction, null);
         this.EnableFeature(buffer, index, count, AkhnTag);
 
         this.AddFeature(buffer, index, count, RphfTag, false);
@@ -224,7 +245,7 @@ internal sealed class IndicShaper : DefaultShaper
         this.AddFeature(buffer, index, count, PstfTag, false);
         this.EnableFeature(buffer, index, count, VatuTag);
         this.EnableFeature(buffer, index, count, CjctTag);
-        this.AddFeature(buffer, index, count, CfarTag, false, null, this.FinalReorder);
+        this.AddFeature(buffer, index, count, CfarTag, false, null, this.finalReorderAction);
 
         this.AddFeature(buffer, index, count, InitTag, false);
         this.EnableFeature(buffer, index, count, PresTag);

@@ -165,7 +165,7 @@ internal sealed class ArabicShaper : DefaultShaper
 
         int prev = -1;
         int state = 0;
-        byte[] actions = new byte[count];
+        byte[] actions = buffer.GetShaperScratch(count);
 
         // Apply the state machine to map glyphs to features.
         for (int i = 0; i < count; i++)
@@ -195,7 +195,7 @@ internal sealed class ArabicShaper : DefaultShaper
         }
 
         // Apply the chosen features to their respective glyphs.
-        for (int i = 0; i < actions.Length; i++)
+        for (int i = 0; i < count; i++)
         {
             switch (actions[i])
             {

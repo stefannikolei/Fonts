@@ -271,14 +271,23 @@ public class TextShaperTests
         Assert.True(buffer.Glyphs.IsEmpty);
     }
 
-    [Fact]
-    public void Shape_ReusedBuffer_SteadyStateDoesNotAllocate()
+    [Theory]
+    [InlineData("latin")]
+    [InlineData("arabic")]
+    [InlineData("devanagari")]
+    public void Shape_ReusedBuffer_SteadyStateDoesNotAllocate(string scenario)
     {
-        // After a warm-up call has grown every pooled structure to its high-water
+        // After warm-up calls have grown every pooled structure to its high-water
         // mark, repeated shaping through the same buffer must allocate nothing.
-        Font font = new FontCollection().Add(TestFonts.OpenSansFile).CreateFont(72);
+        (string fontFile, string text) = scenario switch
+        {
+            "arabic" => (TestFonts.ArabicFontFile, "سلام عليكم ورحمة الله وبركاته لا إله إلا الله"),
+            "devanagari" => (TestFonts.NotoSansDevanagariRegular, "क्षत्रिय द्वारा प्रकृति की रक्षा कर्तव्य है"),
+            _ => (TestFonts.OpenSansFile, "The quick brown fox; fifty fluffy waffles."),
+        };
+
+        Font font = new FontCollection().Add(fontFile).CreateFont(72);
         TextOptions options = new(font);
-        const string text = "The quick brown fox; fifty fluffy waffles.";
         TextShapingBuffer buffer = new();
 
         for (int i = 0; i < 16; i++)

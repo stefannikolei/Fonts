@@ -107,6 +107,18 @@ internal sealed class MyanmarShaper : DefaultShaper
     private bool hasBrokenClusters;
 
     /// <summary>
+    /// The syllable setup pause, converted to a delegate once so per-pass feature
+    /// planning never allocates for the conversion.
+    /// </summary>
+    private readonly Action<ShapePlan, ShapingBuffer, int, int> setupSyllablesAction;
+
+    /// <summary>
+    /// The initial reorder pause, converted to a delegate once so per-pass feature
+    /// planning never allocates for the conversion.
+    /// </summary>
+    private readonly Action<ShapePlan, ShapingBuffer, int, int> initialReorderAction;
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="MyanmarShaper"/> class.
     /// </summary>
     /// <param name="script">The script classification.</param>
@@ -117,15 +129,17 @@ internal sealed class MyanmarShaper : DefaultShaper
     {
         this.textOptions = textOptions;
         this.fontMetrics = fontMetrics;
+        this.setupSyllablesAction = this.SetupSyllables;
+        this.initialReorderAction = this.InitialReorder;
     }
 
     /// <inheritdoc />
     protected override void PlanFeatures(ShapingBuffer buffer, int index, int count)
     {
-        this.EnableFeature(buffer, index, count, LoclTag, this.SetupSyllables, null);
+        this.EnableFeature(buffer, index, count, LoclTag, this.setupSyllablesAction, null);
         this.EnableFeature(buffer, index, count, CcmpTag);
 
-        this.EnableFeature(buffer, index, count, RphfTag, this.InitialReorder, null);
+        this.EnableFeature(buffer, index, count, RphfTag, this.initialReorderAction, null);
         this.EnableFeature(buffer, index, count, PrefTag);
         this.EnableFeature(buffer, index, count, BlwfTag);
         this.EnableFeature(buffer, index, count, PstfTag);

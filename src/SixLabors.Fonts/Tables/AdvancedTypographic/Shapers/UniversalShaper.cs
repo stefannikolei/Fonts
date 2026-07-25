@@ -161,6 +161,18 @@ internal sealed class UniversalShaper : DefaultShaper
     private bool hasBrokenClusters;
 
     /// <summary>
+    /// The syllable setup pause, converted to a delegate once so per-pass feature
+    /// planning never allocates for the conversion.
+    /// </summary>
+    private readonly Action<ShapePlan, ShapingBuffer, int, int> setupSyllablesAction;
+
+    /// <summary>
+    /// The reorder pause, converted to a delegate once so per-pass feature
+    /// planning never allocates for the conversion.
+    /// </summary>
+    private readonly Action<ShapePlan, ShapingBuffer, int, int> reorderAction;
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="UniversalShaper"/> class.
     /// </summary>
     /// <param name="script">The script classification.</param>
@@ -168,13 +180,17 @@ internal sealed class UniversalShaper : DefaultShaper
     /// <param name="fontMetrics">The font metrics for glyph lookups.</param>
     public UniversalShaper(ScriptClass script, TextOptions textOptions, FontMetrics fontMetrics)
        : base(script, MarkZeroingMode.PreGPos, textOptions)
-        => this.fontMetrics = fontMetrics;
+    {
+        this.fontMetrics = fontMetrics;
+        this.setupSyllablesAction = this.SetupSyllables;
+        this.reorderAction = this.Reorder;
+    }
 
     /// <inheritdoc/>
     protected override void PlanFeatures(ShapingBuffer buffer, int index, int count)
     {
         // Default glyph pre-processing group
-        this.EnableFeature(buffer, index, count, LoclTag, this.SetupSyllables, null);
+        this.EnableFeature(buffer, index, count, LoclTag, this.setupSyllablesAction, null);
         this.EnableFeature(buffer, index, count, CcmpTag);
         this.EnableFeature(buffer, index, count, NuktTag);
         this.EnableFeature(buffer, index, count, AkhnTag);
@@ -192,7 +208,7 @@ internal sealed class UniversalShaper : DefaultShaper
         this.EnableFeature(buffer, index, count, HalfTag);
         this.EnableFeature(buffer, index, count, PstfTag);
         this.EnableFeature(buffer, index, count, VatuTag);
-        this.EnableFeature(buffer, index, count, CjctTag, null, this.Reorder);
+        this.EnableFeature(buffer, index, count, CjctTag, null, this.reorderAction);
 
         // Standard topographic presentation and positional feature application
         this.EnableFeature(buffer, index, count, AbvsTag);

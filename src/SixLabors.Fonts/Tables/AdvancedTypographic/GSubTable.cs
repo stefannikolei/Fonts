@@ -287,7 +287,7 @@ internal class GSubTable : Table
         FontMetrics fontMetrics,
         ShapingBuffer buffer,
         ref SkippingGlyphIterator iterator,
-        List<(Tag Feature, ushort Index, LookupTable LookupTable, ulong Mask)> merged,
+        List<(Tag Feature, ushort Index, LookupTable LookupTable, uint Mask)> merged,
         int index,
         ref int count,
         ref int i,
@@ -298,7 +298,7 @@ internal class GSubTable : Table
     {
         for (int m = 0; m < merged.Count; m++)
         {
-            (Tag feature, ushort _, LookupTable featureLookupTable, ulong featureMask) = merged[m];
+            (Tag feature, ushort _, LookupTable featureLookupTable, uint featureMask) = merged[m];
 
             // Skip the whole lookup when its coverage cannot intersect any glyph id
             // the buffer has ever contained; most fonts carry many lookups for

@@ -301,7 +301,7 @@ internal sealed class ShapingBuffer
         LayoutMode layoutMode = this.TextOptions.LayoutMode;
         ColorFontSupport colorFontSupport = this.TextOptions.ColorFontSupport;
 
-        ulong verticalMask = ShapePlanFeatures.VerticalFeatureMask;
+        uint verticalMask = ShapePlanFeatures.VerticalFeatureMask;
 
         for (int i = 0; i < this.count; i++)
         {
@@ -397,7 +397,7 @@ internal sealed class ShapingBuffer
     /// <param name="count">The number of records in the range.</param>
     /// <param name="feature">The feature to apply.</param>
     /// <param name="mask">The feature's plan-assigned mask bit.</param>
-    public void AddShapingFeatureRange(int index, int count, TagEntry feature, ulong mask)
+    public void AddShapingFeatureRange(int index, int count, TagEntry feature, uint mask)
     {
         int end = index + count;
         for (int i = index; i < end; i++)
@@ -420,7 +420,7 @@ internal sealed class ShapingBuffer
     /// </remarks>
     /// <param name="index">The zero-based index of the record.</param>
     /// <param name="mask">The feature's plan-assigned mask bit.</param>
-    public void EnableShapingFeature(int index, ulong mask)
+    public void EnableShapingFeature(int index, uint mask)
     {
         ref GlyphShapingData item = ref this.data[index];
         item.FeatureMask |= item.RegisteredFeatureMask & mask;
@@ -434,7 +434,7 @@ internal sealed class ShapingBuffer
     /// </remarks>
     /// <param name="index">The zero-based index of the record.</param>
     /// <param name="mask">The feature's plan-assigned mask bit.</param>
-    public void DisableShapingFeature(int index, ulong mask)
+    public void DisableShapingFeature(int index, uint mask)
     {
         ref GlyphShapingData item = ref this.data[index];
         item.FeatureMask &= ~mask;
@@ -785,7 +785,7 @@ internal sealed class ShapingBuffer
             if (glyphIds.Length > 1)
             {
                 GlyphShapingData template = this.data[index];
-                ulong mask = ShapePlanFeatures.GetVerticalMask(feature);
+                uint mask = ShapePlanFeatures.GetVerticalMask(feature);
                 for (int i = 1; i < glyphIds.Length; i++)
                 {
                     GlyphShapingData inserted = new(template, false)
@@ -839,7 +839,7 @@ internal sealed class ShapingBuffer
         LayoutMode layoutMode = this.TextOptions.LayoutMode;
         ColorFontSupport colorFontSupport = this.TextOptions.ColorFontSupport;
 
-        ulong verticalMask = ShapePlanFeatures.VerticalFeatureMask;
+        uint verticalMask = ShapePlanFeatures.VerticalFeatureMask;
 
         for (int i = 0; i < workspace.count; i++)
         {
@@ -917,7 +917,7 @@ internal sealed class ShapingBuffer
         ColorFontSupport colorFontSupport = this.TextOptions.ColorFontSupport;
         bool hasFallBacks = false;
 
-        ulong verticalMask = ShapePlanFeatures.VerticalFeatureMask;
+        uint verticalMask = ShapePlanFeatures.VerticalFeatureMask;
 
         for (int i = 0; i < this.count; i++)
         {

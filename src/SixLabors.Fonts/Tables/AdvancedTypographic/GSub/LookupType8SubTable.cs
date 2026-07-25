@@ -157,7 +157,7 @@ internal sealed class LookupType8Format1SubTable : LookupSubTable
         GSubTable table,
         ShapingBuffer buffer,
         Tag feature,
-        ulong lookupMask,
+        uint lookupMask,
         int index,
         int count)
     {

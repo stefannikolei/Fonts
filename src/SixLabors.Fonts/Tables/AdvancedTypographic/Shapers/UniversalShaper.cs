@@ -278,7 +278,7 @@ internal sealed class UniversalShaper : DefaultShaper
         }
 
         int syllable = 0;
-        ulong rphfMask = this.Features.GetMask(RphfTag);
+        uint rphfMask = this.Features.GetMask(RphfTag);
         StateMachine.MatchEnumerator match = StateMachine.EnumerateMatches(values);
         while (match.MoveNext())
         {
@@ -351,7 +351,7 @@ internal sealed class UniversalShaper : DefaultShaper
         }
 
         int end = index + count;
-        ulong rphfMask = plan.Features.GetMask(RphfTag);
+        uint rphfMask = plan.Features.GetMask(RphfTag);
         for (int i = index; i < end; i++)
         {
             ref GlyphShapingData data = ref buffer[i];

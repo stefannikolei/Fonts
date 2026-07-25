@@ -342,11 +342,11 @@ internal sealed class ShapePlan
             // from the tail because resolved lookups arrive mostly ascending, so
             // the insertion point is almost always at or near the end.
             ShapePlanStageGroup<TLookup> group = new(stageIndex, groupEnd);
-            List<(Tag Feature, ushort Index, TLookup LookupTable, ulong Mask)> merged = group.Lookups;
+            List<(Tag Feature, ushort Index, TLookup LookupTable, uint Mask)> merged = group.Lookups;
             for (int s = stageIndex; s < groupEnd; s++)
             {
                 Tag featureTag = stages[s].FeatureTag;
-                ulong featureMask = this.Features.GetMask(featureTag);
+                uint featureMask = this.Features.GetMask(featureTag);
                 if (featureMask == 0)
                 {
                     continue;
@@ -368,7 +368,7 @@ internal sealed class ShapePlan
                     bool alreadyMerged = false;
                     while (insertAt > 0)
                     {
-                        (Tag Feature, ushort Index, TLookup LookupTable, ulong Mask) prior = merged[insertAt - 1];
+                        (Tag Feature, ushort Index, TLookup LookupTable, uint Mask) prior = merged[insertAt - 1];
                         if (prior.Index == featureLookup.Index)
                         {
                             merged[insertAt - 1] = (prior.Feature, prior.Index, prior.LookupTable, prior.Mask | featureMask);

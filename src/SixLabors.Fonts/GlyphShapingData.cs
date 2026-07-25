@@ -245,14 +245,14 @@ internal struct GlyphShapingData
     /// only ever reveals a registered bit; a feature that was never registered for the
     /// glyph cannot be enabled.
     /// </summary>
-    public ulong RegisteredFeatureMask { get; set; }
+    public uint RegisteredFeatureMask { get; set; }
 
     /// <summary>
     /// Gets or sets the mask of features currently enabled for this glyph: the subset of
     /// <see cref="RegisteredFeatureMask"/> a lookup application gate tests with a single
     /// bitwise AND.
     /// </summary>
-    public ulong FeatureMask { get; set; }
+    public uint FeatureMask { get; set; }
 
     /// <summary>
     /// Gets or sets the mask of features whose lookups actually changed this glyph.
@@ -261,7 +261,7 @@ internal struct GlyphShapingData
     /// therefore survives the copy into the positioning buffer regardless of which
     /// plan wrote it.
     /// </summary>
-    public ulong AppliedFeatureMask { get; set; }
+    public uint AppliedFeatureMask { get; set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether this glyph is the result of a substitution.

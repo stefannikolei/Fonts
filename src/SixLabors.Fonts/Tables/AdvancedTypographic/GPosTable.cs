@@ -323,13 +323,13 @@ internal class GPosTable : Table
         for (int g = 0; g < groups.Count; g++)
         {
             ShapePlanStageGroup<LookupTable> group = groups[g];
-            List<(Tag Feature, ushort Index, LookupTable LookupTable, ulong Mask)> merged = group.Lookups;
+            List<(Tag Feature, ushort Index, LookupTable LookupTable, uint Mask)> merged = group.Lookups;
 
             shapingStages[group.Start].PreProcessFeature(shapePlan, buffer, index, count);
 
             for (int m = 0; m < merged.Count; m++)
             {
-                (Tag feature, ushort _, LookupTable featureLookupTable, ulong featureMask) = merged[m];
+                (Tag feature, ushort _, LookupTable featureLookupTable, uint featureMask) = merged[m];
 
                 // Skip the whole lookup when its coverage cannot intersect any
                 // glyph id the buffer has ever contained; most fonts carry

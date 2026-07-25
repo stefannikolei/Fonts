@@ -22,23 +22,23 @@ internal sealed class ShapePlanFeatures
     /// that span plans, such as the copy-out's vertical detection, never depend on
     /// any single plan's layout.
     /// </summary>
-    public const ulong VerticalAlternatesMask = 1UL << 0;
+    public const uint VerticalAlternatesMask = 1U << 0;
 
     /// <summary>
     /// The fixed mask bit for the vertical alternates for rotation feature.
     /// </summary>
-    public const ulong VerticalAlternatesForRotationMask = 1UL << 1;
+    public const uint VerticalAlternatesForRotationMask = 1U << 1;
 
     /// <summary>
     /// The fixed mask bit for the vertical kerning feature.
     /// </summary>
-    public const ulong VerticalKerningMask = 1UL << 2;
+    public const uint VerticalKerningMask = 1U << 2;
 
     /// <summary>
     /// The combined mask of the three vertical alternate features, constant across
     /// plans by the reserved-bit contract above.
     /// </summary>
-    public const ulong VerticalFeatureMask = VerticalAlternatesMask | VerticalAlternatesForRotationMask | VerticalKerningMask;
+    public const uint VerticalFeatureMask = VerticalAlternatesMask | VerticalAlternatesForRotationMask | VerticalKerningMask;
 
     /// <summary>
     /// The single mask bit shared by every global feature: one that applies to all
@@ -46,7 +46,7 @@ internal sealed class ShapePlanFeatures
     /// lookups of any number of global features match with one bit between them and
     /// the distinct bits are kept for features whose per-glyph state varies.
     /// </summary>
-    public const ulong GlobalFeatureMask = 1UL << 63;
+    public const uint GlobalFeatureMask = 1U << 31;
 
     /// <summary>
     /// The first bit available to varying features; lower bits stay clear of the
@@ -59,7 +59,7 @@ internal sealed class ShapePlanFeatures
     /// The number of assignable varying-feature bits: everything between the first
     /// assignable bit and the reserved global bit.
     /// </summary>
-    private const int AssignableBitCount = 63 - FirstAssignableBit;
+    private const int AssignableBitCount = 31 - FirstAssignableBit;
 
     /// <summary>
     /// The varying feature tag values, indexed by bit position above the reserved
@@ -92,7 +92,7 @@ internal sealed class ShapePlanFeatures
     /// <summary>
     /// The mask paired with <see cref="lastTagValue"/>.
     /// </summary>
-    private ulong lastMask;
+    private uint lastMask;
 
     /// <summary>
     /// Gets the fixed vertical-trio mask bit for a feature, or zero for any other
@@ -101,7 +101,7 @@ internal sealed class ShapePlanFeatures
     /// </summary>
     /// <param name="tag">The feature tag whose lookups applied.</param>
     /// <returns>The fixed vertical mask bit, or zero.</returns>
-    public static ulong GetVerticalMask(Tag tag)
+    public static uint GetVerticalMask(Tag tag)
     {
         if (tag == KnownFeatureTags.VerticalAlternates)
         {
@@ -129,7 +129,7 @@ internal sealed class ShapePlanFeatures
     /// </summary>
     /// <param name="tag">The feature tag.</param>
     /// <returns>The feature's mask, or zero.</returns>
-    public ulong GetMask(Tag tag)
+    public uint GetMask(Tag tag)
     {
         if (tag.Value == this.lastTagValue)
         {
@@ -144,7 +144,7 @@ internal sealed class ShapePlanFeatures
         int index = this.featureTags.IndexOf(tag.Value);
         if (index >= 0)
         {
-            ulong mask = 1UL << (FirstAssignableBit + index);
+            uint mask = 1U << (FirstAssignableBit + index);
             this.lastTagValue = tag.Value;
             this.lastMask = mask;
             return mask;
@@ -173,7 +173,7 @@ internal sealed class ShapePlanFeatures
     /// </summary>
     /// <param name="tag">The feature tag.</param>
     /// <returns>The distinct bit, or zero when disabled or exhausted.</returns>
-    public ulong GetOrAddMask(Tag tag)
+    public uint GetOrAddMask(Tag tag)
     {
         if (this.disabledTags.Count > 0 && this.disabledTags.Contains(tag.Value))
         {
@@ -183,7 +183,7 @@ internal sealed class ShapePlanFeatures
         int index = this.featureTags.IndexOf(tag.Value);
         if (index >= 0)
         {
-            ulong mask = 1UL << (FirstAssignableBit + index);
+            uint mask = 1U << (FirstAssignableBit + index);
             this.lastTagValue = tag.Value;
             this.lastMask = mask;
             return mask;
@@ -199,7 +199,7 @@ internal sealed class ShapePlanFeatures
         }
 
         this.featureTags.Add(tag.Value);
-        ulong added = 1UL << (FirstAssignableBit + this.featureTags.Count - 1);
+        uint added = 1U << (FirstAssignableBit + this.featureTags.Count - 1);
         this.lastTagValue = tag.Value;
         this.lastMask = added;
         return added;
@@ -214,7 +214,7 @@ internal sealed class ShapePlanFeatures
     /// </summary>
     /// <param name="tag">The feature tag.</param>
     /// <returns>The feature's mask, or zero when the feature is disabled.</returns>
-    public ulong GetOrAddGlobalMask(Tag tag)
+    public uint GetOrAddGlobalMask(Tag tag)
     {
         if (this.disabledTags.Count > 0 && this.disabledTags.Contains(tag.Value))
         {
@@ -224,7 +224,7 @@ internal sealed class ShapePlanFeatures
         int index = this.featureTags.IndexOf(tag.Value);
         if (index >= 0)
         {
-            ulong mask = 1UL << (FirstAssignableBit + index);
+            uint mask = 1U << (FirstAssignableBit + index);
             this.lastTagValue = tag.Value;
             this.lastMask = mask;
             return mask;

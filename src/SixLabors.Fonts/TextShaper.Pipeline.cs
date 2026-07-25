@@ -386,7 +386,7 @@ public static partial class TextShaper
         // deduplicates into a run table and per-glyph state splits into parallel
         // identity and geometry arrays of pure values, so the scratch can go back to
         // the pool before consumption and no metrics reference survives shaping.
-        ulong verticalMask = ShapePlanFeatures.VerticalFeatureMask;
+        uint verticalMask = ShapePlanFeatures.VerticalFeatureMask;
         int count = shaped.Count;
         ShapedGlyphInfo[] infos = new ShapedGlyphInfo[count];
         ShapedGlyphPosition[] positions = new ShapedGlyphPosition[count];

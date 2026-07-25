@@ -42,5 +42,5 @@ internal sealed class ShapePlanStageGroup<TLookup>
     /// order. A lookup registered by several features appears once with their
     /// plan-assigned masks combined, so application consumes the list directly.
     /// </summary>
-    public List<(Tag Feature, ushort Index, TLookup LookupTable, ulong Mask)> Lookups { get; }
+    public List<(Tag Feature, ushort Index, TLookup LookupTable, uint Mask)> Lookups { get; }
 }

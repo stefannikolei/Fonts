@@ -203,7 +203,7 @@ internal sealed class LookupTable
         GSubTable table,
         ShapingBuffer buffer,
         Tag feature,
-        ulong lookupMask,
+        uint lookupMask,
         int index,
         int count)
     {
@@ -352,7 +352,7 @@ internal abstract class LookupSubTable
         GSubTable table,
         ShapingBuffer buffer,
         Tag feature,
-        ulong lookupMask,
+        uint lookupMask,
         int index,
         int count);
 

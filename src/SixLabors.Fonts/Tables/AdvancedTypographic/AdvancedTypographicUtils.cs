@@ -110,7 +110,7 @@ internal static class AdvancedTypographicUtils
         FontMetrics fontMetrics,
         GSubTable table,
         Tag feature,
-        ulong lookupMask,
+        uint lookupMask,
         LookupFlags lookupFlags,
         ushort markFilteringSet,
         SequenceLookupRecord[] records,
@@ -198,7 +198,7 @@ internal static class AdvancedTypographicUtils
     /// <param name="sequence">The array of glyph IDs to match.</param>
     /// <param name="matches">A span to store matched glyph indices, or default if not needed.</param>
     /// <returns><see langword="true"/> if the entire sequence was matched; otherwise, <see langword="false"/>.</returns>
-    public static bool MatchInputSequence(SkippingGlyphIterator iterator, ulong featureMask, ushort increment, ushort[] sequence, Span<int> matches)
+    public static bool MatchInputSequence(SkippingGlyphIterator iterator, uint featureMask, ushort increment, ushort[] sequence, Span<int> matches)
     {
         // The mask travels as match state so the lambda stays static: a capturing
         // lambda here would allocate a closure and delegate on every ligature attempt.

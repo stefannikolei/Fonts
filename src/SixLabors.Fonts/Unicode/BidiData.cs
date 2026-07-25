@@ -129,9 +129,9 @@ internal partial class BidiData
             // one bracket type, and one pairing value per code point instead of the
             // property lookups below. ASCII contains no embedding or isolate
             // initiators, so the flag bookkeeping is skipped as well.
-            int asciiValue = codePoint.Value;
-            if ((uint)asciiValue < 128)
+            if (codePoint.IsAscii)
             {
+                int asciiValue = codePoint.Value;
                 this.types[i] = (BidiCharacterType)AsciiCharacterTypes[asciiValue];
 
                 BidiPairedBracketType asciiPbt = (BidiPairedBracketType)AsciiPairedBracketTypes[asciiValue];

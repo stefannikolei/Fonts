@@ -93,9 +93,13 @@ public ref struct SpanGraphemeEnumerator
         // extends, joins, or prepends, and any scalar that could attach to the
         // cluster is necessarily non-ASCII. Such a cluster's metadata is fixed
         // apart from the emoji flag carried by the keycap bases, so the boundary
-        // machine below never needs to run for it.
+        // machine below never needs to run for it. The leading test is the
+        // printable range, deliberately narrower than the ASCII check used for
+        // the follower: ASCII controls carry real boundary rules (a carriage
+        // return joins a following line feed into one cluster) and must reach
+        // the machine.
         char first = this.source[0];
-        if (first is >= ' ' and <= '~' && (this.source.Length == 1 || this.source[1] < '\u0080'))
+        if (first is >= ' ' and <= '~' && (this.source.Length == 1 || UnicodeUtility.IsAsciiCodePoint(this.source[1])))
         {
             if (!this.countOnly)
             {

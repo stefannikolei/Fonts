@@ -884,13 +884,14 @@ public abstract class FontGlyphMetrics
     }
 
     /// <summary>
-    /// Gets a value indicating whether the specified code point should be skipped when rendering.
+    /// Gets a value indicating whether the specified code point should be skipped when
+    /// rendering: line terminators participate in layout but have no glyph to draw.
     /// </summary>
     /// <param name="codePoint">The code point.</param>
     /// <returns>The <see cref="bool"/>.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected internal static bool ShouldSkipGlyphRendering(CodePoint codePoint)
-        => UnicodeUtility.ShouldNotBeRendered(codePoint);
+        => CodePoint.IsNewLine(codePoint);
 
     /// <summary>
     /// Returns the size to render/measure the glyph based on the given size and resolution in px units.

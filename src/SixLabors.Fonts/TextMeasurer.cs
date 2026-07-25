@@ -670,17 +670,15 @@ public static class TextMeasurer
         Vector2 scale = new(scaledSize / metrics.ScaleFactor.X, scaledSize / metrics.ScaleFactor.Y);
         float emHeight = metrics.UnitsPerEm * scale.Y;
 
-        switch (options.GetGlyphLayoutMode(metrics.CodePoint))
+        return options.GetGlyphLayoutMode(metrics.CodePoint) switch
         {
-            case GlyphLayoutMode.Vertical:
-                return new FontRectangle(0, 0, metrics.AdvanceWidth * scale.X, metrics.AdvanceHeight * scale.Y);
-            case GlyphLayoutMode.VerticalRotated:
-                // A rotated glyph advances along the column by its horizontal advance and its
-                // line box lies across the column.
-                return new FontRectangle(0, 0, emHeight, metrics.AdvanceWidth * scale.X);
-            default:
-                return new FontRectangle(0, 0, metrics.AdvanceWidth * scale.X, emHeight);
-        }
+            GlyphLayoutMode.Vertical => new FontRectangle(0, 0, metrics.AdvanceWidth * scale.X, metrics.AdvanceHeight * scale.Y),
+
+            // A rotated glyph advances along the column by its horizontal advance and its
+            // line box lies across the column.
+            GlyphLayoutMode.VerticalRotated => new FontRectangle(0, 0, emHeight, metrics.AdvanceWidth * scale.X),
+            _ => new FontRectangle(0, 0, metrics.AdvanceWidth * scale.X, emHeight),
+        };
     }
 
     /// <summary>

@@ -30,6 +30,13 @@ public class HarfBuzzDifferentialTests
             // Devanagari: conjuncts, matras, and reordering.
             { TestFonts.NotoSansDevanagariRegular, "क्षत्रिय द्वारा प्रकृति की रक्षा कर्तव्य है", false },
             { TestFonts.NotoSansDevanagariRegular, "श्रद्धांजलि", false },
+
+            // Joiners inside shaping contexts: the joiner must steer the shaping
+            // (ligature suppression/formation, joining forms, half forms) and then
+            // render invisibly at zero advance.
+            { TestFonts.OpenSansFile, "of\u200Cfice fi\u200Dnal fluff", false },
+            { TestFonts.ArabicFontFile, "\u0644\u200C\u0627 \u0644\u200D\u0627", true },
+            { TestFonts.NotoSansDevanagariRegular, "\u0915\u094D\u200D\u0937 \u0915\u094D\u200C\u0937", false },
         };
 
     [Theory]

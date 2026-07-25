@@ -308,8 +308,9 @@ internal static partial class TextLayout
                         // Tracking should only be added once per grapheme, so only on the last codepoint of the grapheme.
                         if (isLastInGrapheme && options.Tracking != 0 && i == decomposedAdvances.Length - 1)
                         {
-                            // Tracking should not be applied to tab characters or non-rendered codepoints.
-                            if (!CodePoint.IsTabulation(codePoint) && !UnicodeUtility.ShouldNotBeRendered(codePoint))
+                            // Tracking applies per grapheme; tab characters and line
+                            // terminators never receive it.
+                            if (!CodePoint.IsTabulation(codePoint) && !CodePoint.IsNewLine(codePoint))
                             {
                                 if (isHorizontalLayout || shouldRotate)
                                 {

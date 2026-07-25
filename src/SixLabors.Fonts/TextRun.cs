@@ -133,7 +133,7 @@ public class TextRun
         this.ResolvedFontWeight = this.FontWeight ?? defaultWeight;
         if (!this.ResolvedFontWeight.HasValue && (font.RequestedStyle & FontStyle.Bold) == FontStyle.Bold)
         {
-            this.ResolvedFontWeight = SixLabors.Fonts.FontWeight.Bold;
+            this.ResolvedFontWeight = Fonts.FontWeight.Bold;
         }
 
         bool applied = false;

@@ -46,6 +46,16 @@ internal struct GlyphShapingData
     private const ushort PlaceholderFlag = 1 << 3;
 
     /// <summary>
+    /// The <see cref="flags"/> bit recording <see cref="IsDefaultIgnorable"/>.
+    /// </summary>
+    private const ushort DefaultIgnorableFlag = 1 << 4;
+
+    /// <summary>
+    /// The <see cref="flags"/> bit recording <see cref="IsHidden"/>.
+    /// </summary>
+    private const ushort HiddenFlag = 1 << 5;
+
+    /// <summary>
     /// The <see cref="flags"/> bit recording that <see cref="shapingClassCacheId"/>
     /// holds the glyph id <see cref="CachedShapingClass"/> was computed for. A default
     /// record therefore reports an invalid cache.
@@ -125,6 +135,8 @@ internal struct GlyphShapingData
         this.IsSubstituted = data.IsSubstituted;
         this.IsDecomposed = data.IsDecomposed;
         this.IsPlaceholder = data.IsPlaceholder;
+        this.IsDefaultIgnorable = data.IsDefaultIgnorable;
+        this.IsHidden = data.IsHidden;
 
         this.Syllable = data.Syllable;
 
@@ -302,6 +314,29 @@ internal struct GlyphShapingData
     {
         readonly get => (this.flags & PlaceholderFlag) != 0;
         set => this.flags = value ? (ushort)(this.flags | PlaceholderFlag) : (ushort)(this.flags & ~PlaceholderFlag);
+    }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the glyph's codepoint is a default
+    /// ignorable that renders invisibly. Classified once as the record enters the
+    /// buffer; the carve-outs that render as regular spacing glyphs, such as the
+    /// Hangul fillers, never receive the bit.
+    /// </summary>
+    public bool IsDefaultIgnorable
+    {
+        readonly get => (this.flags & DefaultIgnorableFlag) != 0;
+        set => this.flags = value ? (ushort)(this.flags | DefaultIgnorableFlag) : (ushort)(this.flags & ~DefaultIgnorableFlag);
+    }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the hide stage replaced this glyph
+    /// with the invisible glyph at zero advance. Consumers read this recorded
+    /// decision instead of re-deriving it from the codepoint.
+    /// </summary>
+    public bool IsHidden
+    {
+        readonly get => (this.flags & HiddenFlag) != 0;
+        set => this.flags = value ? (ushort)(this.flags | HiddenFlag) : (ushort)(this.flags & ~HiddenFlag);
     }
 
     private string DebuggerDisplay

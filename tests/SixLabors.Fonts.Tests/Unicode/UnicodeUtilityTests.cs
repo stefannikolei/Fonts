@@ -15,7 +15,6 @@ public class UnicodeUtilityTests
     [InlineData(0x17B4, 0x17B5)]
     [InlineData(0x180B, 0x180D)]
     [InlineData(0x180E, 0x180E)]
-    [InlineData(0x180F, 0x180F)]
     [InlineData(0x200B, 0x200F)]
     [InlineData(0x202A, 0x202E)]
     [InlineData(0x2060, 0x2064)]
@@ -45,6 +44,7 @@ public class UnicodeUtilityTests
 
     [Theory]
     [InlineData(0x0u, 0x7Fu)] // ASCII
+    [InlineData(0x180Fu, 0x180Fu)] // MONGOLIAN FREE VARIATION SELECTOR FOUR: deliberately excluded
     public void NoFalsePositiveDefaultIgnorableCodePoint(uint min, uint max)
     {
         for (uint i = min; i <= max; i++)

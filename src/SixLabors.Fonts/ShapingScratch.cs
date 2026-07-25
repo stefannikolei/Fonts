@@ -1,8 +1,6 @@
 // Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
-using SixLabors.Fonts.Tables.AdvancedTypographic;
-
 namespace SixLabors.Fonts;
 
 /// <summary>
@@ -19,7 +17,7 @@ namespace SixLabors.Fonts;
 /// </remarks>
 internal sealed class ShapingScratch
 {
-        /// <summary>
+    /// <summary>
     /// The per-font-run workspace buffer glyphs are substituted in.
     /// </summary>
     private ShapingBuffer? workspace;

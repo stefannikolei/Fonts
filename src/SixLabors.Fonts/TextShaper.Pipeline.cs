@@ -380,6 +380,8 @@ public static partial class TextShaper
             font.FontMetrics.UpdatePositions(shaped);
         }
 
+        HideDefaultIgnorables(shaped);
+
         ShapingProbe.Exit(ShapingProbe.Positioning, probe);
 
         // Copy the shaped result out of the pooled collections: run-constant state
@@ -452,6 +454,80 @@ public static partial class TextShaper
         }
 
         return new ShapedText([.. runs], infos, positions, bidiRuns, bidiMap, layoutMode);
+    }
+
+    /// <summary>
+    /// Renders default ignorable records invisibly after positioning: both advances
+    /// and the offset on the axis of movement zero out, and the glyph swaps to its
+    /// font's invisible glyph. Records whose font offers no invisible glyph are
+    /// deleted instead. Records a lookup substituted keep their glyphs: the
+    /// substitution is a deliberate rendering the font produced from the ignorable.
+    /// </summary>
+    /// <param name="shaped">The positioned buffer.</param>
+    private static void HideDefaultIgnorables(ShapingBuffer shaped)
+    {
+        if (!shaped.HasDefaultIgnorables)
+        {
+            return;
+        }
+
+        CodePoint space = new(0x0020);
+        LayoutMode layoutMode = shaped.TextOptions.LayoutMode;
+        ColorFontSupport colorFontSupport = shaped.TextOptions.ColorFontSupport;
+        bool isVertical = layoutMode.IsVertical();
+        Font? invisibleFont = null;
+        ushort invisible = 0;
+        bool hasInvisible = false;
+        bool hasUnreplaceable = false;
+        for (int i = 0; i < shaped.Count; i++)
+        {
+            ref GlyphShapingData data = ref shaped[i];
+            if (!data.IsDefaultIgnorable || data.IsSubstituted)
+            {
+                continue;
+            }
+
+            // Writing through the bounds setters marks them dirty, which is what
+            // the projection's advance reads honor. The cross-axis offset stays,
+            // so adjustments from positioning survive.
+            ref GlyphShapingPosition position = ref shaped.PositionAt(i);
+            position.Bounds.Width = 0;
+            position.Bounds.Height = 0;
+            if (isVertical)
+            {
+                position.Bounds.Y = 0;
+            }
+            else
+            {
+                position.Bounds.X = 0;
+            }
+
+            ref ShapingBuffer.GlyphMetricsEntry entry = ref shaped.MetricsAt(i);
+            Font font = entry.Font;
+            if (!ReferenceEquals(font, invisibleFont))
+            {
+                invisibleFont = font;
+                hasInvisible = font is not null && font.FontMetrics.TryGetGlyphId(space, out invisible);
+            }
+
+            if (!hasInvisible)
+            {
+                hasUnreplaceable = true;
+                continue;
+            }
+
+            // The projection reads the glyph id and default advance from the
+            // metrics entry, so the invisible glyph's metrics replace it.
+            TextRun textRun = shaped.TextRuns[data.TextRunIndex];
+            entry.Metrics = font!.FontMetrics.GetGlyphMetrics(space, invisible, textRun.TextAttributes, textRun.TextDecorations, layoutMode, colorFontSupport);
+            shaped.SetGlyphId(i, invisible);
+            data.IsHidden = true;
+        }
+
+        if (hasUnreplaceable)
+        {
+            shaped.DeleteGlyphsInPlace(static data => data.IsDefaultIgnorable && !data.IsSubstituted && !data.IsHidden);
+        }
     }
 
     /// <summary>

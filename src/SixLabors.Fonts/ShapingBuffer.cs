@@ -3,7 +3,6 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
-using System.Numerics;
 using System.Runtime.CompilerServices;
 using SixLabors.Fonts.Tables.AdvancedTypographic;
 using SixLabors.Fonts.Unicode;
@@ -27,7 +26,7 @@ namespace SixLabors.Fonts;
 internal sealed class ShapingBuffer
 {
     /// <summary>
-    /// The flat glyph storage. Only the first <see cref="count"/> records are live;
+    /// The flat glyph storage. Only the first <see cref="Count"/> records are live;
     /// records beyond the count are stale leftovers awaiting overwrite.
     /// </summary>
     private GlyphShapingData[] data = new GlyphShapingData[64];
@@ -46,11 +45,6 @@ internal sealed class ShapingBuffer
     /// narrow for the substitution walks that never touch it.
     /// </summary>
     private GlyphShapingPosition[] positions = new GlyphShapingPosition[64];
-
-    /// <summary>
-    /// The live record count.
-    /// </summary>
-    private int count;
 
     /// <summary>
     /// The approximate membership filter over every glyph id the buffer has ever
@@ -159,7 +153,7 @@ internal sealed class ShapingBuffer
     /// Placeholder state lives here rather than on every glyph record because only
     /// placeholders carry a bidi run of their own, and only the copy-out reads it.
     /// </summary>
-    private readonly List<(int CodePointIndex, BidiRun Run)> placeholderBidiRuns = new();
+    private readonly List<(int CodePointIndex, BidiRun Run)> placeholderBidiRuns = [];
 
     /// <summary>
     /// Shape plans reused across segments and passes, keyed by script, script tag,
@@ -177,22 +171,6 @@ internal sealed class ShapingBuffer
     /// the input keep writing into the primary storage and never touch this.
     /// </summary>
     private GlyphShapingData[] outData = [];
-
-    /// <summary>
-    /// The number of records produced on the output side of the active pass.
-    /// </summary>
-    private int outCount;
-
-    /// <summary>
-    /// The read cursor of the active pass: the next input record to consume.
-    /// </summary>
-    private int readIndex;
-
-    /// <summary>
-    /// Whether a substitution pass is active. Outside a pass the buffer mutates
-    /// in place exactly as before, which the pause callbacks rely on.
-    /// </summary>
-    private bool passActive;
 
     /// <summary>
     /// Whether the active pass's output has diverged into <see cref="outData"/>.
@@ -231,18 +209,18 @@ internal sealed class ShapingBuffer
     /// Gets the number of live glyph records. Substitution can leave this greater or
     /// smaller than the input codepoint count.
     /// </summary>
-    public int Count => this.count;
+    public int Count { get; private set; }
 
     /// <summary>
     /// Gets the number of records already produced by the active pass; matching
     /// walks backtrack context against these records, not the unconsumed input.
     /// </summary>
-    public int PassOutputCount => this.outCount;
+    public int PassOutputCount { get; private set; }
 
     /// <summary>
     /// Gets a value indicating whether a substitution pass is active.
     /// </summary>
-    public bool IsPassActive => this.passActive;
+    public bool IsPassActive { get; private set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether the applying lookup consumes
@@ -257,7 +235,14 @@ internal sealed class ShapingBuffer
     /// Gets the read cursor of the active pass: the input-side position of the
     /// next record to consume.
     /// </summary>
-    public int ReadIndex => this.readIndex;
+    public int ReadIndex { get; private set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether any record carries a default
+    /// ignorable codepoint. Recorded as records enter the buffer so the
+    /// hide-ignorables stage can skip plain text without a scan.
+    /// </summary>
+    public bool HasDefaultIgnorables { get; set; }
 
     /// <summary>
     /// Gets a value indicating whether lookup application is currently nested
@@ -304,7 +289,7 @@ internal sealed class ShapingBuffer
     /// pass reuses these so one plan drives both tables; the list stays empty when
     /// records were seeded across buffers and positioning must segment for itself.
     /// </summary>
-    public List<(int Index, int Count, ScriptClass Script, ShapePlan Plan)> SegmentPlans { get; } = new();
+    public List<(int Index, int Count, ScriptClass Script, ShapePlan Plan)> SegmentPlans { get; } = [];
 
     /// <summary>
     /// Gets an interior reference to the glyph shaping data at the specified index.
@@ -375,7 +360,7 @@ internal sealed class ShapingBuffer
 
         uint verticalMask = ShapePlanFeatures.VerticalFeatureMask;
 
-        for (int i = 0; i < this.count; i++)
+        for (int i = 0; i < this.Count; i++)
         {
             ref GlyphShapingData slot = ref this.data[i];
             CodePoint codePoint = slot.CodePoint;
@@ -416,7 +401,7 @@ internal sealed class ShapingBuffer
     /// <param name="textOptions">The text options for the new pass.</param>
     public void Reset(TextOptions textOptions)
     {
-        this.count = 0;
+        this.Count = 0;
         this.LigatureId = 1;
         this.glyphDigest = default;
         this.placeholderBidiRuns.Clear();
@@ -439,8 +424,9 @@ internal sealed class ShapingBuffer
     /// </summary>
     public void Clear()
     {
-        this.count = 0;
+        this.Count = 0;
         this.LigatureId = 1;
+        this.HasDefaultIgnorables = false;
         this.placeholderBidiRuns.Clear();
         this.SegmentPlans.Clear();
     }
@@ -520,9 +506,12 @@ internal sealed class ShapingBuffer
     public void AddGlyph(GlyphShapingData data, int offset)
     {
         this.glyphDigest.Add(data.GlyphId);
+        this.HasDefaultIgnorables |= data.IsDefaultIgnorable;
         ref GlyphShapingData slot = ref this.Append();
-        slot = new(data, false);
-        slot.CodePointIndex = offset;
+        slot = new(data, false)
+        {
+            CodePointIndex = offset
+        };
     }
 
     /// <summary>
@@ -544,6 +533,18 @@ internal sealed class ShapingBuffer
             Direction = direction,
             GlyphId = glyphId,
         };
+
+        // The render-as-whitespace carve-outs are default ignorables that fonts
+        // implement as regular spacing glyphs, such as the Hangul fillers; those
+        // keep their glyphs.
+        uint value = (uint)codePoint.Value;
+        if (value >= 0x80
+            && UnicodeUtility.IsDefaultIgnorableCodePoint(value)
+            && !UnicodeUtility.ShouldRenderWhiteSpaceOnly(codePoint))
+        {
+            slot.IsDefaultIgnorable = true;
+            this.HasDefaultIgnorables = true;
+        }
     }
 
     /// <summary>
@@ -654,8 +655,8 @@ internal sealed class ShapingBuffer
     /// <param name="endIndex">The zero-based index at which to stop reversing (exclusive).</param>
     public void ReverseRange(int startIndex, int endIndex)
     {
-        int s = Math.Min(startIndex, this.count);
-        int e = Math.Min(endIndex, this.count);
+        int s = Math.Min(startIndex, this.Count);
+        int e = Math.Min(endIndex, this.Count);
 
         if (e < s + 2)
         {
@@ -707,7 +708,7 @@ internal sealed class ShapingBuffer
     public bool TryGetGlyphShapingDataAtOffset(int offset, [NotNullWhen(true)] out IReadOnlyList<GlyphShapingData>? data)
     {
         List<GlyphShapingData> match = [];
-        for (int i = 0; i < this.count; i++)
+        for (int i = 0; i < this.Count; i++)
         {
             if (this.data[i].CodePointIndex == offset)
             {
@@ -733,7 +734,7 @@ internal sealed class ShapingBuffer
     public void Replace(int index, ushort glyphId, Tag feature)
     {
         this.glyphDigest.Add(glyphId);
-        if (this.passActive && this.DirectConsume && index == this.readIndex)
+        if (this.IsPassActive && this.DirectConsume && index == this.ReadIndex)
         {
             ref GlyphShapingData produced = ref this.ProduceFromCursor();
             produced.GlyphId = glyphId;
@@ -782,7 +783,7 @@ internal sealed class ShapingBuffer
         }
 
         this.glyphDigest.Add(glyphId);
-        if (this.passActive && this.DirectConsume && index == this.readIndex)
+        if (this.IsPassActive && this.DirectConsume && index == this.ReadIndex)
         {
             // Produce the ligature from the cursor, then stream the span it
             // matched over: component records are consumed without output and
@@ -804,7 +805,7 @@ internal sealed class ShapingBuffer
             if (removalIndices.Length > 0)
             {
                 int removal = 0;
-                int last = removalIndices[removalIndices.Length - 1];
+                int last = removalIndices[^1];
                 for (int position = index + 1; position <= last; position++)
                 {
                     if (removal < removalIndices.Length && removalIndices[removal] == position)
@@ -873,7 +874,7 @@ internal sealed class ShapingBuffer
         }
 
         this.glyphDigest.Add(glyphId);
-        if (this.passActive && this.DirectConsume && index == this.readIndex)
+        if (this.IsPassActive && this.DirectConsume && index == this.ReadIndex)
         {
             // Produce the replacement from the cursor, then consume the
             // contiguous following records without output.
@@ -927,7 +928,7 @@ internal sealed class ShapingBuffer
     /// <param name="feature">The feature to apply to the record at the specified index.</param>
     public void Replace(int index, ReadOnlySpan<ushort> glyphIds, Tag feature)
     {
-        if (this.passActive && this.DirectConsume && index == this.readIndex)
+        if (this.IsPassActive && this.DirectConsume && index == this.ReadIndex)
         {
             if (glyphIds.Length == 0)
             {
@@ -1036,9 +1037,13 @@ internal sealed class ShapingBuffer
         LayoutMode layoutMode = this.TextOptions.LayoutMode;
         ColorFontSupport colorFontSupport = this.TextOptions.ColorFontSupport;
 
+        // The hide-ignorables stage runs against this buffer, so the workspace's
+        // knowledge of default ignorables must travel with its records.
+        this.HasDefaultIgnorables |= workspace.HasDefaultIgnorables;
+
         uint verticalMask = ShapePlanFeatures.VerticalFeatureMask;
 
-        for (int i = 0; i < workspace.count; i++)
+        for (int i = 0; i < workspace.Count; i++)
         {
             ref GlyphShapingData source = ref workspace.data[i];
             CodePoint codePoint = source.CodePoint;
@@ -1055,14 +1060,14 @@ internal sealed class ShapingBuffer
                 ref GlyphShapingData placeholderSlot = ref this.Append();
                 placeholderSlot = source;
                 placeholderSlot.ClearFeatures();
-                this.positions[this.count - 1] = new(layoutMode.IsVertical()
+                this.positions[this.Count - 1] = new(layoutMode.IsVertical()
                     ? new(0, 0, 0, placeholderMetrics.AdvanceHeight)
                     : new(0, 0, placeholderMetrics.AdvanceWidth, 0))
                 {
                     IsPositioned = true,
                 };
 
-                this.metrics[this.count - 1] = new(font, font.Size, placeholderMetrics);
+                this.metrics[this.Count - 1] = new(font, font.Size, placeholderMetrics);
                 continue;
             }
 
@@ -1086,11 +1091,11 @@ internal sealed class ShapingBuffer
             ref GlyphShapingData slot = ref this.Append();
             slot = source;
             slot.ClearFeatures();
-            this.positions[this.count - 1] = new(isVertical
+            this.positions[this.Count - 1] = new(isVertical
                 ? new(0, 0, 0, glyphMetrics.AdvanceHeight)
                 : new(0, 0, glyphMetrics.AdvanceWidth, 0));
 
-            this.metrics[this.count - 1] = new(font, font.Size, glyphMetrics);
+            this.metrics[this.Count - 1] = new(font, font.Size, glyphMetrics);
         }
 
         return !hasFallBacks;
@@ -1114,9 +1119,13 @@ internal sealed class ShapingBuffer
         ColorFontSupport colorFontSupport = this.TextOptions.ColorFontSupport;
         bool hasFallBacks = false;
 
+        // The hide-ignorables stage runs against this buffer, so the workspace's
+        // knowledge of default ignorables must travel with its records.
+        this.HasDefaultIgnorables |= workspace.HasDefaultIgnorables;
+
         uint verticalMask = ShapePlanFeatures.VerticalFeatureMask;
 
-        for (int i = 0; i < this.count; i++)
+        for (int i = 0; i < this.Count; i++)
         {
             if (this.metrics[i].Metrics.GlyphType != GlyphType.Fallback)
             {
@@ -1414,14 +1423,14 @@ internal sealed class ShapingBuffer
     /// <returns>The appended record.</returns>
     private ref GlyphShapingData Append()
     {
-        if (this.count == this.data.Length)
+        if (this.Count == this.data.Length)
         {
             Array.Resize(ref this.data, this.data.Length * 2);
             Array.Resize(ref this.metrics, this.metrics.Length * 2);
             Array.Resize(ref this.positions, this.positions.Length * 2);
         }
 
-        return ref this.data[this.count++];
+        return ref this.data[this.Count++];
     }
 
     /// <summary>
@@ -1429,10 +1438,7 @@ internal sealed class ShapingBuffer
     /// </summary>
     /// <param name="index">The zero-based index at which to insert.</param>
     /// <param name="item">The record to insert.</param>
-    private void InsertAt(int index, GlyphShapingData item)
-    {
-        this.InsertAt(index, item, default);
-    }
+    private void InsertAt(int index, GlyphShapingData item) => this.InsertAt(index, item, default);
 
     /// <summary>
     /// Inserts one record and its metrics entry at the given index, shifting later
@@ -1445,24 +1451,24 @@ internal sealed class ShapingBuffer
     /// <param name="metricsEntry">The metrics entry to insert.</param>
     private void InsertAt(int index, GlyphShapingData item, GlyphMetricsEntry metricsEntry)
     {
-        if (this.count == this.data.Length)
+        if (this.Count == this.data.Length)
         {
             Array.Resize(ref this.data, this.data.Length * 2);
             Array.Resize(ref this.metrics, this.metrics.Length * 2);
             Array.Resize(ref this.positions, this.positions.Length * 2);
         }
 
-        Array.Copy(this.data, index, this.data, index + 1, this.count - index);
+        Array.Copy(this.data, index, this.data, index + 1, this.Count - index);
         if (this.Role == ShapingBufferRole.Positioning)
         {
-            Array.Copy(this.metrics, index, this.metrics, index + 1, this.count - index);
-            Array.Copy(this.positions, index, this.positions, index + 1, this.count - index);
+            Array.Copy(this.metrics, index, this.metrics, index + 1, this.Count - index);
+            Array.Copy(this.positions, index, this.positions, index + 1, this.Count - index);
             this.positions[index] = default;
         }
 
         this.data[index] = item;
         this.metrics[index] = metricsEntry;
-        this.count++;
+        this.Count++;
     }
 
     /// <summary>
@@ -1474,14 +1480,73 @@ internal sealed class ShapingBuffer
     /// <param name="index">The zero-based index to remove at.</param>
     private void RemoveAt(int index)
     {
-        Array.Copy(this.data, index + 1, this.data, index, this.count - index - 1);
+        Array.Copy(this.data, index + 1, this.data, index, this.Count - index - 1);
         if (this.Role == ShapingBufferRole.Positioning)
         {
-            Array.Copy(this.metrics, index + 1, this.metrics, index, this.count - index - 1);
-            Array.Copy(this.positions, index + 1, this.positions, index, this.count - index - 1);
+            Array.Copy(this.metrics, index + 1, this.metrics, index, this.Count - index - 1);
+            Array.Copy(this.positions, index + 1, this.positions, index, this.Count - index - 1);
         }
 
-        this.count--;
+        this.Count--;
+    }
+
+    /// <summary>
+    /// Deletes every record matching the filter in one forward compaction pass,
+    /// keeping the parallel streams aligned. A deleted record's codepoint coverage
+    /// folds into the preceding kept record, or into the next kept record when
+    /// nothing precedes it, so the codepoint-to-glyph projection stays total.
+    /// </summary>
+    /// <param name="filter">The predicate selecting records to delete.</param>
+    public void DeleteGlyphsInPlace(Func<GlyphShapingData, bool> filter)
+    {
+        bool positioning = this.Role == ShapingBufferRole.Positioning;
+        int kept = 0;
+        int pendingCodePointIndex = -1;
+        int pendingCodePointCount = 0;
+        for (int i = 0; i < this.Count; i++)
+        {
+            if (filter(this.data[i]))
+            {
+                ref GlyphShapingData deleted = ref this.data[i];
+                if (kept > 0)
+                {
+                    this.data[kept - 1].CodePointCount += deleted.CodePointCount;
+                }
+                else
+                {
+                    if (pendingCodePointIndex < 0)
+                    {
+                        pendingCodePointIndex = deleted.CodePointIndex;
+                    }
+
+                    pendingCodePointCount += deleted.CodePointCount;
+                }
+
+                continue;
+            }
+
+            if (kept != i)
+            {
+                this.data[kept] = this.data[i];
+                if (positioning)
+                {
+                    this.metrics[kept] = this.metrics[i];
+                    this.positions[kept] = this.positions[i];
+                }
+            }
+
+            if (pendingCodePointCount > 0)
+            {
+                ref GlyphShapingData first = ref this.data[kept];
+                first.CodePointIndex = pendingCodePointIndex;
+                first.CodePointCount += pendingCodePointCount;
+                pendingCodePointCount = 0;
+            }
+
+            kept++;
+        }
+
+        this.Count = kept;
     }
 
     /// <summary>
@@ -1508,10 +1573,10 @@ internal sealed class ShapingBuffer
     /// <param name="startIndex">The position at which the pass begins.</param>
     public void BeginOutputPass(int startIndex)
     {
-        this.passActive = true;
+        this.IsPassActive = true;
         this.passDiverged = false;
-        this.outCount = startIndex;
-        this.readIndex = startIndex;
+        this.PassOutputCount = startIndex;
+        this.ReadIndex = startIndex;
     }
 
     /// <summary>
@@ -1522,31 +1587,29 @@ internal sealed class ShapingBuffer
     /// </summary>
     public void EndOutputPass()
     {
-        if (!this.passDiverged && this.outCount == this.readIndex)
+        if (!this.passDiverged && this.PassOutputCount == this.ReadIndex)
         {
-            this.passActive = false;
-            this.readIndex = 0;
-            this.outCount = 0;
+            this.IsPassActive = false;
+            this.ReadIndex = 0;
+            this.PassOutputCount = 0;
             return;
         }
 
-        while (this.readIndex < this.count)
+        while (this.ReadIndex < this.Count)
         {
             this.CopyGlyph();
         }
 
         if (this.passDiverged)
         {
-            GlyphShapingData[] produced = this.outData;
-            this.outData = this.data;
-            this.data = produced;
+            (this.data, this.outData) = (this.outData, this.data);
         }
 
-        this.count = this.outCount;
-        this.passActive = false;
+        this.Count = this.PassOutputCount;
+        this.IsPassActive = false;
         this.passDiverged = false;
-        this.readIndex = 0;
-        this.outCount = 0;
+        this.ReadIndex = 0;
+        this.PassOutputCount = 0;
     }
 
     /// <summary>
@@ -1558,10 +1621,10 @@ internal sealed class ShapingBuffer
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void CopyGlyph()
     {
-        if (!this.passDiverged && this.outCount == this.readIndex)
+        if (!this.passDiverged && this.PassOutputCount == this.ReadIndex)
         {
-            this.outCount++;
-            this.readIndex++;
+            this.PassOutputCount++;
+            this.ReadIndex++;
             return;
         }
 
@@ -1577,16 +1640,16 @@ internal sealed class ShapingBuffer
     {
         if (this.passDiverged)
         {
-            this.EnsureOutCapacity(this.outCount + 1);
-            this.outData[this.outCount] = this.data[this.readIndex];
+            this.EnsureOutCapacity(this.PassOutputCount + 1);
+            this.outData[this.PassOutputCount] = this.data[this.ReadIndex];
         }
         else
         {
-            this.data[this.outCount] = this.data[this.readIndex];
+            this.data[this.PassOutputCount] = this.data[this.ReadIndex];
         }
 
-        this.outCount++;
-        this.readIndex++;
+        this.PassOutputCount++;
+        this.ReadIndex++;
     }
 
     /// <summary>
@@ -1594,7 +1657,7 @@ internal sealed class ShapingBuffer
     /// it from the pass result. The sides stay aliased: output only ever trails
     /// the cursor after a deletion.
     /// </summary>
-    public void SkipGlyph() => this.readIndex++;
+    public void SkipGlyph() => this.ReadIndex++;
 
     /// <summary>
     /// Moves the pass position so that the given number of records sit on the
@@ -1605,25 +1668,25 @@ internal sealed class ShapingBuffer
     /// <param name="outputPosition">The output-side record count to move to.</param>
     public void MoveTo(int outputPosition)
     {
-        while (this.outCount < outputPosition && this.readIndex < this.count)
+        while (this.PassOutputCount < outputPosition && this.ReadIndex < this.Count)
         {
             this.CopyGlyph();
         }
 
-        if (outputPosition < this.outCount)
+        if (outputPosition < this.PassOutputCount)
         {
-            int rewound = this.outCount - outputPosition;
-            this.readIndex -= rewound;
+            int rewound = this.PassOutputCount - outputPosition;
+            this.ReadIndex -= rewound;
             if (this.passDiverged)
             {
-                Array.Copy(this.outData, outputPosition, this.data, this.readIndex, rewound);
+                Array.Copy(this.outData, outputPosition, this.data, this.ReadIndex, rewound);
             }
             else
             {
-                Array.Copy(this.data, outputPosition, this.data, this.readIndex, rewound);
+                Array.Copy(this.data, outputPosition, this.data, this.ReadIndex, rewound);
             }
 
-            this.outCount = outputPosition;
+            this.PassOutputCount = outputPosition;
         }
     }
 
@@ -1647,19 +1710,19 @@ internal sealed class ShapingBuffer
     {
         if (this.passDiverged)
         {
-            this.EnsureOutCapacity(this.outCount + 1);
-            this.outData[this.outCount] = this.data[this.readIndex];
-            this.readIndex++;
-            return ref this.outData[this.outCount++];
+            this.EnsureOutCapacity(this.PassOutputCount + 1);
+            this.outData[this.PassOutputCount] = this.data[this.ReadIndex];
+            this.ReadIndex++;
+            return ref this.outData[this.PassOutputCount++];
         }
 
-        if (this.outCount != this.readIndex)
+        if (this.PassOutputCount != this.ReadIndex)
         {
-            this.data[this.outCount] = this.data[this.readIndex];
+            this.data[this.PassOutputCount] = this.data[this.ReadIndex];
         }
 
-        this.readIndex++;
-        return ref this.data[this.outCount++];
+        this.ReadIndex++;
+        return ref this.data[this.PassOutputCount++];
     }
 
     /// <summary>
@@ -1669,19 +1732,19 @@ internal sealed class ShapingBuffer
     /// <param name="record">The record to append.</param>
     private void AppendOutputGlyph(in GlyphShapingData record)
     {
-        if (!this.passDiverged && this.outCount >= this.readIndex)
+        if (!this.passDiverged && this.PassOutputCount >= this.ReadIndex)
         {
             this.Diverge();
         }
 
         if (this.passDiverged)
         {
-            this.EnsureOutCapacity(this.outCount + 1);
-            this.outData[this.outCount++] = record;
+            this.EnsureOutCapacity(this.PassOutputCount + 1);
+            this.outData[this.PassOutputCount++] = record;
         }
         else
         {
-            this.data[this.outCount++] = record;
+            this.data[this.PassOutputCount++] = record;
         }
     }
 
@@ -1697,7 +1760,7 @@ internal sealed class ShapingBuffer
             this.outData = new GlyphShapingData[this.data.Length];
         }
 
-        Array.Copy(this.data, this.outData, this.outCount);
+        Array.Copy(this.data, this.outData, this.PassOutputCount);
         this.passDiverged = true;
     }
 
@@ -1714,7 +1777,6 @@ internal sealed class ShapingBuffer
         }
     }
 
-#pragma warning disable SA1401 // Fields exposed so callers can take interior references into buffer storage.
     /// <summary>
     /// One glyph's metrics-phase state: the resolving font, its point size, and the
     /// resolved metrics instance. Stored in a stream parallel to the glyph records.
@@ -1769,5 +1831,4 @@ internal sealed class ShapingBuffer
         public readonly ushort GetAdvanceHeight(in GlyphShapingPosition position)
             => position.Bounds.IsDirtyWH ? (ushort)position.Bounds.Height : this.Metrics.AdvanceHeight;
     }
-#pragma warning restore SA1401
 }

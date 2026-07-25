@@ -83,6 +83,37 @@ public ref struct SpanGraphemeEnumerator
     /// </returns>
     public bool MoveNext()
     {
+        if (this.source.IsEmpty)
+        {
+            return false;
+        }
+
+        // A printable ASCII value followed by another ASCII value, or by the end
+        // of the input, always forms a single-scalar cluster: no ASCII value
+        // extends, joins, or prepends, and any scalar that could attach to the
+        // cluster is necessarily non-ASCII. Such a cluster's metadata is fixed
+        // apart from the emoji flag carried by the keycap bases, so the boundary
+        // machine below never needs to run for it.
+        char first = this.source[0];
+        if (first is >= ' ' and <= '~' && (this.source.Length == 1 || this.source[1] < '\u0080'))
+        {
+            if (!this.countOnly)
+            {
+                CodePoint codePoint = new(first);
+                GraphemeClusterFlags flags = GraphemeClusterFlags.IsSingleCodePoint;
+                if ((CodePoint.GetEmojiProperties(codePoint) & EmojiProperties.Emoji) != 0)
+                {
+                    flags |= GraphemeClusterFlags.ContainsEmoji;
+                }
+
+                this.Current = new GraphemeCluster(this.source[..1], this.sourceOffset, 1, 1, flags, codePoint);
+            }
+
+            this.source = this.source[1..];
+            this.sourceOffset++;
+            return true;
+        }
+
         // GB9c is a stateful rule: whether the next consonant can join depends on
         // the InCB classes already consumed into the current cluster. Keep that state
         // outside Processor so Processor remains a simple UTF-16/code-point reader.

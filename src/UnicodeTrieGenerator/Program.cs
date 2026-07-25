@@ -7,5 +7,7 @@ Console.WriteLine("Generating Trie Data");
 Generator.GenerateUnicodeTries();
 Console.WriteLine("Generating OpenType Language Tag Map");
 Generator.GenerateOpenTypeLanguageTagMap();
+Console.WriteLine("Generating ASCII Bidi Tables");
+Generator.GenerateAsciiBidiTables();
 Console.WriteLine("Done");
 Console.ReadLine();

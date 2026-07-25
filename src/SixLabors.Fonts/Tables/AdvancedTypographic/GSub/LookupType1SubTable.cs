@@ -65,6 +65,9 @@ internal sealed class LookupType1Format1SubTable : LookupSubTable
         this.coverageTable = coverageTable;
     }
 
+    /// <inheritdoc/>
+    public override bool ConsumesDirectly => true;
+
     /// <summary>
     /// Loads the single substitution format 1 subtable from the given offset.
     /// </summary>
@@ -156,6 +159,9 @@ internal sealed class LookupType1Format2SubTable : LookupSubTable
         this.substituteGlyphs = substituteGlyphs;
         this.coverageTable = coverageTable;
     }
+
+    /// <inheritdoc/>
+    public override bool ConsumesDirectly => true;
 
     /// <summary>
     /// Loads the single substitution format 2 subtable from the given offset.

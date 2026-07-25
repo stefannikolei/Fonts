@@ -64,6 +64,9 @@ internal sealed class LookupType4Format1SubTable : LookupSubTable
         this.coverageTable = coverageTable;
     }
 
+    /// <inheritdoc/>
+    public override bool ConsumesDirectly => true;
+
     /// <summary>
     /// Loads the ligature substitution format 1 subtable from the given offset.
     /// </summary>

@@ -152,6 +152,16 @@ internal struct SkippingGlyphIterator
     }
 
     /// <summary>
+    /// Determines whether the glyph at the given index is ignored under the
+    /// current lookup flags without moving the iterator. The pass driver tests
+    /// each record with this before attempting a lookup, copying ignored records
+    /// through to the output side untouched.
+    /// </summary>
+    /// <param name="index">The index of the glyph to check.</param>
+    /// <returns><see langword="true"/> if the glyph is ignored; otherwise, <see langword="false"/>.</returns>
+    public readonly bool IsIgnored(int index) => !this.skipsNothing && this.ShouldIgnore(index);
+
+    /// <summary>
     /// Determines whether the glyph at the given index should be ignored based on the current lookup flags.
     /// </summary>
     /// <param name="index">The index of the glyph to check.</param>

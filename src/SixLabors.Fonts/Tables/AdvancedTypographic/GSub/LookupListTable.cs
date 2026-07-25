@@ -223,14 +223,19 @@ internal sealed class LookupTable
                 ShapingProbe.SubTableProbes++;
             }
 
+            // Nested applications never consume through the pass cursor: the outer
+            // contextual match owns it, and its replacements run in place.
+            buffer.DirectConsume = !buffer.IsNestedApplication && subTable.ConsumesDirectly;
             if (subTable.TrySubstitution(fontMetrics, table, buffer, feature, lookupMask, index, count))
             {
                 // A lookup is finished for a glyph after the client locates the target
                 // glyph or glyph context and performs a substitution, if specified.
+                buffer.DirectConsume = false;
                 return true;
             }
         }
 
+        buffer.DirectConsume = false;
         return false;
     }
 
@@ -321,6 +326,14 @@ internal abstract class LookupSubTable
     /// Gets the index (base 0) into the GDEF mark glyph sets structure.
     /// </summary>
     public ushort MarkFilteringSet { get; }
+
+    /// <summary>
+    /// Gets a value indicating whether the subtable's replacements consume exactly
+    /// the records they match, so top-level application may produce them through
+    /// the pass cursor. Contextual and reverse subtables leave this false: their
+    /// replacements run in place and the driver alone advances the cursor.
+    /// </summary>
+    public virtual bool ConsumesDirectly => false;
 
     /// <summary>
     /// Gets or sets the approximate membership filter for the glyphs this subtable can

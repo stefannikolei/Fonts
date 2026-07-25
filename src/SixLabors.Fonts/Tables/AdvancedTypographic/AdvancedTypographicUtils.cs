@@ -126,6 +126,10 @@ internal static class AdvancedTypographicUtils
 
         int currentCount = buffer.Count;
 
+        // Nested lookups mutate the input side in place whatever their type: the
+        // contextual match that recursed here owns the pass cursor.
+        buffer.PushNestedApplication();
+
         foreach (SequenceLookupRecord lookupRecord in records)
         {
             ushort sequenceIndex = lookupRecord.SequenceIndex;
@@ -143,6 +147,7 @@ internal static class AdvancedTypographicUtils
             }
         }
 
+        buffer.PopNestedApplication();
         return true;
     }
 

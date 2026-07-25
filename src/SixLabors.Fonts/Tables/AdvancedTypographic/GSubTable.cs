@@ -322,10 +322,27 @@ internal class GSubTable : Table
             long featureStart = ShapingProbe.Timestamp();
             long featureApplies = 0;
 
-            while (iterator.Index < index + count)
+            // One output pass per lookup: the cursor consumes the input side and
+            // every record streams to the output side exactly once, so a length
+            // change costs one streaming pass instead of one shift per mutation.
+            // The pass begins at the segment, adopting everything before it, and
+            // a pass that changes nothing closes without touching the tail.
+            // Input-side indices are stable for the whole pass, which the
+            // matchers rely on.
+            buffer.BeginOutputPass(index);
+
+            int segmentEnd = index + count;
+            while (buffer.ReadIndex < segmentEnd && buffer.ReadIndex < buffer.Count)
             {
                 if (buffer.Count >= maxCount || currentOperations++ >= maxOperationsCount)
                 {
+                    // The pass must always close: stream the remainder and
+                    // reconcile the segment bookkeeping before bailing out.
+                    int limitBefore = buffer.Count;
+                    buffer.EndOutputPass();
+                    count += buffer.Count - limitBefore;
+                    i += buffer.Count - limitBefore;
+                    collectionCount = buffer.Count;
                     return;
                 }
 
@@ -336,10 +353,15 @@ internal class GSubTable : Table
 
                 // The digest cheaply rejects glyphs no subtable of this lookup can
                 // affect; a maybe falls through to the exact coverage test inside.
-                ref GlyphShapingData glyphData = ref buffer[iterator.Index];
-                if ((glyphData.FeatureMask & featureMask) == 0 || !featureLookupTable.Digest.MightContain(glyphData.GlyphId))
+                // Ignored records stream through untouched rather than being
+                // stepped over, so the output side always receives every record.
+                int position = buffer.ReadIndex;
+                ref GlyphShapingData glyphData = ref buffer[position];
+                if ((glyphData.FeatureMask & featureMask) == 0
+                    || !featureLookupTable.Digest.MightContain(glyphData.GlyphId)
+                    || iterator.IsIgnored(position))
                 {
-                    iterator.Next();
+                    buffer.CopyGlyph();
                     continue;
                 }
 
@@ -348,16 +370,29 @@ internal class GSubTable : Table
                     ShapingProbe.SubstitutionAttempts++;
                 }
 
-                collectionCount = buffer.Count;
-                featureLookupTable.TrySubstitution(fontMetrics, this, buffer, feature, featureMask, iterator.Index, count - (iterator.Index - index));
+                int beforeCount = buffer.Count;
+                featureLookupTable.TrySubstitution(fontMetrics, this, buffer, feature, featureMask, position, segmentEnd - position);
                 featureApplies++;
-                iterator.Next();
 
-                // Account for substitutions changing the length of the buffer.
-                int delta = buffer.Count - collectionCount;
-                count += delta;
-                i += delta;
+                // In-place mutations from contextual nesting change the input side
+                // directly and move the segment bound; cursor consumption surfaces
+                // only when the pass ends.
+                int inPlaceDelta = buffer.Count - beforeCount;
+                segmentEnd += inPlaceDelta;
+                count += inPlaceDelta;
+                i += inPlaceDelta;
+
+                if (buffer.ReadIndex == position)
+                {
+                    buffer.CopyGlyph();
+                }
             }
+
+            int passBefore = buffer.Count;
+            buffer.EndOutputPass();
+            count += buffer.Count - passBefore;
+            i += buffer.Count - passBefore;
+            collectionCount = buffer.Count;
 
             ShapingProbe.ExitFeature("GSUB", feature, featureStart, featureApplies);
         }

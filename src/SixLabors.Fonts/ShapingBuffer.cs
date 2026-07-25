@@ -171,6 +171,45 @@ internal sealed class ShapingBuffer
     private readonly List<(ScriptClass Script, Tag ScriptTag, FontMetrics FontMetrics, ShapePlan Plan)> planCache = new(4);
 
     /// <summary>
+    /// The output-side record storage for substitution passes. Allocated on the
+    /// first pass whose output grows past its read cursor and retained at the
+    /// workload's high-water mark afterwards; passes whose output never outgrows
+    /// the input keep writing into the primary storage and never touch this.
+    /// </summary>
+    private GlyphShapingData[] outData = [];
+
+    /// <summary>
+    /// The number of records produced on the output side of the active pass.
+    /// </summary>
+    private int outCount;
+
+    /// <summary>
+    /// The read cursor of the active pass: the next input record to consume.
+    /// </summary>
+    private int readIndex;
+
+    /// <summary>
+    /// Whether a substitution pass is active. Outside a pass the buffer mutates
+    /// in place exactly as before, which the pause callbacks rely on.
+    /// </summary>
+    private bool passActive;
+
+    /// <summary>
+    /// Whether the active pass's output has diverged into <see cref="outData"/>.
+    /// While false the output region aliases the head of the primary storage:
+    /// equal-length passes write every record onto itself and copy nothing, and
+    /// shrinking passes move records forward within the primary storage.
+    /// Divergence occurs only when output would overtake the read cursor.
+    /// </summary>
+    private bool passDiverged;
+
+    /// <summary>
+    /// The depth of nested lookup application within contextual matches. Nested
+    /// replacements mutate the input side in place regardless of their type.
+    /// </summary>
+    private int nestedApplicationDepth;
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="ShapingBuffer"/> class.
     /// </summary>
     /// <param name="textOptions">The text options.</param>
@@ -193,6 +232,39 @@ internal sealed class ShapingBuffer
     /// smaller than the input codepoint count.
     /// </summary>
     public int Count => this.count;
+
+    /// <summary>
+    /// Gets the number of records already produced by the active pass; matching
+    /// walks backtrack context against these records, not the unconsumed input.
+    /// </summary>
+    public int PassOutputCount => this.outCount;
+
+    /// <summary>
+    /// Gets a value indicating whether a substitution pass is active.
+    /// </summary>
+    public bool IsPassActive => this.passActive;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the applying lookup consumes
+    /// records through the pass cursor. The substitution driver sets this for
+    /// top-level lookups whose replacements consume exactly the records they
+    /// match; contextual lookups leave it clear so their nested replacements
+    /// mutate the input side in place and the driver alone advances the cursor.
+    /// </summary>
+    public bool DirectConsume { get; set; }
+
+    /// <summary>
+    /// Gets the read cursor of the active pass: the input-side position of the
+    /// next record to consume.
+    /// </summary>
+    public int ReadIndex => this.readIndex;
+
+    /// <summary>
+    /// Gets a value indicating whether lookup application is currently nested
+    /// inside a contextual match. Nested replacements never consume through the
+    /// pass cursor, whatever their type: the outer contextual owns the cursor.
+    /// </summary>
+    public bool IsNestedApplication => this.nestedApplicationDepth > 0;
 
     /// <summary>
     /// Gets the text options used by this buffer.
@@ -661,6 +733,17 @@ internal sealed class ShapingBuffer
     public void Replace(int index, ushort glyphId, Tag feature)
     {
         this.glyphDigest.Add(glyphId);
+        if (this.passActive && this.DirectConsume && index == this.readIndex)
+        {
+            ref GlyphShapingData produced = ref this.ProduceFromCursor();
+            produced.GlyphId = glyphId;
+            produced.LigatureId = 0;
+            produced.LigatureComponent = -1;
+            produced.IsSubstituted = true;
+            produced.AppliedFeatureMask |= ShapePlanFeatures.GetVerticalMask(feature);
+            return;
+        }
+
         ref GlyphShapingData current = ref this.data[index];
         current.GlyphId = glyphId;
         current.LigatureId = 0;
@@ -680,7 +763,8 @@ internal sealed class ShapingBuffer
     /// <param name="feature">The feature to apply to the record at the specified index.</param>
     public void Replace(int index, ReadOnlySpan<int> removalIndices, ushort glyphId, int ligatureId, Tag feature)
     {
-        // Remove the glyphs at each index.
+        // Gather the merged codepoint bookkeeping from the component records
+        // before any of them move.
         int codePointCount = 0;
         CodePoint codePoint = default;
         for (int i = removalIndices.Length - 1; i >= 0; i--)
@@ -695,13 +779,56 @@ internal sealed class ShapingBuffer
                     codePoint = currentCodePoint;
                 }
             }
+        }
 
-            this.RemoveAt(match);
+        this.glyphDigest.Add(glyphId);
+        if (this.passActive && this.DirectConsume && index == this.readIndex)
+        {
+            // Produce the ligature from the cursor, then stream the span it
+            // matched over: component records are consumed without output and
+            // everything between them, such as marks, is copied through.
+            ref GlyphShapingData produced = ref this.ProduceFromCursor();
+            if (codePoint != default)
+            {
+                produced.CodePoint = codePoint;
+            }
+
+            produced.CodePointCount += codePointCount;
+            produced.GlyphId = glyphId;
+            produced.LigatureId = ligatureId;
+            produced.IsLigated = true;
+            produced.LigatureComponent = -1;
+            produced.IsSubstituted = true;
+            produced.AppliedFeatureMask |= ShapePlanFeatures.GetVerticalMask(feature);
+
+            if (removalIndices.Length > 0)
+            {
+                int removal = 0;
+                int last = removalIndices[removalIndices.Length - 1];
+                for (int position = index + 1; position <= last; position++)
+                {
+                    if (removal < removalIndices.Length && removalIndices[removal] == position)
+                    {
+                        this.SkipGlyph();
+                        removal++;
+                    }
+                    else
+                    {
+                        this.CopyGlyph();
+                    }
+                }
+            }
+
+            return;
+        }
+
+        for (int i = removalIndices.Length - 1; i >= 0; i--)
+        {
+            this.RemoveAt(removalIndices[i]);
         }
 
         // Assign our new id at the index. The reference is taken after every removal
         // so it addresses the record's final slot.
-        this.glyphDigest.Add(glyphId);
         ref GlyphShapingData current = ref this.data[index];
         if (codePoint != default)
         {
@@ -727,7 +854,8 @@ internal sealed class ShapingBuffer
     /// <param name="feature">The feature to apply to the record at the specified index.</param>
     public void Replace(int index, int count, ushort glyphId, Tag feature)
     {
-        // Remove the glyphs at each index.
+        // Gather the merged codepoint bookkeeping from the following records
+        // before any of them move.
         int codePointCount = 0;
         CodePoint codePoint = default;
         for (int i = count; i > 0; i--)
@@ -742,13 +870,41 @@ internal sealed class ShapingBuffer
                     codePoint = currentCodePoint;
                 }
             }
+        }
 
-            this.RemoveAt(match);
+        this.glyphDigest.Add(glyphId);
+        if (this.passActive && this.DirectConsume && index == this.readIndex)
+        {
+            // Produce the replacement from the cursor, then consume the
+            // contiguous following records without output.
+            ref GlyphShapingData produced = ref this.ProduceFromCursor();
+            if (codePoint != default)
+            {
+                produced.CodePoint = codePoint;
+            }
+
+            produced.CodePointCount += codePointCount;
+            produced.GlyphId = glyphId;
+            produced.LigatureId = 0;
+            produced.LigatureComponent = -1;
+            produced.IsSubstituted = true;
+            produced.AppliedFeatureMask |= ShapePlanFeatures.GetVerticalMask(feature);
+
+            for (int i = 0; i < count; i++)
+            {
+                this.SkipGlyph();
+            }
+
+            return;
+        }
+
+        for (int i = count; i > 0; i--)
+        {
+            this.RemoveAt(index + i);
         }
 
         // Assign our new id at the index. The reference is taken after every removal
         // so it addresses the record's final slot.
-        this.glyphDigest.Add(glyphId);
         ref GlyphShapingData current = ref this.data[index];
         if (codePoint != default)
         {
@@ -771,6 +927,47 @@ internal sealed class ShapingBuffer
     /// <param name="feature">The feature to apply to the record at the specified index.</param>
     public void Replace(int index, ReadOnlySpan<ushort> glyphIds, Tag feature)
     {
+        if (this.passActive && this.DirectConsume && index == this.readIndex)
+        {
+            if (glyphIds.Length == 0)
+            {
+                // Spec disallows removal of glyphs in this manner but it's common enough practice to allow it.
+                // https://github.com/MicrosoftDocs/typography-issues/issues/673
+                this.SkipGlyph();
+                return;
+            }
+
+            ref GlyphShapingData first = ref this.ProduceFromCursor();
+            first.GlyphId = glyphIds[0];
+            first.LigatureComponent = 0;
+            first.IsSubstituted = true;
+            first.IsDecomposed = true;
+            this.glyphDigest.Add(glyphIds[0]);
+
+            if (glyphIds.Length > 1)
+            {
+                // The produced record is captured by value as the template: the
+                // appends below may diverge or grow the output storage, which
+                // would invalidate a reference into it.
+                GlyphShapingData template = first;
+                uint mask = ShapePlanFeatures.GetVerticalMask(feature);
+                for (int i = 1; i < glyphIds.Length; i++)
+                {
+                    GlyphShapingData appended = new(template, false)
+                    {
+                        GlyphId = glyphIds[i],
+                        LigatureComponent = i,
+                    };
+
+                    appended.AppliedFeatureMask |= mask;
+                    this.glyphDigest.Add(glyphIds[i]);
+                    this.AppendOutputGlyph(in appended);
+                }
+            }
+
+            return;
+        }
+
         if (glyphIds.Length > 0)
         {
             this.glyphDigest.Add(glyphIds[0]);
@@ -1285,6 +1482,236 @@ internal sealed class ShapingBuffer
         }
 
         this.count--;
+    }
+
+    /// <summary>
+    /// Gets a reference to a record on the output side of the active pass.
+    /// </summary>
+    /// <param name="index">The zero-based output-side index.</param>
+    /// <returns>A reference to the record.</returns>
+    public ref GlyphShapingData PassOutputAt(int index)
+    {
+        if (this.passDiverged)
+        {
+            return ref this.outData[index];
+        }
+
+        return ref this.data[index];
+    }
+
+    /// <summary>
+    /// Begins a substitution pass with both cursors at the given position: the
+    /// records before it are untouched by the pass by construction, so the
+    /// aliased output region simply adopts them. Output aliases the primary
+    /// storage until a write would overtake unread input.
+    /// </summary>
+    /// <param name="startIndex">The position at which the pass begins.</param>
+    public void BeginOutputPass(int startIndex)
+    {
+        this.passActive = true;
+        this.passDiverged = false;
+        this.outCount = startIndex;
+        this.readIndex = startIndex;
+    }
+
+    /// <summary>
+    /// Ends the active pass: unconsumed input records stream to the output side,
+    /// the output becomes the buffer content, and in-place semantics resume. A
+    /// pass that is still aliased and level has changed nothing structural, so
+    /// the tail is already in place and the pass closes with cursor resets alone.
+    /// </summary>
+    public void EndOutputPass()
+    {
+        if (!this.passDiverged && this.outCount == this.readIndex)
+        {
+            this.passActive = false;
+            this.readIndex = 0;
+            this.outCount = 0;
+            return;
+        }
+
+        while (this.readIndex < this.count)
+        {
+            this.CopyGlyph();
+        }
+
+        if (this.passDiverged)
+        {
+            GlyphShapingData[] produced = this.outData;
+            this.outData = this.data;
+            this.data = produced;
+        }
+
+        this.count = this.outCount;
+        this.passActive = false;
+        this.passDiverged = false;
+        this.readIndex = 0;
+        this.outCount = 0;
+    }
+
+    /// <summary>
+    /// Copies the record at the read cursor to the output side and advances both
+    /// cursors. While the sides are aliased and level this is two cursor
+    /// increments and nothing else; the copying forms live in the cold method so
+    /// the overwhelmingly common no-op inlines into the pass walk.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void CopyGlyph()
+    {
+        if (!this.passDiverged && this.outCount == this.readIndex)
+        {
+            this.outCount++;
+            this.readIndex++;
+            return;
+        }
+
+        this.CopyGlyphMoved();
+    }
+
+    /// <summary>
+    /// Copies the record at the read cursor to the output side when the sides
+    /// have shifted or diverged.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void CopyGlyphMoved()
+    {
+        if (this.passDiverged)
+        {
+            this.EnsureOutCapacity(this.outCount + 1);
+            this.outData[this.outCount] = this.data[this.readIndex];
+        }
+        else
+        {
+            this.data[this.outCount] = this.data[this.readIndex];
+        }
+
+        this.outCount++;
+        this.readIndex++;
+    }
+
+    /// <summary>
+    /// Consumes the record at the read cursor without producing output, deleting
+    /// it from the pass result. The sides stay aliased: output only ever trails
+    /// the cursor after a deletion.
+    /// </summary>
+    public void SkipGlyph() => this.readIndex++;
+
+    /// <summary>
+    /// Moves the pass position so that the given number of records sit on the
+    /// output side. Advancing streams records forward; rewinding returns produced
+    /// records to the input side ahead of the read cursor, exactly reversing the
+    /// stream.
+    /// </summary>
+    /// <param name="outputPosition">The output-side record count to move to.</param>
+    public void MoveTo(int outputPosition)
+    {
+        while (this.outCount < outputPosition && this.readIndex < this.count)
+        {
+            this.CopyGlyph();
+        }
+
+        if (outputPosition < this.outCount)
+        {
+            int rewound = this.outCount - outputPosition;
+            this.readIndex -= rewound;
+            if (this.passDiverged)
+            {
+                Array.Copy(this.outData, outputPosition, this.data, this.readIndex, rewound);
+            }
+            else
+            {
+                Array.Copy(this.data, outputPosition, this.data, this.readIndex, rewound);
+            }
+
+            this.outCount = outputPosition;
+        }
+    }
+
+    /// <summary>
+    /// Enters a nested lookup application within a contextual match.
+    /// </summary>
+    public void PushNestedApplication() => this.nestedApplicationDepth++;
+
+    /// <summary>
+    /// Leaves a nested lookup application within a contextual match.
+    /// </summary>
+    public void PopNestedApplication() => this.nestedApplicationDepth--;
+
+    /// <summary>
+    /// Consumes the record at the read cursor onto the output side and returns a
+    /// reference to the produced record for mutation. While the sides are aliased
+    /// and level the record is produced onto itself.
+    /// </summary>
+    /// <returns>A reference to the produced record.</returns>
+    private ref GlyphShapingData ProduceFromCursor()
+    {
+        if (this.passDiverged)
+        {
+            this.EnsureOutCapacity(this.outCount + 1);
+            this.outData[this.outCount] = this.data[this.readIndex];
+            this.readIndex++;
+            return ref this.outData[this.outCount++];
+        }
+
+        if (this.outCount != this.readIndex)
+        {
+            this.data[this.outCount] = this.data[this.readIndex];
+        }
+
+        this.readIndex++;
+        return ref this.data[this.outCount++];
+    }
+
+    /// <summary>
+    /// Appends a record to the output side without consuming input, diverging
+    /// first if the write would otherwise overtake unread input.
+    /// </summary>
+    /// <param name="record">The record to append.</param>
+    private void AppendOutputGlyph(in GlyphShapingData record)
+    {
+        if (!this.passDiverged && this.outCount >= this.readIndex)
+        {
+            this.Diverge();
+        }
+
+        if (this.passDiverged)
+        {
+            this.EnsureOutCapacity(this.outCount + 1);
+            this.outData[this.outCount++] = record;
+        }
+        else
+        {
+            this.data[this.outCount++] = record;
+        }
+    }
+
+    /// <summary>
+    /// Diverges the active pass into the output storage: everything produced so
+    /// far is copied out of the primary storage, and later writes stream there.
+    /// Called only when output would otherwise overtake unread input.
+    /// </summary>
+    private void Diverge()
+    {
+        if (this.outData.Length < this.data.Length)
+        {
+            this.outData = new GlyphShapingData[this.data.Length];
+        }
+
+        Array.Copy(this.data, this.outData, this.outCount);
+        this.passDiverged = true;
+    }
+
+    /// <summary>
+    /// Grows the output storage to hold at least the required record count.
+    /// </summary>
+    /// <param name="required">The required record capacity.</param>
+    private void EnsureOutCapacity(int required)
+    {
+        if (required > this.outData.Length)
+        {
+            int length = Math.Max(this.outData.Length * 2, required);
+            Array.Resize(ref this.outData, length);
+        }
     }
 
 #pragma warning disable SA1401 // Fields exposed so callers can take interior references into buffer storage.

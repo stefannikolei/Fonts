@@ -322,10 +322,11 @@ internal class DefaultShaper : BaseShaper
         => this.EnableFeature(buffer, index, count, feature, null, null);
 
     /// <summary>
-    /// Registers a global feature over the given range and attaches the supplied
-    /// stage actions. The feature applies to every glyph of the plan's segments
-    /// and therefore shares the plan's single global mask bit instead of consuming
-    /// a distinct bit.
+    /// Registers a global feature and attaches the supplied stage actions. The
+    /// feature applies to every glyph of the plan's segments and therefore shares
+    /// the plan's single global mask bit, which every glyph record is born
+    /// carrying: registration records the classification and the stage without
+    /// touching any glyph.
     /// </summary>
     /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based index of the first element.</param>
@@ -349,7 +350,7 @@ internal class DefaultShaper : BaseShaper
             }
         }
 
-        buffer.AddShapingFeatureRange(index, count, new TagEntry(feature, true), this.Features.GetOrAddGlobalMask(feature));
+        _ = this.Features.GetOrAddGlobalMask(feature);
         this.AddStage(feature, preAction, postAction);
     }
 

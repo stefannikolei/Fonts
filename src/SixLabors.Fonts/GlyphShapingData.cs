@@ -93,10 +93,18 @@ internal struct GlyphShapingData
     private byte direction;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="GlyphShapingData"/> struct.
+    /// Initializes a new instance of the <see cref="GlyphShapingData"/> struct. The
+    /// feature masks are seeded with the shared global bit: global features apply to
+    /// every glyph by definition, so their registration never walks glyph ranges and
+    /// every record is born carrying the bit their lookups gate on.
     /// </summary>
     /// <param name="textRunIndex">The index of the text run this glyph belongs to.</param>
-    public GlyphShapingData(ushort textRunIndex) => this.TextRunIndex = textRunIndex;
+    public GlyphShapingData(ushort textRunIndex)
+    {
+        this.TextRunIndex = textRunIndex;
+        this.RegisteredFeatureMask = Tables.AdvancedTypographic.ShapePlanFeatures.GlobalFeatureMask;
+        this.FeatureMask = Tables.AdvancedTypographic.ShapePlanFeatures.GlobalFeatureMask;
+    }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GlyphShapingData"/> struct.
@@ -124,6 +132,11 @@ internal struct GlyphShapingData
         {
             this.RegisteredFeatureMask = data.RegisteredFeatureMask;
             this.FeatureMask = data.FeatureMask;
+        }
+        else
+        {
+            this.RegisteredFeatureMask = Tables.AdvancedTypographic.ShapePlanFeatures.GlobalFeatureMask;
+            this.FeatureMask = Tables.AdvancedTypographic.ShapePlanFeatures.GlobalFeatureMask;
         }
 
         this.AppliedFeatureMask = data.AppliedFeatureMask;
@@ -296,16 +309,16 @@ internal struct GlyphShapingData
         .Invariant($" {this.GlyphId} : {this.CodePoint.ToDebuggerDisplay()} : {CodePoint.GetScriptClass(this.CodePoint)} : {this.Direction} : run {this.TextRunIndex} : {this.LigatureId} : {this.LigatureComponent} : {this.IsDecomposed}");
 
     /// <summary>
-    /// Clears the registered and enabled feature masks while preserving the applied
-    /// mask, matching the semantics of copying with cleared features. Positioning
-    /// reuses the substituted glyph data and re-plans its own features, but the applied
-    /// record of what substitution did must survive for consumers such as vertical
-    /// alternate detection.
+    /// Resets the registered and enabled feature masks to the seeded global bit
+    /// while preserving the applied mask, matching the semantics of copying with
+    /// cleared features. Positioning reuses the substituted glyph data and re-plans
+    /// its own varying features, but the applied record of what substitution did
+    /// must survive for consumers such as vertical alternate detection.
     /// </summary>
     public void ClearFeatures()
     {
-        this.RegisteredFeatureMask = 0;
-        this.FeatureMask = 0;
+        this.RegisteredFeatureMask = Tables.AdvancedTypographic.ShapePlanFeatures.GlobalFeatureMask;
+        this.FeatureMask = Tables.AdvancedTypographic.ShapePlanFeatures.GlobalFeatureMask;
     }
 
     public string ToDebuggerDisplay() => this.DebuggerDisplay;

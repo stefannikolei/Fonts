@@ -336,6 +336,18 @@ internal sealed class ShapingBuffer
     public bool IsNestedApplication => this.nestedApplicationDepth > 0;
 
     /// <summary>
+    /// Gets the number of records behind the pass position: those the pass has
+    /// produced while a pass is active, and those before the cursor otherwise.
+    /// Positions handed to <see cref="MoveTo"/> are measured against this.
+    /// </summary>
+    public int PassBacktrackLength => this.IsPassActive ? this.PassOutputCount : this.ReadIndex;
+
+    /// <summary>
+    /// Gets the number of records ahead of the pass position, still to be read.
+    /// </summary>
+    public int PassLookaheadLength => this.Count - this.ReadIndex;
+
+    /// <summary>
     /// Gets a value indicating whether a further nested lookup application would
     /// exceed the maximum nesting depth. A font may chain contextual lookups
     /// into each other without bound, so recursion is capped rather than trusted.
@@ -1812,6 +1824,7 @@ internal sealed class ShapingBuffer
         }
 
         this.Count = this.PassOutputCount;
+        this.EnsureCapacity(this.Count);
         this.IsPassActive = false;
         this.passDiverged = false;
         this.ReadIndex = 0;
@@ -1882,6 +1895,16 @@ internal sealed class ShapingBuffer
         if (outputPosition < this.PassOutputCount)
         {
             int rewound = this.PassOutputCount - outputPosition;
+
+            // Produced records return to the input side ahead of the read
+            // cursor, which needs that many free slots behind it. A pass that
+            // produced more than it consumed has fewer, so the unread input
+            // moves up to open them.
+            if (rewound > this.ReadIndex)
+            {
+                this.ShiftInputForward(rewound - this.ReadIndex);
+            }
+
             this.ReadIndex -= rewound;
             if (this.passDiverged)
             {
@@ -1893,6 +1916,54 @@ internal sealed class ShapingBuffer
             }
 
             this.PassOutputCount = outputPosition;
+        }
+    }
+
+    /// <summary>
+    /// Moves the unread input up by the given number of slots, opening room
+    /// between the produced records and the read cursor. The records that fill
+    /// them come back from the produced side, so the buffer's total is
+    /// unchanged even though its input length grows.
+    /// </summary>
+    /// <param name="count">The number of slots to open.</param>
+    private void ShiftInputForward(int count)
+    {
+        int unread = this.Count - this.ReadIndex;
+        this.EnsureCapacity(this.Count + count);
+        if (unread > 0)
+        {
+            Array.Copy(this.data, this.ReadIndex, this.data, this.ReadIndex + count, unread);
+        }
+
+        this.ReadIndex += count;
+        this.Count += count;
+    }
+
+    /// <summary>
+    /// Grows the record storage and the streams parallel to it. The three stay
+    /// the same length: every record addresses its metrics and its position by
+    /// its own index.
+    /// </summary>
+    /// <param name="required">The required record capacity.</param>
+    private void EnsureCapacity(int required)
+    {
+        if (required > this.data.Length)
+        {
+            Array.Resize(ref this.data, Math.Max(this.data.Length * 2, required));
+        }
+
+        // The parallel streams are sized independently because ending a pass
+        // swaps the record storage with the output storage, which grew on its
+        // own; after such a swap the records can outnumber the slots that were
+        // allocated alongside them.
+        if (required > this.metrics.Length)
+        {
+            Array.Resize(ref this.metrics, Math.Max(this.metrics.Length * 2, required));
+        }
+
+        if (required > this.positions.Length)
+        {
+            Array.Resize(ref this.positions, Math.Max(this.positions.Length * 2, required));
         }
     }
 

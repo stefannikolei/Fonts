@@ -122,7 +122,7 @@ internal sealed class LookupType5Format1SubTable : LookupSubTable
                 continue;
             }
 
-            if (!AdvancedTypographicUtils.MatchSequence(iterator, 1, ruleTable.InputSequence, lookupMask, false, matchPositions[1..], out _))
+            if (!AdvancedTypographicUtils.MatchSequence(iterator, 1, ruleTable.InputSequence, lookupMask, false, matchPositions[1..], out int matchEnd))
             {
                 continue;
             }
@@ -133,13 +133,11 @@ internal sealed class LookupType5Format1SubTable : LookupSubTable
                 table,
                 feature,
                 lookupMask,
-                this.LookupFlags,
-                this.MarkFilteringSet,
                 ruleTable.SequenceLookupRecords,
                 buffer,
                 matchPositions,
                 seqLength + 1,
-                count);
+                matchEnd);
         }
 
         return false;
@@ -293,7 +291,7 @@ internal sealed class LookupType5Format2SubTable : LookupSubTable
                 continue;
             }
 
-            if (!AdvancedTypographicUtils.MatchClassSequence(iterator, 1, ruleTable.InputSequence, this.classDefinitionTable, lookupMask, false, matchPositions[1..], out _))
+            if (!AdvancedTypographicUtils.MatchClassSequence(iterator, 1, ruleTable.InputSequence, this.classDefinitionTable, lookupMask, false, matchPositions[1..], out int matchEnd))
             {
                 continue;
             }
@@ -304,13 +302,11 @@ internal sealed class LookupType5Format2SubTable : LookupSubTable
                 table,
                 feature,
                 lookupMask,
-                this.LookupFlags,
-                this.MarkFilteringSet,
                 ruleTable.SequenceLookupRecords,
                 buffer,
                 matchPositions,
                 seqLength + 1,
-                count);
+                matchEnd);
         }
 
         return false;
@@ -442,7 +438,7 @@ internal sealed class LookupType5Format3SubTable : LookupSubTable
         // glyph, so the match fills every position nested lookups address.
         SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
         Span<int> matchPositions = stackalloc int[AdvancedTypographicUtils.MaxContextLength];
-        if (!AdvancedTypographicUtils.MatchCoverageSequence(iterator, this.coverageTables, index, index + count, lookupMask, false, matchPositions, out _))
+        if (!AdvancedTypographicUtils.MatchCoverageSequence(iterator, this.coverageTables, index, index + count, lookupMask, false, matchPositions, out int matchEnd))
         {
             return false;
         }
@@ -453,13 +449,11 @@ internal sealed class LookupType5Format3SubTable : LookupSubTable
             table,
             feature,
             lookupMask,
-            this.LookupFlags,
-            this.MarkFilteringSet,
             this.sequenceLookupRecords,
             buffer,
             matchPositions,
             this.coverageTables.Length,
-            count);
+            matchEnd);
     }
 
     /// <inheritdoc />

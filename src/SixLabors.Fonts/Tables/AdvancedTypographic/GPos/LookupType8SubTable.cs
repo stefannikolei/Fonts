@@ -126,7 +126,7 @@ internal static class LookupType8SubTable
             for (int lookupIndex = 0; lookupIndex < rules.Length; lookupIndex++)
             {
                 ChainedSequenceRuleTable rule = rules[lookupIndex];
-                if (!AdvancedTypographicUtils.ApplyChainedSequenceRule(iterator, rule, buffer.LookupMask, matchPositions[1..]))
+                if (!AdvancedTypographicUtils.ApplyChainedSequenceRule(iterator, rule, buffer.LookupMask, matchPositions[1..], out _))
                 {
                     continue;
                 }
@@ -279,7 +279,7 @@ internal static class LookupType8SubTable
             {
                 ChainedClassSequenceRuleTable rule = rules[lookupIndex];
 
-                if (!AdvancedTypographicUtils.ApplyChainedClassSequenceRule(iterator, rule, this.inputClassDefinitionTable, this.backtrackClassDefinitionTable, this.lookaheadClassDefinitionTable, buffer.LookupMask, matchPositions[1..]))
+                if (!AdvancedTypographicUtils.ApplyChainedClassSequenceRule(iterator, rule, this.inputClassDefinitionTable, this.backtrackClassDefinitionTable, this.lookaheadClassDefinitionTable, buffer.LookupMask, matchPositions[1..], out _))
                 {
                     continue;
                 }
@@ -410,7 +410,7 @@ internal static class LookupType8SubTable
             // first glyph, so the match fills every position nested lookups
             // address.
             Span<int> matchPositions = stackalloc int[AdvancedTypographicUtils.MaxContextLength];
-            if (!AdvancedTypographicUtils.CheckAllCoverages(fontMetrics, this.LookupFlags, this.MarkFilteringSet, buffer, index, count, this.inputCoverageTables, this.backtrackCoverageTables, this.lookaheadCoverageTables, buffer.LookupMask, matchPositions))
+            if (!AdvancedTypographicUtils.CheckAllCoverages(fontMetrics, this.LookupFlags, this.MarkFilteringSet, buffer, index, count, this.inputCoverageTables, this.backtrackCoverageTables, this.lookaheadCoverageTables, buffer.LookupMask, matchPositions, out _))
             {
                 return false;
             }

@@ -218,9 +218,10 @@ internal sealed class LookupTable
                 continue;
             }
 
-            // Nested applications never consume through the pass cursor: the outer
-            // contextual match owns it, and its replacements run in place.
-            buffer.DirectConsume = !buffer.IsNestedApplication && subTable.ConsumesDirectly;
+            // Nested applications consume through the pass cursor exactly as
+            // top-level ones do; the contextual match brings the cursor to each
+            // record before recursing.
+            buffer.DirectConsume = subTable.ConsumesDirectly;
             if (subTable.TrySubstitution(fontMetrics, table, buffer, feature, lookupMask, index, count))
             {
                 // A lookup is finished for a glyph after the client locates the target

@@ -315,17 +315,21 @@ internal class GSubTable : Table
             // matchers rely on.
             buffer.BeginOutputPass(index);
 
-            int segmentEnd = index + count;
-            while (buffer.ReadIndex < segmentEnd && buffer.ReadIndex < buffer.Count)
+            // The segment's end is held as the number of records that follow it,
+            // which nothing the pass does can disturb: replacements, insertions,
+            // and the room a rewind opens all land before the tail. An absolute
+            // index would have to be corrected after each of them.
+            int totalBefore = buffer.Count;
+            int segmentTail = buffer.Count - (index + count);
+            while (buffer.ReadIndex < buffer.Count - segmentTail && buffer.ReadIndex < buffer.Count)
             {
                 if (buffer.Count >= maxCount || currentOperations++ >= maxOperationsCount)
                 {
                     // The pass must always close: stream the remainder and
                     // reconcile the segment bookkeeping before bailing out.
-                    int limitBefore = buffer.Count;
                     buffer.EndOutputPass();
-                    count += buffer.Count - limitBefore;
-                    i += buffer.Count - limitBefore;
+                    count += buffer.Count - totalBefore;
+                    i += buffer.Count - totalBefore;
                     collectionCount = buffer.Count;
                     return;
                 }
@@ -344,16 +348,7 @@ internal class GSubTable : Table
                     continue;
                 }
 
-                int beforeCount = buffer.Count;
-                featureLookupTable.TrySubstitution(fontMetrics, this, buffer, feature, featureMask, position, segmentEnd - position);
-
-                // In-place mutations from contextual nesting change the input side
-                // directly and move the segment bound; cursor consumption surfaces
-                // only when the pass ends.
-                int inPlaceDelta = buffer.Count - beforeCount;
-                segmentEnd += inPlaceDelta;
-                count += inPlaceDelta;
-                i += inPlaceDelta;
+                featureLookupTable.TrySubstitution(fontMetrics, this, buffer, feature, featureMask, position, buffer.Count - segmentTail - position);
 
                 if (buffer.ReadIndex == position)
                 {
@@ -361,10 +356,12 @@ internal class GSubTable : Table
                 }
             }
 
-            int passBefore = buffer.Count;
             buffer.EndOutputPass();
-            count += buffer.Count - passBefore;
-            i += buffer.Count - passBefore;
+
+            // The pass closed, so the buffer holds the records it produced: the
+            // whole segment's change surfaces once, here.
+            count += buffer.Count - totalBefore;
+            i += buffer.Count - totalBefore;
             collectionCount = buffer.Count;
         }
     }

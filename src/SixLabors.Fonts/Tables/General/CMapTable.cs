@@ -19,9 +19,41 @@ internal sealed class CMapTable : Table
     internal const string TableName = "cmap";
 
     /// <summary>
+    /// The Windows platform's symbol encoding identifier. A font declaring it
+    /// does not map Unicode: it maps its own character codes, and the codes it
+    /// uses live in <see cref="SymbolPageStart"/>'s private use page.
+    /// </summary>
+    private const ushort SymbolEncodingId = 0;
+
+    /// <summary>
+    /// The first character of the private use page a symbol font maps into.
+    /// Such a font addresses its glyphs as U+F000 upwards while the text that
+    /// uses it holds the character codes those shadow, so a lookup that misses
+    /// is retried one page higher.
+    /// </summary>
+    private const int SymbolPageStart = 0xF000;
+
+    /// <summary>
+    /// The highest character code a symbol font's page can shadow. The page is
+    /// a single byte wide, U+F000 to U+F0FF, so only a character that fits in a
+    /// byte has a counterpart there.
+    /// </summary>
+    private const int SymbolPageLastShadowed = 0xFF;
+
+    /// <summary>
     /// The format 14 subtables for Unicode variation sequences.
     /// </summary>
     private readonly Format14SubTable[] format14SubTables = Array.Empty<Format14SubTable>();
+
+    /// <summary>
+    /// The one subtable characters map through.
+    /// </summary>
+    private readonly CMapSubTable? characterMap;
+
+    /// <summary>
+    /// Whether <see cref="characterMap"/> uses the symbol encoding.
+    /// </summary>
+    private readonly bool isSymbolic;
 
     /// <summary>
     /// Cached codepoints available in the font.
@@ -36,6 +68,8 @@ internal sealed class CMapTable : Table
     {
         this.Tables = tables.OrderBy(t => GetPreferredPlatformOrder(t.Platform)).ToArray();
         this.format14SubTables = this.Tables.OfType<Format14SubTable>().ToArray();
+        this.characterMap = SelectCharacterMap(this.Tables, out bool symbolic);
+        this.isSymbolic = symbolic;
     }
 
     /// <summary>
@@ -64,6 +98,62 @@ internal sealed class CMapTable : Table
             PlatformIDs.Macintosh => 2,
             _ => int.MaxValue
         };
+
+    /// <summary>
+    /// Chooses the one subtable that maps characters to glyphs, in the order the
+    /// specification's implementations agree on: the Windows symbol encoding
+    /// first, then the 32-bit Unicode encodings, then the 16-bit ones, and the
+    /// Macintosh encoding only when a font offers nothing else. A font that
+    /// carries several is not consulted for more than one of them - a character
+    /// the chosen subtable does not map is unmapped, not a reason to consult a
+    /// less preferred encoding, which would resolve characters through a table
+    /// the font does not intend for them.
+    /// </summary>
+    /// <param name="tables">The subtables the font declares.</param>
+    /// <param name="symbolic">Whether the chosen subtable uses the symbol encoding.</param>
+    /// <returns>The subtable to map characters through, or <see langword="null"/> when the font declares none.</returns>
+    private static CMapSubTable? SelectCharacterMap(CMapSubTable[] tables, out bool symbolic)
+    {
+        symbolic = false;
+        foreach (CMapSubTable table in tables)
+        {
+            if (table.Platform == PlatformIDs.Windows && table.Encoding == SymbolEncodingId)
+            {
+                symbolic = true;
+                return table;
+            }
+        }
+
+        // Widest coverage first: an encoding that reaches beyond the basic
+        // multilingual plane is preferred to one that cannot, and a Unicode
+        // encoding to the Macintosh one, whose codes are bytes in a legacy
+        // character set rather than characters.
+        ReadOnlySpan<(PlatformIDs Platform, ushort Encoding)> preference =
+        [
+            (PlatformIDs.Windows, 10),   // Windows, full Unicode
+            (PlatformIDs.Unicode, 6),    // Unicode 13.0 and later, full
+            (PlatformIDs.Unicode, 4),    // Unicode 2.0 and later, full
+            (PlatformIDs.Windows, 1),    // Windows, basic multilingual plane
+            (PlatformIDs.Unicode, 3),    // Unicode 2.0 and later, plane zero
+            (PlatformIDs.Unicode, 2),    // Unicode, ISO/IEC 10646
+            (PlatformIDs.Unicode, 1),    // Unicode 1.1
+            (PlatformIDs.Unicode, 0),    // Unicode 1.0
+            (PlatformIDs.Macintosh, 0),  // Macintosh, single byte codes
+        ];
+
+        foreach ((PlatformIDs platform, ushort encoding) in preference)
+        {
+            foreach (CMapSubTable table in tables)
+            {
+                if (table.Platform == platform && table.Encoding == encoding && table is not Format14SubTable)
+                {
+                    return table;
+                }
+            }
+        }
+
+        return null;
+    }
 
     /// <summary>
     /// Tries to get the glyph ID for the given code point, optionally considering the next code point
@@ -110,29 +200,32 @@ internal sealed class CMapTable : Table
     /// <returns><see langword="true"/> if a glyph ID was found; otherwise, <see langword="false"/>.</returns>
     private bool TryGetGlyphId(CodePoint codePoint, out ushort glyphId)
     {
-        bool foundFallback = false;
-
-        foreach (CMapSubTable t in this.Tables)
+        glyphId = 0;
+        if (this.characterMap is null)
         {
-            // Keep looking until we have an index that's not the fallback.
-            // Regardless of the encoding scheme, character codes that do
-            // not correspond to any glyph in the font should be mapped to glyph index 0.
-            // The glyph at this location must be a special glyph representing a missing character, commonly known as .notdef.
-            if (!t.TryGetGlyphId(codePoint, out glyphId))
-            {
-                continue;
-            }
+            return false;
+        }
 
-            if (glyphId > 0)
+        if (this.characterMap.TryGetGlyphId(codePoint, out glyphId) && glyphId > 0)
+        {
+            return true;
+        }
+
+        // The text asked for a character the symbol font does not map, which is
+        // expected: such a font maps the same glyphs one private use page up.
+        // Retry there, since the caller's character code is what that page
+        // shadows.
+        if (this.isSymbolic && codePoint.Value <= SymbolPageLastShadowed)
+        {
+            CodePoint shadowed = new(SymbolPageStart + codePoint.Value);
+            if (this.characterMap.TryGetGlyphId(shadowed, out glyphId) && glyphId > 0)
             {
                 return true;
             }
-
-            foundFallback = true;
         }
 
         glyphId = 0;
-        return foundFallback;
+        return false;
     }
 
     /// <summary>
@@ -167,10 +260,28 @@ internal sealed class CMapTable : Table
         }
 
         HashSet<int> values = new();
-
-        foreach (int v in this.Tables.SelectMany(subtable => subtable.GetAvailableCodePoints()))
+        if (this.characterMap is not null)
         {
-            values.Add(v);
+            // Only the subtable characters map through: a codepoint another
+            // subtable lists is not one this font resolves.
+            foreach (int v in this.characterMap.GetAvailableCodePoints())
+            {
+                values.Add(v);
+            }
+
+            // A symbol font's page is reachable through the character codes it
+            // shadows as well as through the page itself, so both address the
+            // same glyph and both belong in the answer.
+            if (this.isSymbolic)
+            {
+                foreach (int v in this.characterMap.GetAvailableCodePoints())
+                {
+                    if (v >= SymbolPageStart && v <= SymbolPageStart + SymbolPageLastShadowed)
+                    {
+                        values.Add(v - SymbolPageStart);
+                    }
+                }
+            }
         }
 
         return this.codepoints = values.OrderBy(v => v).Select(v => new CodePoint(v)).ToArray();
@@ -221,6 +332,9 @@ internal sealed class CMapTable : Table
                     break;
                 case 12:
                     tables.AddRange(Format12SubTable.Load(encoding, reader));
+                    break;
+                case 13:
+                    tables.AddRange(Format13SubTable.Load(encoding, reader));
                     break;
                 case 14:
                     tables.AddRange(Format14SubTable.Load(encoding, reader, offset));

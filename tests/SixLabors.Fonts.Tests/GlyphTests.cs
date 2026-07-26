@@ -102,10 +102,10 @@ public class GlyphTests
         Font font = TestFonts.GetFont(TestFonts.SimpleFontFile, 12);
 
         // Get letter A
-        Assert.True(font.TryGetGlyphs(new CodePoint(41), ColorFontSupport.None, out Glyph? glyph));
+        Assert.True(font.TryGetGlyphs(new CodePoint(0x41), ColorFontSupport.None, out Glyph? glyph));
         GlyphVector instance = ((TrueTypeGlyphMetrics)glyph.Value.GlyphMetrics).GetOutline();
 
-        Assert.Equal(20, instance.ControlPoints.Count);
+        Assert.Equal(6, instance.ControlPoints.Count);
     }
 
     [Fact]

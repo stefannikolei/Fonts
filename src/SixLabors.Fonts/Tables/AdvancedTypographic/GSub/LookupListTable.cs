@@ -218,11 +218,6 @@ internal sealed class LookupTable
                 continue;
             }
 
-            if (ShapingProbe.Enabled)
-            {
-                ShapingProbe.SubTableProbes++;
-            }
-
             // Nested applications never consume through the pass cursor: the outer
             // contextual match owns it, and its replacements run in place.
             buffer.DirectConsume = !buffer.IsNestedApplication && subTable.ConsumesDirectly;

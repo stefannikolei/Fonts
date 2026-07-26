@@ -194,9 +194,7 @@ internal class GSubTable : Table
             }
 
             Tag unicodeScriptTag = this.GetUnicodeScriptTag(current);
-            var createProbe = ShapingProbe.Enter();
             ShapePlan shapePlan = buffer.GetOrCreatePlan(current, unicodeScriptTag, fontMetrics);
-            ShapingProbe.Exit(ShapingProbe.SubShaperCreate, createProbe);
 
             BaseShaper shaper = shapePlan.Shaper;
 
@@ -204,9 +202,7 @@ internal class GSubTable : Table
             // Shapers can adjust the count during initialization and feature processing so we must capture
             // the current count to allow resetting indexes and processing counts.
             int collectionCount = buffer.Count;
-            var planProbe = ShapingProbe.Enter();
             shaper.Plan(buffer, index, count);
-            ShapingProbe.Exit(ShapingProbe.SubShaperPlan, planProbe);
             int delta = buffer.Count - collectionCount;
             i += delta;
             count += delta;
@@ -226,16 +222,13 @@ internal class GSubTable : Table
                 ShapePlanStageGroup<LookupTable> group = groups[g];
 
                 collectionCount = buffer.Count;
-                var preProbe = ShapingProbe.Enter();
                 stages[group.Start].PreProcessFeature(shapePlan, buffer, index, count);
-                ShapingProbe.Exit(ShapingProbe.SubStagePrePost, preProbe);
 
                 // Account for substitutions changing the length of the buffer.
                 delta = buffer.Count - collectionCount;
                 count += delta;
                 i += delta;
 
-                var applyProbe = ShapingProbe.Enter();
                 this.ApplyMergedLookups(
                     fontMetrics,
                     buffer,
@@ -248,12 +241,9 @@ internal class GSubTable : Table
                     maxCount,
                     maxOperationsCount,
                     ref currentOperations);
-                ShapingProbe.Exit(ShapingProbe.SubStageApply, applyProbe);
 
                 collectionCount = buffer.Count;
-                var postProbe = ShapingProbe.Enter();
                 stages[group.End - 1].PostProcessFeature(shapePlan, buffer, index, count);
-                ShapingProbe.Exit(ShapingProbe.SubStagePrePost, postProbe);
 
                 // Account for substitutions changing the length of the buffer.
                 delta = buffer.Count - collectionCount;
@@ -303,25 +293,13 @@ internal class GSubTable : Table
             // Skip the whole lookup when its coverage cannot intersect any glyph id
             // the buffer has ever contained; most fonts carry many lookups for
             // glyphs a given text never produces.
-            if (ShapingProbe.Enabled)
-            {
-                ShapingProbe.LookupsConsidered++;
-            }
-
             if (!featureLookupTable.Digest.MightIntersect(buffer.GlyphDigest))
             {
-                if (ShapingProbe.Enabled)
-                {
-                    ShapingProbe.LookupsSkippedByDigest++;
-                }
-
                 continue;
             }
 
             buffer.SetLookupMatchState(featureMask, autoZwnj, autoZwj, perSyllable);
             iterator.Reset(index, featureLookupTable.LookupFlags, featureLookupTable.MarkFilteringSet);
-            long featureStart = ShapingProbe.Timestamp();
-            long featureApplies = 0;
 
             // One output pass per lookup: the cursor consumes the input side and
             // every record streams to the output side exactly once, so a length
@@ -347,11 +325,6 @@ internal class GSubTable : Table
                     return;
                 }
 
-                if (ShapingProbe.Enabled)
-                {
-                    ShapingProbe.GlyphGateChecks++;
-                }
-
                 // The digest cheaply rejects glyphs no subtable of this lookup can
                 // affect; a maybe falls through to the exact coverage test inside.
                 // Ignored records stream through untouched rather than being
@@ -366,14 +339,8 @@ internal class GSubTable : Table
                     continue;
                 }
 
-                if (ShapingProbe.Enabled)
-                {
-                    ShapingProbe.SubstitutionAttempts++;
-                }
-
                 int beforeCount = buffer.Count;
                 featureLookupTable.TrySubstitution(fontMetrics, this, buffer, feature, featureMask, position, segmentEnd - position);
-                featureApplies++;
 
                 // In-place mutations from contextual nesting change the input side
                 // directly and move the segment bound; cursor consumption surfaces
@@ -394,8 +361,6 @@ internal class GSubTable : Table
             count += buffer.Count - passBefore;
             i += buffer.Count - passBefore;
             collectionCount = buffer.Count;
-
-            ShapingProbe.ExitFeature("GSUB", feature, featureStart, featureApplies);
         }
     }
 

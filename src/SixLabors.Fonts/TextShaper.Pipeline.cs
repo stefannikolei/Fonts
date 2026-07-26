@@ -37,9 +37,7 @@ public static partial class TextShaper
     internal static IReadOnlyList<TextRun> BuildTextRuns(ReadOnlySpan<char> text, TextOptions options)
     {
         int start = 0;
-        var graphemeProbe = ShapingProbe.Enter();
         int end = text.GetGraphemeCount();
-        ShapingProbe.Exit(ShapingProbe.GraphemeCount, graphemeProbe);
         if (end == 0)
         {
             return [];
@@ -188,8 +186,6 @@ public static partial class TextShaper
 
         LayoutMode layoutMode = options.LayoutMode;
 
-        var probe = ShapingProbe.Enter();
-
         // Analyse the text for bidi directional runs.
         BidiAlgorithm bidi = scratch.BidiAlgorithm;
         BidiData bidiData = scratch.BidiData;
@@ -265,9 +261,6 @@ public static partial class TextShaper
 
         BidiRun[] bidiRuns = scratch.BidiRuns;
         int[] bidiMap = scratch.GetBidiMap(bidiData.Types.Length);
-        ShapingProbe.Exit(ShapingProbe.Bidi, probe);
-
-        probe = ShapingProbe.Enter();
 
         // Incrementally build out buffer of glyphs. Both buffers share the run list so
         // per-glyph run indices agree when records are seeded across them. Callers
@@ -278,7 +271,6 @@ public static partial class TextShaper
             : scratch.GetDefaultTextRuns(text.GetGraphemeCount(), options));
         substitutions.SetTextRuns(textRuns);
         positionings.SetTextRuns(textRuns);
-        ShapingProbe.Exit(ShapingProbe.BuildTextRuns, probe);
 
         // First do multiple font runs using the individual text runs.
         bool complete = true;
@@ -306,9 +298,7 @@ public static partial class TextShaper
                 bidiMap,
                 substitutions);
 
-            var seedProbe = ShapingProbe.Enter();
             complete = substitutions.SeedMetricsInPlace(onlyRun.ResolvedFont);
-            ShapingProbe.Exit(ShapingProbe.MetricsAdd, seedProbe);
 
             if (complete || fallbackFonts.Length == 0)
             {
@@ -318,9 +308,7 @@ public static partial class TextShaper
             }
             else
             {
-                seedProbe = ShapingProbe.Enter();
                 complete = positionings.TryAdd(onlyRun.ResolvedFont, substitutions);
-                ShapingProbe.Exit(ShapingProbe.MetricsAdd, seedProbe);
             }
 
             goto FallbackPasses;
@@ -410,7 +398,6 @@ public static partial class TextShaper
         // Update the positions of the glyphs in the completed buffer.
         // Each set of metrics is associated with single font and will only be updated
         // by that font so it's safe to use a single buffer.
-        probe = ShapingProbe.Enter();
         Font? lastFont = null;
         for (int i = 0; i < textRuns.Count; i++)
         {
@@ -432,8 +419,6 @@ public static partial class TextShaper
         }
 
         HideDefaultIgnorables(shaped);
-
-        ShapingProbe.Exit(ShapingProbe.Positioning, probe);
 
         return shaped;
     }
@@ -641,11 +626,9 @@ public static partial class TextShaper
             bidiMap,
             substitutions);
 
-        var seedProbe = ShapingProbe.Enter();
         bool result = !isFallbackRun
             ? positionings.TryAdd(font, substitutions)
             : positionings.TryUpdate(font, substitutions);
-        ShapingProbe.Exit(ShapingProbe.MetricsAdd, seedProbe);
         return result;
     }
 
@@ -679,8 +662,6 @@ public static partial class TextShaper
         // For each run we start with a fresh substitution buffer to avoid
         // overwriting the glyph ids.
         substitutions.Clear();
-
-        var probe = ShapingProbe.Enter();
 
         // A font without variation sequences never consumes the following codepoint
         // during glyph lookup, so the per-codepoint lookahead decode is skipped.
@@ -744,17 +725,11 @@ public static partial class TextShaper
             graphemeIndex++;
         }
 
-        ShapingProbe.Exit(ShapingProbe.Populate, probe);
-
         // Apply the simple and complex substitutions.
         // TODO: Investigate HarfBuzz normalizer.
-        probe = ShapingProbe.Enter();
         SubstituteBidiMirrors(font.FontMetrics, substitutions);
-        ShapingProbe.Exit(ShapingProbe.Mirrors, probe);
 
-        probe = ShapingProbe.Enter();
         font.FontMetrics.ApplySubstitution(substitutions);
-        ShapingProbe.Exit(ShapingProbe.Substitution, probe);
     }
 
     /// <summary>

@@ -119,11 +119,6 @@ internal static class AdvancedTypographicUtils
         int count)
     {
         SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, lookupFlags, markFilteringSet);
-        if (ShapingProbe.Enabled)
-        {
-            ShapingProbe.ContextIterators++;
-        }
-
         int currentCount = buffer.Count;
 
         // Nested lookups mutate the input side in place whatever their type: the
@@ -176,11 +171,6 @@ internal static class AdvancedTypographicUtils
         int count)
     {
         SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, lookupFlags, markFilteringSet);
-        if (ShapingProbe.Enabled)
-        {
-            ShapingProbe.ContextIterators++;
-        }
-
         foreach (SequenceLookupRecord lookupRecord in records)
         {
             ushort sequenceIndex = lookupRecord.SequenceIndex;
@@ -502,10 +492,6 @@ internal static class AdvancedTypographicUtils
         int endExclusive = index + count;
 
         SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, lookupFlags, markFilteringSet);
-        if (ShapingProbe.Enabled)
-        {
-            ShapingProbe.ContextIterators++;
-        }
 
         // Compute backtrack start using skippy prev(), not index-1: context steps
         // are transparent to joiners, so the step lands on the first solid glyph.
@@ -651,19 +637,9 @@ internal static class AdvancedTypographicUtils
     {
         // Cache the shaping class on the GlyphShapingData to avoid repeated GDEF lookups.
         // The cache key stores the glyph id; -1 means "not cached".
-        if (ShapingProbe.Enabled)
-        {
-            ShapingProbe.ClassifyCalls++;
-        }
-
         if (shapingData.ShapingClassCacheKey == glyphId)
         {
             return shapingData.CachedShapingClass;
-        }
-
-        if (ShapingProbe.Enabled)
-        {
-            ShapingProbe.ClassifyMisses++;
         }
 
         if (buffer.TryGetShapingClass(fontMetrics, glyphId, out GlyphShapingClass cached))

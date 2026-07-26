@@ -144,11 +144,6 @@ internal struct SkippingGlyphIterator
     /// <returns>The new index after advancing.</returns>
     public int Next()
     {
-        if (ShapingProbe.Enabled)
-        {
-            ShapingProbe.IteratorSteps++;
-        }
-
         this.Move(1);
         return this.Index;
     }

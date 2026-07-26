@@ -239,11 +239,6 @@ internal sealed class LookupTable
                 continue;
             }
 
-            if (ShapingProbe.Enabled)
-            {
-                ShapingProbe.SubTableProbes++;
-            }
-
             // A lookup is finished for a glyph after the client locates the target
             // glyph or glyph context and performs a positioning action, if specified.
             if (subTable.TryUpdatePosition(fontMetrics, table, buffer, feature, index, count))

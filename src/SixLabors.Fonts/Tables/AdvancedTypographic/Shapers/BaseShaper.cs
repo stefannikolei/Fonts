@@ -89,23 +89,17 @@ internal abstract class BaseShaper
             this.CollectSegmentIndex = index;
             this.CollectSegmentCount = count;
 
-            var preProbe = ShapingProbe.Enter();
             this.PlanPreprocessingFeatures(buffer, index, count);
-            ShapingProbe.Exit(ShapingProbe.PlanPre, preProbe);
 
             RecalculateCount(buffer, ref collectionCount, ref count);
             this.CollectSegmentCount = count;
 
-            var mainProbe = ShapingProbe.Enter();
             this.PlanFeatures(buffer, index, count);
-            ShapingProbe.Exit(ShapingProbe.PlanMain, mainProbe);
 
             RecalculateCount(buffer, ref collectionCount, ref count);
             this.CollectSegmentCount = count;
 
-            var postProbe = ShapingProbe.Enter();
             this.PlanPostprocessingFeatures(buffer, index, count);
-            ShapingProbe.Exit(ShapingProbe.PlanPost, postProbe);
 
             RecalculateCount(buffer, ref collectionCount, ref count);
 
@@ -114,22 +108,15 @@ internal abstract class BaseShaper
         }
         else
         {
-            var foldProbe = ShapingProbe.Enter();
             if (this.FoldedRegisteredMask != 0)
             {
                 buffer.AddShapingFeatureMasks(index, count, this.FoldedRegisteredMask, this.FoldedEnabledMask);
             }
-
-            ShapingProbe.Exit(ShapingProbe.PlanPre, foldProbe);
         }
 
-        var masksProbe = ShapingProbe.Enter();
         this.SetupMasks(buffer, index, count);
-        ShapingProbe.Exit(ShapingProbe.PlanPost, masksProbe);
 
-        var assignProbe = ShapingProbe.Enter();
         this.AssignFeatures(buffer, index, count);
-        ShapingProbe.Exit(ShapingProbe.PlanAssign, assignProbe);
     }
 
     /// <summary>

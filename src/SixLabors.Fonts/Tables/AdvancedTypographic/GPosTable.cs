@@ -341,8 +341,6 @@ internal class GPosTable : Table
                 }
 
                 iterator.Reset(index, featureLookupTable.LookupFlags, featureLookupTable.MarkFilteringSet);
-                long featureStart = ShapingProbe.Timestamp();
-                long featureApplies = 0;
 
                 while (iterator.Index < index + count)
                 {
@@ -363,13 +361,10 @@ internal class GPosTable : Table
                     }
 
                     bool success = featureLookupTable.TryUpdatePosition(fontMetrics, this, buffer, feature, iterator.Index, count - (iterator.Index - index));
-                    featureApplies++;
                     kerned |= success && (feature == KernTag || feature == VKernTag);
                     updated |= success;
                     iterator.Next();
                 }
-
-                ShapingProbe.ExitFeature("GPOS", feature, featureStart, featureApplies);
             }
 
             shapingStages[group.End - 1].PostProcessFeature(shapePlan, buffer, index, count);

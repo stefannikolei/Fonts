@@ -99,7 +99,6 @@ public static partial class TextShaper
         {
             ShapingBuffer shaped = ShapeCore(text, options, scratch, null);
 
-            var probe = ShapingProbe.Enter();
             int count = shaped.Count;
             Span<ShapedGlyph> destination = buffer.Reserve(count);
             int written = 0;
@@ -127,7 +126,6 @@ public static partial class TextShaper
             }
 
             buffer.Commit(written);
-            ShapingProbe.Exit(ShapingProbe.Projection, probe);
         }
         finally
         {

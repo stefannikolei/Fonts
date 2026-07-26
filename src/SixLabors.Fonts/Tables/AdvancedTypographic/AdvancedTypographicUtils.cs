@@ -135,9 +135,15 @@ internal static class AdvancedTypographicUtils
         // frame once and stay in it.
         int shift = buffer.PassBacktrackLength - buffer.ReadIndex;
         int end = buffer.PassBacktrackLength + (matchEnd - buffer.ReadIndex);
-        for (int i = 0; i < matchCount; i++)
+
+        // The two sides sit level until a lookup in this pass changes a length,
+        // and level means the frames coincide.
+        if (shift != 0)
         {
-            matchPositions[i] += shift;
+            for (int i = 0; i < matchCount; i++)
+            {
+                matchPositions[i] += shift;
+            }
         }
 
         buffer.PushNestedApplication();

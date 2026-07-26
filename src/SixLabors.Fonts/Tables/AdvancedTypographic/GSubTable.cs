@@ -320,8 +320,8 @@ internal class GSubTable : Table
             // and the room a rewind opens all land before the tail. An absolute
             // index would have to be corrected after each of them.
             int totalBefore = buffer.Count;
-            int segmentTail = buffer.Count - (index + count);
-            while (buffer.ReadIndex < buffer.Count - segmentTail && buffer.ReadIndex < buffer.Count)
+            int segmentEnd = index + count;
+            while (buffer.ReadIndex < segmentEnd && buffer.ReadIndex < buffer.Count)
             {
                 if (buffer.Count >= maxCount || currentOperations++ >= maxOperationsCount)
                 {
@@ -348,7 +348,14 @@ internal class GSubTable : Table
                     continue;
                 }
 
-                featureLookupTable.TrySubstitution(fontMetrics, this, buffer, feature, featureMask, position, buffer.Count - segmentTail - position);
+                int lengthBefore = buffer.Count;
+                featureLookupTable.TrySubstitution(fontMetrics, this, buffer, feature, featureMask, position, segmentEnd - position);
+
+                // Anything that lengthened the input side moved the records
+                // after the segment along with it: an in-place mutation, or the
+                // room a rewind opened. Both shift the segment's end by the
+                // same amount, so the bound stays a plain comparison.
+                segmentEnd += buffer.Count - lengthBefore;
 
                 if (buffer.ReadIndex == position)
                 {

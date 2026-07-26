@@ -535,6 +535,62 @@ internal static class AdvancedTypographicUtils
     }
 
     /// <summary>
+    /// Matches a backtrack sequence by class value over the records the pass has
+    /// produced. The class table travels as match state so the lambda stays
+    /// static: a capturing lambda here would allocate on every rule attempt.
+    /// </summary>
+    /// <param name="iterator">The skipping glyph iterator, already pointed at the produced side.</param>
+    /// <param name="startIndex">The first backtrack position.</param>
+    /// <param name="sequence">The array of class values to match.</param>
+    /// <param name="classDefinitionTable">The class definition table for the backtrack sequence.</param>
+    /// <returns><see langword="true"/> if the entire sequence was matched; otherwise, <see langword="false"/>.</returns>
+    private static bool MatchBacktrackClassSequence(
+        SkippingGlyphIterator iterator,
+        int startIndex,
+        ushort[] sequence,
+        ClassDefinitionTable classDefinitionTable)
+    {
+        if (sequence.Length == 0)
+        {
+            return true;
+        }
+
+        int offset = startIndex;
+        int limit = iterator.RecordCount;
+        int i = 0;
+        while (i < sequence.Length && i < MaxContextLength)
+        {
+            if (offset < 0 || offset >= limit)
+            {
+                return false;
+            }
+
+            if (iterator.IsPropertySkipped(offset))
+            {
+                offset--;
+                continue;
+            }
+
+            ref GlyphShapingData data = ref iterator.RecordAt(offset);
+            if (iterator.MayMatch(ref data) && sequence[i] == classDefinitionTable.ClassIndexOf(data.GlyphId))
+            {
+                i++;
+                offset--;
+                continue;
+            }
+
+            if (!iterator.IsTransparent(ref data))
+            {
+                return false;
+            }
+
+            offset--;
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Applies a chained sequence rule by matching backtrack, input, and lookahead glyph ID sequences.
     /// The input matches under the applying lookup's mask and joiner handling;
     /// backtrack and lookahead match as context, transparent to joiners.
@@ -565,10 +621,22 @@ internal static class AdvancedTypographicUtils
             }
         }
 
-        if (rule.BacktrackSequence.Length > 0
-            && !MatchSequence(iterator, -rule.BacktrackSequence.Length, rule.BacktrackSequence, 0, true))
+        if (rule.BacktrackSequence.Length > 0)
         {
-            return false;
+            SkippingGlyphIterator backIt = iterator;
+            int backtrackStart = backIt.StartBacktrack();
+            if (!Match(
+                backIt,
+                backtrackStart,
+                rule.BacktrackSequence,
+                MatchDirection.Backward,
+                int.MaxValue,
+                static (component, data) => component == data.GlyphId,
+                default,
+                out _))
+            {
+                return false;
+            }
         }
 
         return true;
@@ -615,10 +683,14 @@ internal static class AdvancedTypographicUtils
             }
         }
 
-        if (rule.BacktrackSequence.Length > 0
-            && !MatchClassSequence(iterator, -rule.BacktrackSequence.Length, rule.BacktrackSequence, backtrackClassDefinitionTable, 0, true))
+        if (rule.BacktrackSequence.Length > 0)
         {
-            return false;
+            SkippingGlyphIterator backIt = iterator;
+            int backtrackStart = backIt.StartBacktrack();
+            if (!MatchBacktrackClassSequence(backIt, backtrackStart, rule.BacktrackSequence, backtrackClassDefinitionTable))
+            {
+                return false;
+            }
         }
 
         return true;
@@ -656,20 +728,16 @@ internal static class AdvancedTypographicUtils
 
         SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, lookupFlags, markFilteringSet);
 
-        // Compute backtrack start using skippy prev(), not index-1: context steps
-        // are transparent to joiners, so the step lands on the first solid glyph.
-        int backtrackStart = index;
+        // Backtrack steps back through the records the pass produced, skipping
+        // as context so joiners are transparent to it.
         if (backtrack.Length > 0)
         {
             SkippingGlyphIterator backIt = iterator;
-            backIt.SetMatchContext(0, true);
-            backIt.Index = index;
-            backtrackStart = backIt.Prev(); // first backtrack glyph (i-1 in skippy space)
-        }
-
-        if (!MatchBacktrackCoverageSequence(iterator, backtrack, backtrackStart, endExclusive))
-        {
-            return false;
+            int backtrackStart = backIt.StartBacktrack();
+            if (!MatchBacktrackCoverageSequence(backIt, backtrack, backtrackStart, int.MaxValue))
+            {
+                return false;
+            }
         }
 
         // Input starts at the current glyph position; lookahead starts exactly
@@ -1162,8 +1230,8 @@ internal static class AdvancedTypographicUtils
         int offset = startIndex;
         int step = direction == MatchDirection.Forward ? 1 : -1;
 
-        ShapingBuffer buffer = iterator.Collection;
-        int limit = Math.Min(endExclusive, buffer.Count);
+        // Backtrack reads the records the pass produced, so that side bounds it.
+        int limit = Math.Min(endExclusive, iterator.RecordCount);
 
         // A transparent record is stepped over unless it matches the sequence
         // position itself; a solid record that fails the shape test refuses the
@@ -1183,7 +1251,7 @@ internal static class AdvancedTypographicUtils
                 continue;
             }
 
-            ref GlyphShapingData data = ref buffer[offset];
+            ref GlyphShapingData data = ref iterator.RecordAt(offset);
             if (iterator.MayMatch(ref data) && condition(sequence[i], data))
             {
                 if (matches.Length == MaxContextLength)

@@ -35,6 +35,14 @@ internal struct SkippingGlyphIterator
     private bool stepsDirectly;
 
     /// <summary>
+    /// True when this matcher reads the records the active pass has produced
+    /// rather than the input it has yet to consume. Backtrack reads that side:
+    /// the records behind the cursor were consumed by the pass, and a rule must
+    /// see what earlier lookups produced rather than the input they replaced.
+    /// </summary>
+    private bool readsProducedSide;
+
+    /// <summary>
     /// The <see cref="matchFlags"/> bit recording that default-ignorable
     /// transparency is active for the duration of sequence matching; plain
     /// stepping outside a match keeps its historical semantics.
@@ -139,6 +147,48 @@ internal struct SkippingGlyphIterator
     public readonly bool MatchTransparencyActive => (this.matchFlags & TransparencyActiveFlag) != 0;
 
     /// <summary>
+    /// Gets the number of records on the side this matcher reads.
+    /// </summary>
+    public readonly int RecordCount
+        => this.readsProducedSide ? this.Collection.PassOutputCount : this.Collection.Count;
+
+    /// <summary>
+    /// Gets a reference to the record at the given index on the side this
+    /// matcher reads.
+    /// </summary>
+    /// <param name="index">The zero-based index on the read side.</param>
+    /// <returns>A reference to the record.</returns>
+    public readonly ref GlyphShapingData RecordAt(int index)
+    {
+        if (this.readsProducedSide)
+        {
+            return ref this.Collection.PassOutputAt(index);
+        }
+
+        return ref this.Collection[index];
+    }
+
+    /// <summary>
+    /// Points this matcher at the side backtrack reads, stamps it as context,
+    /// and steps to the first backtrack position. During a substitution pass
+    /// that side is the records the pass has produced; outside one the records
+    /// behind the cursor are the buffer itself.
+    /// </summary>
+    /// <returns>The first backtrack position, or a negative value when none remains.</returns>
+    public int StartBacktrack()
+    {
+        ShapingBuffer buffer = this.Collection;
+        if (buffer.IsPassActive)
+        {
+            this.readsProducedSide = true;
+            this.Index = buffer.PassOutputCount;
+        }
+
+        this.SetMatchContext(0, true);
+        return this.Prev();
+    }
+
+    /// <summary>
     /// Advances to the next non-skipped glyph in the forward direction.
     /// </summary>
     /// <returns>The new index after advancing.</returns>
@@ -213,7 +263,8 @@ internal struct SkippingGlyphIterator
             return;
         }
 
-        while (this.Index >= 0 && this.Index < this.Collection.Count)
+        int limit = this.RecordCount;
+        while (this.Index >= 0 && this.Index < limit)
         {
             // The class-mask test only runs when the flags can actually ignore
             // something; a skips-nothing iterator steps straight to transparency.
@@ -224,7 +275,7 @@ internal struct SkippingGlyphIterator
                     break;
                 }
 
-                ref GlyphShapingData data = ref this.Collection[this.Index];
+                ref GlyphShapingData data = ref this.RecordAt(this.Index);
                 if (!this.IsTransparent(ref data))
                 {
                     break;
@@ -362,7 +413,7 @@ internal struct SkippingGlyphIterator
     /// <returns><see langword="true"/> if the glyph should be skipped; otherwise, <see langword="false"/>.</returns>
     private readonly bool ShouldIgnore(int index)
     {
-        ref GlyphShapingData data = ref this.Collection[index];
+        ref GlyphShapingData data = ref this.RecordAt(index);
 
         // The shaping class is cached on the glyph keyed by glyph id; test the cache
         // inline so the common hit path avoids the classification call entirely.

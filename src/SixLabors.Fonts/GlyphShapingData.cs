@@ -56,6 +56,21 @@ internal struct GlyphShapingData
     private const ushort HiddenFlag = 1 << 5;
 
     /// <summary>
+    /// The <see cref="flags"/> bit recording <see cref="IsZwnj"/>.
+    /// </summary>
+    private const ushort ZwnjFlag = 1 << 7;
+
+    /// <summary>
+    /// The <see cref="flags"/> bit recording <see cref="IsZwj"/>.
+    /// </summary>
+    private const ushort ZwjFlag = 1 << 8;
+
+    /// <summary>
+    /// The <see cref="flags"/> bit recording <see cref="IsHiddenIgnorable"/>.
+    /// </summary>
+    private const ushort HiddenIgnorableFlag = 1 << 9;
+
+    /// <summary>
     /// The <see cref="flags"/> bit recording that <see cref="shapingClassCacheId"/>
     /// holds the glyph id <see cref="CachedShapingClass"/> was computed for. A default
     /// record therefore reports an invalid cache.
@@ -137,6 +152,9 @@ internal struct GlyphShapingData
         this.IsPlaceholder = data.IsPlaceholder;
         this.IsDefaultIgnorable = data.IsDefaultIgnorable;
         this.IsHidden = data.IsHidden;
+        this.IsZwnj = data.IsZwnj;
+        this.IsZwj = data.IsZwj;
+        this.IsHiddenIgnorable = data.IsHiddenIgnorable;
 
         this.Syllable = data.Syllable;
 
@@ -337,6 +355,40 @@ internal struct GlyphShapingData
     {
         readonly get => (this.flags & HiddenFlag) != 0;
         set => this.flags = value ? (ushort)(this.flags | HiddenFlag) : (ushort)(this.flags & ~HiddenFlag);
+    }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the codepoint is the zero width
+    /// non-joiner. Classified once as the record enters the buffer; sequence
+    /// matching consults the bit when deciding joiner transparency.
+    /// </summary>
+    public bool IsZwnj
+    {
+        readonly get => (this.flags & ZwnjFlag) != 0;
+        set => this.flags = value ? (ushort)(this.flags | ZwnjFlag) : (ushort)(this.flags & ~ZwnjFlag);
+    }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the codepoint is the zero width
+    /// joiner. Classified once as the record enters the buffer; sequence matching
+    /// consults the bit when deciding joiner transparency.
+    /// </summary>
+    public bool IsZwj
+    {
+        readonly get => (this.flags & ZwjFlag) != 0;
+        set => this.flags = value ? (ushort)(this.flags | ZwjFlag) : (ushort)(this.flags & ~ZwjFlag);
+    }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the codepoint is a default
+    /// ignorable that must stay matchable during substitution while positioning
+    /// treats it as transparent: the Mongolian free variation selectors, the tag
+    /// characters, and the combining grapheme joiner.
+    /// </summary>
+    public bool IsHiddenIgnorable
+    {
+        readonly get => (this.flags & HiddenIgnorableFlag) != 0;
+        set => this.flags = value ? (ushort)(this.flags | HiddenIgnorableFlag) : (ushort)(this.flags & ~HiddenIgnorableFlag);
     }
 
     private string DebuggerDisplay

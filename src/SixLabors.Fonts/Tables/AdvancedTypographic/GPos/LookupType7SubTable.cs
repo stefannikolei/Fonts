@@ -111,7 +111,7 @@ internal static class LookupType7SubTable
                     continue;
                 }
 
-                if (!AdvancedTypographicUtils.MatchSequence(iterator, 1, ruleTable.InputSequence))
+                if (!AdvancedTypographicUtils.MatchSequence(iterator, 1, ruleTable.InputSequence, buffer.LookupMask, false))
                 {
                     continue;
                 }
@@ -223,7 +223,7 @@ internal static class LookupType7SubTable
                     continue;
                 }
 
-                if (!AdvancedTypographicUtils.MatchClassSequence(iterator, 1, ruleTable.InputSequence, this.classDefinitionTable))
+                if (!AdvancedTypographicUtils.MatchClassSequence(iterator, 1, ruleTable.InputSequence, this.classDefinitionTable, buffer.LookupMask, false))
                 {
                     continue;
                 }
@@ -317,7 +317,7 @@ internal static class LookupType7SubTable
             }
 
             SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
-            if (!AdvancedTypographicUtils.MatchCoverageSequence(iterator, this.coverageTables, index, index + count))
+            if (!AdvancedTypographicUtils.MatchCoverageSequence(iterator, this.coverageTables, index, index + count, buffer.LookupMask, false))
             {
                 return false;
             }

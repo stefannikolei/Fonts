@@ -194,6 +194,24 @@ internal sealed class ShapingBuffer
     private int nestedApplicationDepth;
 
     /// <summary>
+    /// Whether the packed matcher flag bytes have been computed at least once;
+    /// until then the stamped lookup state always rebuilds them.
+    /// </summary>
+    private bool packedFlagsValid;
+
+    /// <summary>
+    /// The role the packed matcher flag bytes were computed under; a role change
+    /// invalidates them.
+    /// </summary>
+    private ShapingBufferRole packedFlagsRole;
+
+    /// <summary>
+    /// Whether the buffer held default ignorables when the packed matcher flag
+    /// bytes were computed; ignorables appearing invalidates them.
+    /// </summary>
+    private bool packedFlagsHadIgnorables;
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="ShapingBuffer"/> class.
     /// </summary>
     /// <param name="textOptions">The text options.</param>
@@ -249,6 +267,44 @@ internal sealed class ShapingBuffer
     /// hide-ignorables stage can skip plain text without a scan.
     /// </summary>
     public bool HasDefaultIgnorables { get; set; }
+
+    /// <summary>
+    /// Gets a value indicating whether the applying lookup skips the zero width
+    /// non-joiner during context matching instead of matching it.
+    /// </summary>
+    public bool LookupAutoZwnj { get; private set; } = true;
+
+    /// <summary>
+    /// Gets a value indicating whether the applying lookup skips the zero width
+    /// joiner during sequence matching instead of matching it.
+    /// </summary>
+    public bool LookupAutoZwj { get; private set; } = true;
+
+    /// <summary>
+    /// Gets a value indicating whether the applying lookup never matches across
+    /// syllable boundaries.
+    /// </summary>
+    public bool LookupPerSyllable { get; private set; }
+
+    /// <summary>
+    /// Gets the applying lookup's combined mask. Nested lookups inside
+    /// contextual matches apply under the outer lookup's mask, so the stamped
+    /// value holds for the whole application.
+    /// </summary>
+    public uint LookupMask { get; private set; } = uint.MaxValue;
+
+    /// <summary>
+    /// Gets the packed matcher flags for input sequence matching under the
+    /// applying lookup, precomputed when the lookup is stamped so every match
+    /// attempt copies them instead of re-deriving them.
+    /// </summary>
+    public byte InputMatchFlags { get; private set; }
+
+    /// <summary>
+    /// Gets the packed matcher flags for backtrack and lookahead matching under
+    /// the applying lookup, precomputed when the lookup is stamped.
+    /// </summary>
+    public byte ContextMatchFlags { get; private set; }
 
     /// <summary>
     /// Gets a value indicating whether lookup application is currently nested
@@ -438,6 +494,42 @@ internal sealed class ShapingBuffer
     }
 
     /// <summary>
+    /// Sets the applying lookup's mask, joiner handling, and syllable scope for
+    /// the duration of its application. The drivers stamp this before each
+    /// merged lookup entry; sequence matching reads it through the skipping
+    /// iterator.
+    /// </summary>
+    /// <param name="mask">The lookup's combined mask.</param>
+    /// <param name="autoZwnj">Whether the lookup skips the zero width non-joiner during context matching.</param>
+    /// <param name="autoZwj">Whether the lookup skips the zero width joiner.</param>
+    /// <param name="perSyllable">Whether matching is confined to one syllable.</param>
+    public void SetLookupMatchState(uint mask, bool autoZwnj, bool autoZwj, bool perSyllable)
+    {
+        this.LookupMask = mask;
+
+        // Consecutive lookups mostly share their joiner handling, so the packed
+        // bytes are only rebuilt when one of their five inputs actually changed.
+        if (this.packedFlagsValid
+            && autoZwnj == this.LookupAutoZwnj
+            && autoZwj == this.LookupAutoZwj
+            && perSyllable == this.LookupPerSyllable
+            && this.packedFlagsRole == this.Role
+            && this.packedFlagsHadIgnorables == this.HasDefaultIgnorables)
+        {
+            return;
+        }
+
+        this.LookupAutoZwnj = autoZwnj;
+        this.LookupAutoZwj = autoZwj;
+        this.LookupPerSyllable = perSyllable;
+        this.packedFlagsValid = true;
+        this.packedFlagsRole = this.Role;
+        this.packedFlagsHadIgnorables = this.HasDefaultIgnorables;
+        this.InputMatchFlags = SkippingGlyphIterator.PackMatchFlags(this, false);
+        this.ContextMatchFlags = SkippingGlyphIterator.PackMatchFlags(this, true);
+    }
+
+    /// <summary>
     /// Gets shaper scratch storage of at least the given length, grown to the
     /// workload's high-water mark and retained. Contents are undefined on entry;
     /// callers write every slot they read.
@@ -559,7 +651,10 @@ internal sealed class ShapingBuffer
 
         // The render-as-whitespace carve-outs are default ignorables that fonts
         // implement as regular spacing glyphs, such as the Hangul fillers; those
-        // keep their glyphs.
+        // keep their glyphs. The joiners and the substitution-visible ignorables
+        // (Mongolian free variation selectors, tag characters, the combining
+        // grapheme joiner) carry their own bits for the matcher's transparency
+        // rules.
         uint value = (uint)codePoint.Value;
         if (value >= 0x80
             && UnicodeUtility.IsDefaultIgnorableCodePoint(value)
@@ -567,6 +662,24 @@ internal sealed class ShapingBuffer
         {
             slot.IsDefaultIgnorable = true;
             this.HasDefaultIgnorables = true;
+
+            if (CodePoint.IsZeroWidthNonJoiner(codePoint))
+            {
+                slot.IsZwnj = true;
+            }
+            else if (CodePoint.IsZeroWidthJoiner(codePoint))
+            {
+                slot.IsZwj = true;
+            }
+            else if (value is (>= 0x180B and <= 0x180D) or 0x180F
+                or (>= 0xE0020 and <= 0xE007F)
+                or 0x034F)
+            {
+                // MONGOLIAN FREE VARIATION SELECTOR ONE..FOUR, TAG SPACE..CANCEL
+                // TAG, and COMBINING GRAPHEME JOINER: substitution must still see
+                // these, while positioning treats them as transparent.
+                slot.IsHiddenIgnorable = true;
+            }
         }
     }
 

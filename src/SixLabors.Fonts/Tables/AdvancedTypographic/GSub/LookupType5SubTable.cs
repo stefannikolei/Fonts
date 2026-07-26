@@ -117,7 +117,7 @@ internal sealed class LookupType5Format1SubTable : LookupSubTable
                 continue;
             }
 
-            if (!AdvancedTypographicUtils.MatchSequence(iterator, 1, ruleTable.InputSequence))
+            if (!AdvancedTypographicUtils.MatchSequence(iterator, 1, ruleTable.InputSequence, lookupMask, false))
             {
                 continue;
             }
@@ -282,7 +282,7 @@ internal sealed class LookupType5Format2SubTable : LookupSubTable
                 continue;
             }
 
-            if (!AdvancedTypographicUtils.MatchClassSequence(iterator, 1, ruleTable.InputSequence, this.classDefinitionTable))
+            if (!AdvancedTypographicUtils.MatchClassSequence(iterator, 1, ruleTable.InputSequence, this.classDefinitionTable, lookupMask, false))
             {
                 continue;
             }
@@ -427,7 +427,7 @@ internal sealed class LookupType5Format3SubTable : LookupSubTable
 
         // https://docs.microsoft.com/en-us/typography/opentype/spec/gsub#53-context-substitution-format-3-coverage-based-glyph-contexts
         SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
-        if (!AdvancedTypographicUtils.MatchCoverageSequence(iterator, this.coverageTables, index, index + count))
+        if (!AdvancedTypographicUtils.MatchCoverageSequence(iterator, this.coverageTables, index, index + count, lookupMask, false))
         {
             return false;
         }

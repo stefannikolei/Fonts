@@ -122,7 +122,7 @@ internal sealed class LookupType6Format1SubTable : LookupSubTable
         for (int i = 0; i < rules.Length; i++)
         {
             ChainedSequenceRuleTable ruleTable = rules[i];
-            if (!AdvancedTypographicUtils.ApplyChainedSequenceRule(iterator, ruleTable))
+            if (!AdvancedTypographicUtils.ApplyChainedSequenceRule(iterator, ruleTable, lookupMask))
             {
                 continue;
             }
@@ -314,7 +314,7 @@ internal sealed class LookupType6Format2SubTable : LookupSubTable
         {
             ChainedClassSequenceRuleTable ruleTable = rules[lookupIndex];
 
-            if (!AdvancedTypographicUtils.ApplyChainedClassSequenceRule(iterator, ruleTable, this.inputClassDefinitionTable, this.backtrackClassDefinitionTable, this.lookaheadClassDefinitionTable))
+            if (!AdvancedTypographicUtils.ApplyChainedClassSequenceRule(iterator, ruleTable, this.inputClassDefinitionTable, this.backtrackClassDefinitionTable, this.lookaheadClassDefinitionTable, lookupMask))
             {
                 continue;
             }
@@ -497,7 +497,8 @@ internal sealed class LookupType6Format3SubTable : LookupSubTable
             count,
             this.inputCoverageTables,
             this.backtrackCoverageTables,
-            this.lookaheadCoverageTables))
+            this.lookaheadCoverageTables,
+            lookupMask))
         {
             return false;
         }

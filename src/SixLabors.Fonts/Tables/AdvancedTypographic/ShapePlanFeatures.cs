@@ -82,6 +82,18 @@ internal sealed class ShapePlanFeatures
     private readonly List<uint> disabledTags = new(1);
 
     /// <summary>
+    /// The tag values carrying registration flags, parallel to
+    /// <see cref="flagValues"/>. Flags are recorded at registration and read only
+    /// at plan build, so a linear search suffices.
+    /// </summary>
+    private readonly List<uint> flagTags = new(16);
+
+    /// <summary>
+    /// The registration flags, parallel to <see cref="flagTags"/>.
+    /// </summary>
+    private readonly List<ShapingFeatureFlags> flagValues = new(16);
+
+    /// <summary>
     /// The most recently resolved tag value. Queries strongly repeat the same
     /// feature during one feature's application, so a single-entry memo answers
     /// almost every query without a list search. Zero means the memo is empty; the
@@ -119,6 +131,42 @@ internal sealed class ShapePlanFeatures
         }
 
         return 0;
+    }
+
+    /// <summary>
+    /// Records registration flags for a feature, combining with any flags already
+    /// recorded. Flags accumulate the way masks do: a feature registered by several
+    /// sites keeps every site's requirements.
+    /// </summary>
+    /// <param name="tag">The feature tag.</param>
+    /// <param name="flags">The flags to record.</param>
+    public void AddFlags(Tag tag, ShapingFeatureFlags flags)
+    {
+        if (flags == ShapingFeatureFlags.None)
+        {
+            return;
+        }
+
+        int index = this.flagTags.IndexOf(tag.Value);
+        if (index >= 0)
+        {
+            this.flagValues[index] |= flags;
+            return;
+        }
+
+        this.flagTags.Add(tag.Value);
+        this.flagValues.Add(flags);
+    }
+
+    /// <summary>
+    /// Gets the registration flags recorded for a feature, or none.
+    /// </summary>
+    /// <param name="tag">The feature tag.</param>
+    /// <returns>The recorded flags.</returns>
+    public ShapingFeatureFlags GetFlags(Tag tag)
+    {
+        int index = this.flagTags.IndexOf(tag.Value);
+        return index >= 0 ? this.flagValues[index] : ShapingFeatureFlags.None;
     }
 
     /// <summary>

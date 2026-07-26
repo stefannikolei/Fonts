@@ -136,18 +136,18 @@ internal sealed class MyanmarShaper : DefaultShaper
     /// <inheritdoc />
     protected override void PlanFeatures(ShapingBuffer buffer, int index, int count)
     {
-        this.EnableFeature(buffer, index, count, LoclTag, this.setupSyllablesAction, null);
-        this.EnableFeature(buffer, index, count, CcmpTag);
+        this.EnableFeature(buffer, index, count, LoclTag, ShapingFeatureFlags.PerSyllable, this.setupSyllablesAction, null);
+        this.EnableFeature(buffer, index, count, CcmpTag, ShapingFeatureFlags.PerSyllable);
 
-        this.EnableFeature(buffer, index, count, RphfTag, this.initialReorderAction, null);
-        this.EnableFeature(buffer, index, count, PrefTag);
-        this.EnableFeature(buffer, index, count, BlwfTag);
-        this.EnableFeature(buffer, index, count, PstfTag);
+        this.EnableFeature(buffer, index, count, RphfTag, ShapingFeatureFlags.ManualZwj | ShapingFeatureFlags.PerSyllable, this.initialReorderAction, null);
+        this.EnableFeature(buffer, index, count, PrefTag, ShapingFeatureFlags.ManualZwj | ShapingFeatureFlags.PerSyllable);
+        this.EnableFeature(buffer, index, count, BlwfTag, ShapingFeatureFlags.ManualZwj | ShapingFeatureFlags.PerSyllable);
+        this.EnableFeature(buffer, index, count, PstfTag, ShapingFeatureFlags.ManualZwj | ShapingFeatureFlags.PerSyllable);
 
-        this.EnableFeature(buffer, index, count, PresTag);
-        this.EnableFeature(buffer, index, count, AbvsTag);
-        this.EnableFeature(buffer, index, count, BlwsTag);
-        this.EnableFeature(buffer, index, count, PstsTag);
+        this.EnableFeature(buffer, index, count, PresTag, ShapingFeatureFlags.ManualZwj);
+        this.EnableFeature(buffer, index, count, AbvsTag, ShapingFeatureFlags.ManualZwj);
+        this.EnableFeature(buffer, index, count, BlwsTag, ShapingFeatureFlags.ManualZwj);
+        this.EnableFeature(buffer, index, count, PstsTag, ShapingFeatureFlags.ManualZwj);
     }
 
     /// <summary>

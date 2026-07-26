@@ -120,7 +120,7 @@ internal static class LookupType8SubTable
             for (int lookupIndex = 0; lookupIndex < rules.Length; lookupIndex++)
             {
                 ChainedSequenceRuleTable rule = rules[lookupIndex];
-                if (!AdvancedTypographicUtils.ApplyChainedSequenceRule(iterator, rule))
+                if (!AdvancedTypographicUtils.ApplyChainedSequenceRule(iterator, rule, buffer.LookupMask))
                 {
                     continue;
                 }
@@ -254,7 +254,7 @@ internal static class LookupType8SubTable
             {
                 ChainedClassSequenceRuleTable rule = rules[lookupIndex];
 
-                if (!AdvancedTypographicUtils.ApplyChainedClassSequenceRule(iterator, rule, this.inputClassDefinitionTable, this.backtrackClassDefinitionTable, this.lookaheadClassDefinitionTable))
+                if (!AdvancedTypographicUtils.ApplyChainedClassSequenceRule(iterator, rule, this.inputClassDefinitionTable, this.backtrackClassDefinitionTable, this.lookaheadClassDefinitionTable, buffer.LookupMask))
                 {
                     continue;
                 }
@@ -368,7 +368,7 @@ internal static class LookupType8SubTable
                 return false;
             }
 
-            if (!AdvancedTypographicUtils.CheckAllCoverages(fontMetrics, this.LookupFlags, this.MarkFilteringSet, buffer, index, count, this.inputCoverageTables, this.backtrackCoverageTables, this.lookaheadCoverageTables))
+            if (!AdvancedTypographicUtils.CheckAllCoverages(fontMetrics, this.LookupFlags, this.MarkFilteringSet, buffer, index, count, this.inputCoverageTables, this.backtrackCoverageTables, this.lookaheadCoverageTables, buffer.LookupMask))
             {
                 return false;
             }

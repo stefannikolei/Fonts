@@ -309,10 +309,36 @@ internal class DefaultShaper : BaseShaper
     }
 
     /// <summary>
+    /// Adds a varying shaping feature with registration flags controlling its
+    /// lookups' joiner handling and syllable scope.
+    /// </summary>
+    /// <param name="buffer">The glyph shaping buffer.</param>
+    /// <param name="index">The zero-based index of the first element.</param>
+    /// <param name="count">The number of elements.</param>
+    /// <param name="feature">The feature tag to add.</param>
+    /// <param name="flags">The registration flags.</param>
+    /// <param name="enabled">Whether the feature is initially enabled.</param>
+    /// <param name="preAction">The action to invoke before the feature is applied, or <see langword="null"/>.</param>
+    /// <param name="postAction">The action to invoke after the feature is applied, or <see langword="null"/>.</param>
+    protected void AddFeature(
+        ShapingBuffer buffer,
+        int index,
+        int count,
+        Tag feature,
+        ShapingFeatureFlags flags,
+        bool enabled,
+        Action<ShapePlan, ShapingBuffer, int, int>? preAction,
+        Action<ShapePlan, ShapingBuffer, int, int>? postAction)
+    {
+        this.Features.AddFlags(feature, flags);
+        this.AddFeature(buffer, index, count, feature, enabled, preAction, postAction);
+    }
+
+    /// <summary>
     /// Registers a global feature over the given range: one that applies to every
     /// glyph of the plan's segments and therefore shares the plan's single global
     /// mask bit instead of consuming a distinct bit. Features whose per-glyph
-    /// state varies register through <see cref="AddFeature"/> instead.
+    /// state varies register through the add-feature overloads instead.
     /// </summary>
     /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based index of the first element.</param>
@@ -320,6 +346,44 @@ internal class DefaultShaper : BaseShaper
     /// <param name="feature">The feature tag to enable.</param>
     protected void EnableFeature(ShapingBuffer buffer, int index, int count, Tag feature)
         => this.EnableFeature(buffer, index, count, feature, null, null);
+
+    /// <summary>
+    /// Registers a global feature with registration flags controlling its lookups'
+    /// joiner handling and syllable scope.
+    /// </summary>
+    /// <param name="buffer">The glyph shaping buffer.</param>
+    /// <param name="index">The zero-based index of the first element.</param>
+    /// <param name="count">The number of elements.</param>
+    /// <param name="feature">The feature tag to enable.</param>
+    /// <param name="flags">The registration flags.</param>
+    protected void EnableFeature(ShapingBuffer buffer, int index, int count, Tag feature, ShapingFeatureFlags flags)
+    {
+        this.Features.AddFlags(feature, flags);
+        this.EnableFeature(buffer, index, count, feature, null, null);
+    }
+
+    /// <summary>
+    /// Registers a global feature with registration flags and stage actions.
+    /// </summary>
+    /// <param name="buffer">The glyph shaping buffer.</param>
+    /// <param name="index">The zero-based index of the first element.</param>
+    /// <param name="count">The number of elements.</param>
+    /// <param name="feature">The feature tag to enable.</param>
+    /// <param name="flags">The registration flags.</param>
+    /// <param name="preAction">The action to invoke before the feature is applied, or <see langword="null"/>.</param>
+    /// <param name="postAction">The action to invoke after the feature is applied, or <see langword="null"/>.</param>
+    protected void EnableFeature(
+        ShapingBuffer buffer,
+        int index,
+        int count,
+        Tag feature,
+        ShapingFeatureFlags flags,
+        Action<ShapePlan, ShapingBuffer, int, int>? preAction,
+        Action<ShapePlan, ShapingBuffer, int, int>? postAction)
+    {
+        this.Features.AddFlags(feature, flags);
+        this.EnableFeature(buffer, index, count, feature, preAction, postAction);
+    }
 
     /// <summary>
     /// Registers a global feature and attaches the supplied stage actions. The

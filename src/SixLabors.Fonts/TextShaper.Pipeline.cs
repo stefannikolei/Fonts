@@ -729,21 +729,11 @@ public static partial class TextShaper
 
                 charIndex += charsConsumed;
 
-                // Get the glyph id for the codepoint and add to the buffer.
-                bool hasGlyph = substitutions.TryGetGlyphId(font.FontMetrics, current, next, out ushort glyphId, out skipNextCodePoint);
-
-                // Unsupported default-ignorable code points such as FE0F should not block
-                // GSUB sequences like emoji ZWJ ligatures. Preserve joiners explicitly.
-                if (!hasGlyph &&
-                    UnicodeUtility.IsDefaultIgnorableCodePoint((uint)current.Value) &&
-                    !UnicodeUtility.ShouldRenderWhiteSpaceOnly(current) &&
-                    !CodePoint.IsZeroWidthJoiner(current) &&
-                    !CodePoint.IsZeroWidthNonJoiner(current))
-                {
-                    codePointIndex++;
-                    graphemeCodePointIndex++;
-                    continue;
-                }
+                // Get the glyph id for the codepoint and add to the buffer. Every
+                // codepoint enters the buffer, including unmapped default
+                // ignorables as the missing glyph: sequence matching treats them
+                // as transparent and the hide stage replaces them at the end.
+                substitutions.TryGetGlyphId(font.FontMetrics, current, next, out ushort glyphId, out skipNextCodePoint);
 
                 substitutions.AddGlyph(glyphId, current, (TextDirection)bidiRuns[bidiRunIndex].Direction, (ushort)textRunIndex, codePointIndex);
 

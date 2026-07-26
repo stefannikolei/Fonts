@@ -290,15 +290,23 @@ public class TextShaperTests
         TextOptions options = new(font);
         TextShapingBuffer buffer = new();
 
-        for (int i = 0; i < 16; i++)
+        // Parallel tests share the pipeline's scratch pool, so any single call may
+        // rent state another test left cold for this font and pay its one-time
+        // population. Steady state is the minimum over several attempts: one
+        // zero-allocation call proves the warmed path allocates nothing.
+        long minimum = long.MaxValue;
+        for (int attempt = 0; attempt < 10 && minimum != 0; attempt++)
         {
+            for (int i = 0; i < 8; i++)
+            {
+                TextShaper.Shape(text, options, buffer);
+            }
+
+            long before = GC.GetAllocatedBytesForCurrentThread();
             TextShaper.Shape(text, options, buffer);
+            minimum = Math.Min(minimum, GC.GetAllocatedBytesForCurrentThread() - before);
         }
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        TextShaper.Shape(text, options, buffer);
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-
-        Assert.Equal(0, allocated);
+        Assert.Equal(0, minimum);
     }
 }

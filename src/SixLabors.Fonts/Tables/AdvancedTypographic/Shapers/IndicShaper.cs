@@ -230,29 +230,29 @@ internal sealed class IndicShaper : DefaultShaper
     /// <inheritdoc />
     protected override void PlanFeatures(ShapingBuffer buffer, int index, int count)
     {
-        this.EnableFeature(buffer, index, count, LoclTag, this.setupSyllablesAction, null);
-        this.EnableFeature(buffer, index, count, CcmpTag);
+        this.EnableFeature(buffer, index, count, LoclTag, ShapingFeatureFlags.PerSyllable, this.setupSyllablesAction, null);
+        this.EnableFeature(buffer, index, count, CcmpTag, ShapingFeatureFlags.PerSyllable);
 
-        this.EnableFeature(buffer, index, count, NuktTag, this.initialReorderAction, null);
-        this.EnableFeature(buffer, index, count, AkhnTag);
+        this.EnableFeature(buffer, index, count, NuktTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable, this.initialReorderAction, null);
+        this.EnableFeature(buffer, index, count, AkhnTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable);
 
-        this.AddFeature(buffer, index, count, RphfTag, false);
-        this.EnableFeature(buffer, index, count, RkrfTag);
-        this.AddFeature(buffer, index, count, PrefTag, false);
-        this.AddFeature(buffer, index, count, BlwfTag, false);
-        this.AddFeature(buffer, index, count, AbvfTag, false);
-        this.AddFeature(buffer, index, count, HalfTag, false);
-        this.AddFeature(buffer, index, count, PstfTag, false);
-        this.EnableFeature(buffer, index, count, VatuTag);
-        this.EnableFeature(buffer, index, count, CjctTag);
-        this.AddFeature(buffer, index, count, CfarTag, false, null, this.finalReorderAction);
+        this.AddFeature(buffer, index, count, RphfTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable, false, null, null);
+        this.EnableFeature(buffer, index, count, RkrfTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable);
+        this.AddFeature(buffer, index, count, PrefTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable, false, null, null);
+        this.AddFeature(buffer, index, count, BlwfTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable, false, null, null);
+        this.AddFeature(buffer, index, count, AbvfTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable, false, null, null);
+        this.AddFeature(buffer, index, count, HalfTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable, false, null, null);
+        this.AddFeature(buffer, index, count, PstfTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable, false, null, null);
+        this.EnableFeature(buffer, index, count, VatuTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable);
+        this.EnableFeature(buffer, index, count, CjctTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable);
+        this.AddFeature(buffer, index, count, CfarTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable, false, null, this.finalReorderAction);
 
-        this.AddFeature(buffer, index, count, InitTag, false);
-        this.EnableFeature(buffer, index, count, PresTag);
-        this.EnableFeature(buffer, index, count, AbvsTag);
-        this.EnableFeature(buffer, index, count, BlwsTag);
-        this.EnableFeature(buffer, index, count, PstsTag);
-        this.EnableFeature(buffer, index, count, HalnTag);
+        this.AddFeature(buffer, index, count, InitTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable, false, null, null);
+        this.EnableFeature(buffer, index, count, PresTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable);
+        this.EnableFeature(buffer, index, count, AbvsTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable);
+        this.EnableFeature(buffer, index, count, BlwsTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable);
+        this.EnableFeature(buffer, index, count, PstsTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable);
+        this.EnableFeature(buffer, index, count, HalnTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable);
         this.EnableFeature(buffer, index, count, DistTag);
         this.EnableFeature(buffer, index, count, AbvmTag);
         this.EnableFeature(buffer, index, count, BlwmTag);

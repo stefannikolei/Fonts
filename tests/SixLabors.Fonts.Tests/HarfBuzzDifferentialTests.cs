@@ -31,6 +31,13 @@ public class HarfBuzzDifferentialTests
             { TestFonts.NotoSansDevanagariRegular, "क्षत्रिय द्वारा प्रकृति की रक्षा कर्तव्य है", false },
             { TestFonts.NotoSansDevanagariRegular, "श्रद्धांजलि", false },
 
+            // Emoji joiner sequences: the zero width joiner and variation selector
+            // participate in the fonts' sequence lookups (including contextual
+            // rules whose lookahead spans them) and then render invisibly.
+            { TestFonts.SegoeuiEmojiFile, "\U0001F469\U0001F3FB\u200D\U0001F91D\u200D\U0001F469\U0001F3FC", false },
+            { TestFonts.NotoColorEmojiRegular, "\u2764\uFE0F\u200D\U0001F525", false },
+            { TestFonts.NotoColorEmojiRegular, "\u2764\uFE0F\u200D\U0001FA79", false },
+
             // Joiners inside shaping contexts: the joiner must steer the shaping
             // (ligature suppression/formation, joining forms, half forms) and then
             // render invisibly at zero advance.

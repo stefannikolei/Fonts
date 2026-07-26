@@ -190,31 +190,31 @@ internal sealed class UniversalShaper : DefaultShaper
     protected override void PlanFeatures(ShapingBuffer buffer, int index, int count)
     {
         // Default glyph pre-processing group
-        this.EnableFeature(buffer, index, count, LoclTag, this.setupSyllablesAction, null);
-        this.EnableFeature(buffer, index, count, CcmpTag);
-        this.EnableFeature(buffer, index, count, NuktTag);
-        this.EnableFeature(buffer, index, count, AkhnTag);
+        this.EnableFeature(buffer, index, count, LoclTag, ShapingFeatureFlags.PerSyllable, this.setupSyllablesAction, null);
+        this.EnableFeature(buffer, index, count, CcmpTag, ShapingFeatureFlags.PerSyllable);
+        this.EnableFeature(buffer, index, count, NuktTag, ShapingFeatureFlags.PerSyllable);
+        this.EnableFeature(buffer, index, count, AkhnTag, ShapingFeatureFlags.ManualZwj | ShapingFeatureFlags.PerSyllable);
 
         // Reordering group. The repha feature varies per glyph: syllable setup
         // enables it on each syllable's leading glyphs only, so a repha forms
         // there and nowhere else.
-        this.AddFeature(buffer, index, count, RphfTag, false, ClearSubstitutionFlags, RecordRhpf);
-        this.EnableFeature(buffer, index, count, PrefTag, ClearSubstitutionFlags, RecordPref);
+        this.AddFeature(buffer, index, count, RphfTag, ShapingFeatureFlags.ManualZwj | ShapingFeatureFlags.PerSyllable, false, ClearSubstitutionFlags, RecordRhpf);
+        this.EnableFeature(buffer, index, count, PrefTag, ShapingFeatureFlags.ManualZwj | ShapingFeatureFlags.PerSyllable, ClearSubstitutionFlags, RecordPref);
 
         // Orthographic unit shaping group
-        this.EnableFeature(buffer, index, count, RkrfTag);
-        this.EnableFeature(buffer, index, count, AbvfTag);
-        this.EnableFeature(buffer, index, count, BlwfTag);
-        this.EnableFeature(buffer, index, count, HalfTag);
-        this.EnableFeature(buffer, index, count, PstfTag);
-        this.EnableFeature(buffer, index, count, VatuTag);
-        this.EnableFeature(buffer, index, count, CjctTag, null, this.reorderAction);
+        this.EnableFeature(buffer, index, count, RkrfTag, ShapingFeatureFlags.ManualZwj | ShapingFeatureFlags.PerSyllable);
+        this.EnableFeature(buffer, index, count, AbvfTag, ShapingFeatureFlags.ManualZwj | ShapingFeatureFlags.PerSyllable);
+        this.EnableFeature(buffer, index, count, BlwfTag, ShapingFeatureFlags.ManualZwj | ShapingFeatureFlags.PerSyllable);
+        this.EnableFeature(buffer, index, count, HalfTag, ShapingFeatureFlags.ManualZwj | ShapingFeatureFlags.PerSyllable);
+        this.EnableFeature(buffer, index, count, PstfTag, ShapingFeatureFlags.ManualZwj | ShapingFeatureFlags.PerSyllable);
+        this.EnableFeature(buffer, index, count, VatuTag, ShapingFeatureFlags.ManualZwj | ShapingFeatureFlags.PerSyllable);
+        this.EnableFeature(buffer, index, count, CjctTag, ShapingFeatureFlags.ManualZwj | ShapingFeatureFlags.PerSyllable, null, this.reorderAction);
 
         // Standard topographic presentation and positional feature application
-        this.EnableFeature(buffer, index, count, AbvsTag);
-        this.EnableFeature(buffer, index, count, BlwsTag);
-        this.EnableFeature(buffer, index, count, PresTag);
-        this.EnableFeature(buffer, index, count, PstsTag);
+        this.EnableFeature(buffer, index, count, AbvsTag, ShapingFeatureFlags.ManualZwj);
+        this.EnableFeature(buffer, index, count, BlwsTag, ShapingFeatureFlags.ManualZwj);
+        this.EnableFeature(buffer, index, count, PresTag, ShapingFeatureFlags.ManualZwj);
+        this.EnableFeature(buffer, index, count, PstsTag, ShapingFeatureFlags.ManualZwj);
         this.EnableFeature(buffer, index, count, DistTag);
         this.EnableFeature(buffer, index, count, AbvmTag);
         this.EnableFeature(buffer, index, count, BlwmTag);

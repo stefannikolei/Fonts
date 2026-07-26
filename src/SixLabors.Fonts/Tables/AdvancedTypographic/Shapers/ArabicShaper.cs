@@ -134,16 +134,23 @@ internal sealed class ArabicShaper : DefaultShaper
     /// <inheritdoc/>
     protected override void PlanFeatures(ShapingBuffer buffer, int index, int count)
     {
-        this.EnableFeature(buffer, index, count, CcmpTag);
-        this.EnableFeature(buffer, index, count, LoclTag);
+        this.EnableFeature(buffer, index, count, CcmpTag, ShapingFeatureFlags.ManualZwj);
+        this.EnableFeature(buffer, index, count, LoclTag, ShapingFeatureFlags.ManualZwj);
 
-        this.AddFeature(buffer, index, count, IsolTag, false);
-        this.AddFeature(buffer, index, count, FinaTag, false);
-        this.AddFeature(buffer, index, count, Fin2Tag, false);
-        this.AddFeature(buffer, index, count, Fin3Tag, false);
-        this.AddFeature(buffer, index, count, MediTag, false);
-        this.AddFeature(buffer, index, count, Med2Tag, false);
-        this.AddFeature(buffer, index, count, InitTag, false);
+        this.AddFeature(buffer, index, count, IsolTag, ShapingFeatureFlags.ManualZwj, false, null, null);
+        this.AddFeature(buffer, index, count, FinaTag, ShapingFeatureFlags.ManualZwj, false, null, null);
+        this.AddFeature(buffer, index, count, Fin2Tag, ShapingFeatureFlags.ManualZwj, false, null, null);
+        this.AddFeature(buffer, index, count, Fin3Tag, ShapingFeatureFlags.ManualZwj, false, null, null);
+        this.AddFeature(buffer, index, count, MediTag, ShapingFeatureFlags.ManualZwj, false, null, null);
+        this.AddFeature(buffer, index, count, Med2Tag, ShapingFeatureFlags.ManualZwj, false, null, null);
+        this.AddFeature(buffer, index, count, InitTag, ShapingFeatureFlags.ManualZwj, false, null, null);
+
+        // The ligature trio and the required composition and ligature features
+        // match the joiners themselves for this script's shaping model.
+        this.Features.AddFlags(RligTag, ShapingFeatureFlags.ManualZwj);
+        this.Features.AddFlags(CaltTag, ShapingFeatureFlags.ManualZwj);
+        this.Features.AddFlags(LigaTag, ShapingFeatureFlags.ManualZwj);
+        this.Features.AddFlags(CligTag, ShapingFeatureFlags.ManualZwj);
 
         // HarfBuzz plans these as Arabic-script features, independently of the
         // generic horizontal feature list. Horizontal runs already get them from
@@ -155,7 +162,7 @@ internal sealed class ArabicShaper : DefaultShaper
             this.EnableFeature(buffer, index, count, CligTag);
         }
 
-        this.EnableFeature(buffer, index, count, MsetTag);
+        this.EnableFeature(buffer, index, count, MsetTag, ShapingFeatureFlags.ManualZwj);
     }
 
     /// <inheritdoc/>

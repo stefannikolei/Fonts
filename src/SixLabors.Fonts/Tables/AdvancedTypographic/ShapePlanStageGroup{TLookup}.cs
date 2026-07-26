@@ -40,7 +40,9 @@ internal sealed class ShapePlanStageGroup<TLookup>
     /// <summary>
     /// Gets the group's lookups merged across its stage features into lookup-index
     /// order. A lookup registered by several features appears once with their
-    /// plan-assigned masks combined, so application consumes the list directly.
+    /// plan-assigned masks combined and their joiner handling intersected: a
+    /// lookup skips a joiner automatically only when every registering feature
+    /// allows it. Application consumes the list directly.
     /// </summary>
-    public List<(Tag Feature, ushort Index, TLookup LookupTable, uint Mask)> Lookups { get; }
+    public List<(Tag Feature, ushort Index, TLookup LookupTable, uint Mask, bool AutoZwnj, bool AutoZwj, bool PerSyllable)> Lookups { get; }
 }

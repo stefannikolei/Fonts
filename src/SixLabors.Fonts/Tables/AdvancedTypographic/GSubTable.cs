@@ -287,7 +287,7 @@ internal class GSubTable : Table
         FontMetrics fontMetrics,
         ShapingBuffer buffer,
         ref SkippingGlyphIterator iterator,
-        List<(Tag Feature, ushort Index, LookupTable LookupTable, uint Mask)> merged,
+        List<(Tag Feature, ushort Index, LookupTable LookupTable, uint Mask, bool AutoZwnj, bool AutoZwj, bool PerSyllable)> merged,
         int index,
         ref int count,
         ref int i,
@@ -298,7 +298,7 @@ internal class GSubTable : Table
     {
         for (int m = 0; m < merged.Count; m++)
         {
-            (Tag feature, ushort _, LookupTable featureLookupTable, uint featureMask) = merged[m];
+            (Tag feature, ushort _, LookupTable featureLookupTable, uint featureMask, bool autoZwnj, bool autoZwj, bool perSyllable) = merged[m];
 
             // Skip the whole lookup when its coverage cannot intersect any glyph id
             // the buffer has ever contained; most fonts carry many lookups for
@@ -318,6 +318,7 @@ internal class GSubTable : Table
                 continue;
             }
 
+            buffer.SetLookupMatchState(featureMask, autoZwnj, autoZwj, perSyllable);
             iterator.Reset(index, featureLookupTable.LookupFlags, featureLookupTable.MarkFilteringSet);
             long featureStart = ShapingProbe.Timestamp();
             long featureApplies = 0;

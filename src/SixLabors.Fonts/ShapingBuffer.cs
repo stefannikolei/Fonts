@@ -585,6 +585,26 @@ internal sealed class ShapingBuffer
     }
 
     /// <summary>
+    /// Applies the plan's folded whole-segment feature masks in a single walk:
+    /// the registered and enabled bits every replayed planning pass would
+    /// otherwise add one feature range at a time.
+    /// </summary>
+    /// <param name="index">The zero-based index of the first record.</param>
+    /// <param name="count">The number of records.</param>
+    /// <param name="registeredMask">The fold of the registered feature bits.</param>
+    /// <param name="enabledMask">The fold of the enabled feature bits.</param>
+    public void AddShapingFeatureMasks(int index, int count, uint registeredMask, uint enabledMask)
+    {
+        int end = index + count;
+        for (int i = index; i < end; i++)
+        {
+            ref GlyphShapingData item = ref this.data[i];
+            item.RegisteredFeatureMask |= registeredMask;
+            item.FeatureMask |= enabledMask;
+        }
+    }
+
+    /// <summary>
     /// Enables a previously added shaping feature by its plan-assigned mask bit.
     /// </summary>
     /// <remarks>

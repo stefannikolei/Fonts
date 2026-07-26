@@ -178,10 +178,31 @@ internal class DefaultShaper : BaseShaper
         // Add variation Features.
         this.EnableFeature(buffer, index, count, RvnrTag);
 
-        // Add directional features once per direction span. A segment may span
-        // direction runs, so these stay varying features whose bits cover only
-        // their own span; a global classification would let one direction's
-        // lookups match glyphs of the other.
+        this.AddDirectionalFeatures(buffer, index, count);
+
+        // TODO: Fractional feature should be assigned here but disabled.
+        // They should then be enabled in AssignFeatures.
+    }
+
+    /// <inheritdoc />
+    protected override void SetupMasks(ShapingBuffer buffer, int index, int count)
+        => this.AddDirectionalFeatures(buffer, index, count);
+
+    /// <summary>
+    /// Adds the directional features once per direction span. A segment may span
+    /// direction runs, so these stay varying features whose bits cover only
+    /// their own span; a global classification would let one direction's
+    /// lookups match glyphs of the other. Their masks depend on each text's
+    /// resolved directions, so they never fold and re-apply on every pass.
+    /// </summary>
+    /// <param name="buffer">The glyph shaping buffer.</param>
+    /// <param name="index">The zero-based index of the first element.</param>
+    /// <param name="count">The number of elements.</param>
+    private void AddDirectionalFeatures(ShapingBuffer buffer, int index, int count)
+    {
+        bool collecting = this.CollectingFeatures;
+        this.CollectingFeatures = false;
+
         int end = index + count;
         int spanStart = index;
         while (spanStart < end)
@@ -208,8 +229,7 @@ internal class DefaultShaper : BaseShaper
             spanStart = spanEnd;
         }
 
-        // TODO: Fractional feature should be assigned here but disabled.
-        // They should then be enabled in AssignFeatures.
+        this.CollectingFeatures = collecting;
     }
 
     /// <inheritdoc />
@@ -304,7 +324,20 @@ internal class DefaultShaper : BaseShaper
             }
         }
 
-        buffer.AddShapingFeatureRange(index, count, new TagEntry(feature, enabled), this.Features.GetOrAddMask(feature));
+        uint mask = this.Features.GetOrAddMask(feature);
+
+        // A whole-segment addition during the collecting pass folds into the
+        // masks the replay pass applies in one walk.
+        if (this.CollectingFeatures && index == this.CollectSegmentIndex && count == this.CollectSegmentCount)
+        {
+            this.FoldedRegisteredMask |= mask;
+            if (enabled)
+            {
+                this.FoldedEnabledMask |= mask;
+            }
+        }
+
+        buffer.AddShapingFeatureRange(index, count, new TagEntry(feature, enabled), mask);
         this.AddStage(feature, preAction, postAction);
     }
 

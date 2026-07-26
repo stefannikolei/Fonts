@@ -196,7 +196,7 @@ internal sealed class HangulShaper : DefaultShaper
         // off by default: no glyph applies it unless a later range registration
         // enables it, and feature assignment clears it on jamo even then, so the
         // jamo lookups such fonts hide behind the feature can never fire there.
-        buffer.AddShapingFeatureRange(index, count, new TagEntry(CaltTag, false), this.Features.GetOrAddMask(CaltTag));
+        this.AddFeature(buffer, index, count, CaltTag, false);
     }
 
     /// <inheritdoc/>

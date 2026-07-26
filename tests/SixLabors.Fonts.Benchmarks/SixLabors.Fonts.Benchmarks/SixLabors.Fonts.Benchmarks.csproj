@@ -33,7 +33,7 @@
     <PackageReference Include="BenchmarkDotNet" />
     <PackageReference Include="SkiaSharp" />
 
-    <PackageReference Include="BenchmarkDotNet.Diagnostics.Windows" Version="0.13.12" Condition="'$(IsWindows)'=='true'" />
+    <PackageReference Include="BenchmarkDotNet.Diagnostics.Windows" Version="0.15.8" Condition="'$(IsWindows)'=='true'" />
     <PackageReference Include="HarfBuzzSharp" Version="14.2.1.1" />
   </ItemGroup>
 </Project>

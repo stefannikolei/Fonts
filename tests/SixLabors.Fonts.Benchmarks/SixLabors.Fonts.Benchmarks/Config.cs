@@ -35,16 +35,26 @@ public class Config : ManualConfig
         this.SummaryStyle = SummaryStyle.Default.WithMaxParameterColumnWidth(50);
     }
 
+    /// <summary>
+    /// Gets the core runtime matching the host process, so running the suite
+    /// from a given target framework benchmarks that same runtime.
+    /// </summary>
+    private static CoreRuntime HostRuntime => Environment.Version.Major switch
+    {
+        10 => CoreRuntime.Core10_0,
+        _ => CoreRuntime.Core80,
+    };
+
     public class Standard : Config
     {
         public Standard() => this.AddJob(
-                Job.Default.WithRuntime(CoreRuntime.Core80).WithArguments([new MsBuildArgument("/p:DebugType=portable")]));
+                Job.Default.WithRuntime(HostRuntime).WithArguments([new MsBuildArgument("/p:DebugType=portable")]));
     }
 
     public class Short : Config
     {
         public Short() => this.AddJob(
-                Job.Default.WithRuntime(CoreRuntime.Core80)
+                Job.Default.WithRuntime(HostRuntime)
                            .WithLaunchCount(1)
                            .WithWarmupCount(3)
                            .WithIterationCount(3)

@@ -19,6 +19,13 @@ internal static class AdvancedTypographicUtils
     public const int MaxContextLength = 64;
 
     /// <summary>
+    /// The maximum depth of nested lookup application. Contextual lookups may
+    /// recurse into one another, so a font can describe unbounded nesting;
+    /// application stops at this depth instead.
+    /// </summary>
+    public const int MaxNestingLevel = 64;
+
+    /// <summary>
     /// The maximum length factor multiplied by buffer count to compute max allowable buffer size.
     /// </summary>
     private const int MaxLengthFactor = 64;
@@ -103,7 +110,8 @@ internal static class AdvancedTypographicUtils
     /// <param name="markFilteringSet">The mark filtering set index.</param>
     /// <param name="records">The sequence lookup records specifying which lookups to apply at which positions.</param>
     /// <param name="buffer">The glyph substitution buffer.</param>
-    /// <param name="index">The starting index in the buffer.</param>
+    /// <param name="matchPositions">The buffer positions the input sequence matched at, reconciled as nested lookups change the buffer's length.</param>
+    /// <param name="matchCount">The number of matched positions.</param>
     /// <param name="count">The number of glyphs in the input sequence.</param>
     /// <returns><see langword="true"/> if the lookups were applied.</returns>
     public static bool ApplyLookupList(
@@ -115,10 +123,16 @@ internal static class AdvancedTypographicUtils
         ushort markFilteringSet,
         SequenceLookupRecord[] records,
         ShapingBuffer buffer,
-        int index,
+        Span<int> matchPositions,
+        int matchCount,
         int count)
     {
-        SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, lookupFlags, markFilteringSet);
+        if (buffer.NestingLimitReached)
+        {
+            return false;
+        }
+
+        int startIndex = matchPositions[0];
         int currentCount = buffer.Count;
 
         // Nested lookups mutate the input side in place whatever their type: the
@@ -127,23 +141,90 @@ internal static class AdvancedTypographicUtils
 
         foreach (SequenceLookupRecord lookupRecord in records)
         {
-            ushort sequenceIndex = lookupRecord.SequenceIndex;
-            ushort lookupIndex = lookupRecord.LookupListIndex;
-            iterator.Index = index;
-            iterator.Increment(sequenceIndex);
-            GSub.LookupTable lookup = table.LookupList.LookupTables[lookupIndex];
-            _ = lookup.TrySubstitution(fontMetrics, table, buffer, feature, lookupMask, iterator.Index, count - (iterator.Index - index));
-
-            // Account for substitutions changing the length of the buffer.
-            if (buffer.Count != currentCount)
+            int sequenceIndex = lookupRecord.SequenceIndex;
+            if (sequenceIndex >= matchCount)
             {
-                count -= currentCount - buffer.Count;
-                currentCount = buffer.Count;
+                continue;
             }
+
+            int position = matchPositions[sequenceIndex];
+
+            // An earlier nested lookup can delete enough records to strand a
+            // later sequence position past the buffer's end.
+            if (position >= buffer.Count)
+            {
+                continue;
+            }
+
+            GSub.LookupTable lookup = table.LookupList.LookupTables[lookupRecord.LookupListIndex];
+            _ = lookup.TrySubstitution(fontMetrics, table, buffer, feature, lookupMask, position, count - (position - startIndex));
+
+            // Account for substitutions changing the length of the buffer, both
+            // in the window the remaining lookups see and in the matched
+            // positions themselves.
+            int delta = buffer.Count - currentCount;
+            if (delta == 0)
+            {
+                continue;
+            }
+
+            count += delta;
+            currentCount = buffer.Count;
+            matchCount = FixupMatchPositions(matchPositions, matchCount, sequenceIndex, delta);
         }
 
         buffer.PopNestedApplication();
         return true;
+    }
+
+    /// <summary>
+    /// Reconciles the matched positions after a nested lookup changed the
+    /// buffer's length. A growth is taken as records inserted directly after the
+    /// applying position, and a shrink as the positions following it having been
+    /// consumed; the trailing positions then shift by the same delta.
+    /// </summary>
+    /// <param name="matchPositions">The matched positions to reconcile.</param>
+    /// <param name="matchCount">The number of matched positions.</param>
+    /// <param name="sequenceIndex">The position the nested lookup applied at.</param>
+    /// <param name="delta">The buffer's length change.</param>
+    /// <returns>The new number of matched positions.</returns>
+    private static int FixupMatchPositions(Span<int> matchPositions, int matchCount, int sequenceIndex, int delta)
+    {
+        int next = sequenceIndex + 1;
+        if (delta > 0)
+        {
+            if (delta + matchCount > MaxContextLength)
+            {
+                return matchCount;
+            }
+        }
+        else
+        {
+            // A shrink can never consume more positions than the match holds.
+            delta = Math.Max(delta, next - matchCount);
+            next -= delta;
+        }
+
+        int tail = matchCount - next;
+        if (tail > 0)
+        {
+            matchPositions.Slice(next, tail).CopyTo(matchPositions[(next + delta)..]);
+        }
+
+        next += delta;
+        matchCount += delta;
+
+        for (int j = sequenceIndex + 1; j < next; j++)
+        {
+            matchPositions[j] = matchPositions[j - 1] + 1;
+        }
+
+        for (; next < matchCount; next++)
+        {
+            matchPositions[next] += delta;
+        }
+
+        return matchCount;
     }
 
     /// <summary>
@@ -152,35 +233,46 @@ internal static class AdvancedTypographicUtils
     /// <param name="fontMetrics">The font metrics.</param>
     /// <param name="table">The GPOS table.</param>
     /// <param name="feature">The feature tag being applied.</param>
-    /// <param name="lookupFlags">The lookup flags for glyph filtering.</param>
-    /// <param name="markFilteringSet">The mark filtering set index.</param>
     /// <param name="records">The sequence lookup records specifying which lookups to apply at which positions.</param>
     /// <param name="buffer">The glyph positioning buffer.</param>
-    /// <param name="index">The starting index in the buffer.</param>
+    /// <param name="matchPositions">The buffer positions the input sequence matched at.</param>
+    /// <param name="matchCount">The number of matched positions.</param>
     /// <param name="count">The number of glyphs in the input sequence.</param>
     /// <returns><see langword="true"/> if the lookups were applied.</returns>
     public static bool ApplyLookupList(
         FontMetrics fontMetrics,
         GPosTable table,
         Tag feature,
-        LookupFlags lookupFlags,
-        ushort markFilteringSet,
         SequenceLookupRecord[] records,
         ShapingBuffer buffer,
-        int index,
+        ReadOnlySpan<int> matchPositions,
+        int matchCount,
         int count)
     {
-        SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, lookupFlags, markFilteringSet);
-        foreach (SequenceLookupRecord lookupRecord in records)
+        if (buffer.NestingLimitReached)
         {
-            ushort sequenceIndex = lookupRecord.SequenceIndex;
-            ushort lookupIndex = lookupRecord.LookupListIndex;
-            iterator.Index = index;
-            iterator.Increment(sequenceIndex);
-            LookupTable lookup = table.LookupList.LookupTables[lookupIndex];
-            _ = lookup.TryUpdatePosition(fontMetrics, table, buffer, feature, iterator.Index, count - (iterator.Index - index));
+            return false;
         }
 
+        // Positioning never changes the buffer's length, so the matched
+        // positions stand for the whole record list.
+        int startIndex = matchPositions[0];
+        buffer.PushNestedApplication();
+
+        foreach (SequenceLookupRecord lookupRecord in records)
+        {
+            int sequenceIndex = lookupRecord.SequenceIndex;
+            if (sequenceIndex >= matchCount)
+            {
+                continue;
+            }
+
+            int position = matchPositions[sequenceIndex];
+            LookupTable lookup = table.LookupList.LookupTables[lookupRecord.LookupListIndex];
+            _ = lookup.TryUpdatePosition(fontMetrics, table, buffer, feature, position, count - (position - startIndex));
+        }
+
+        buffer.PopNestedApplication();
         return true;
     }
 
@@ -228,6 +320,22 @@ internal static class AdvancedTypographicUtils
     /// <param name="matchEnd">The position one past the final matched element.</param>
     /// <returns><see langword="true"/> if the entire sequence was matched; otherwise, <see langword="false"/>.</returns>
     public static bool MatchSequence(SkippingGlyphIterator iterator, int increment, ushort[] sequence, uint mask, bool contextMatch, out int matchEnd)
+        => MatchSequence(iterator, increment, sequence, mask, contextMatch, default, out matchEnd);
+
+    /// <summary>
+    /// Matches a glyph sequence by glyph ID under the given matcher context,
+    /// recording where each element matched so nested lookups apply to the
+    /// records the match actually consumed rather than to a re-derived walk.
+    /// </summary>
+    /// <param name="iterator">The skipping glyph iterator.</param>
+    /// <param name="increment">The initial increment from the iterator's current position.</param>
+    /// <param name="sequence">The array of glyph IDs to match.</param>
+    /// <param name="mask">The applying lookup's mask; ignored during context matching.</param>
+    /// <param name="contextMatch">Whether this matches backtrack or lookahead context.</param>
+    /// <param name="matches">The span receiving the matched positions, or default when they are not needed.</param>
+    /// <param name="matchEnd">The position one past the final matched element.</param>
+    /// <returns><see langword="true"/> if the entire sequence was matched; otherwise, <see langword="false"/>.</returns>
+    public static bool MatchSequence(SkippingGlyphIterator iterator, int increment, ushort[] sequence, uint mask, bool contextMatch, Span<int> matches, out int matchEnd)
     {
         iterator.SetMatchContext(mask, contextMatch);
         return Match(
@@ -235,7 +343,7 @@ internal static class AdvancedTypographicUtils
             sequence,
             iterator,
             static (component, data) => component == data.GlyphId,
-            default,
+            matches,
             out matchEnd);
     }
 
@@ -279,6 +387,31 @@ internal static class AdvancedTypographicUtils
         uint mask,
         bool contextMatch,
         out int matchEnd)
+        => MatchClassSequence(iterator, increment, sequence, classDefinitionTable, mask, contextMatch, default, out matchEnd);
+
+    /// <summary>
+    /// Matches a glyph sequence by class values under the given matcher context,
+    /// recording where each element matched so nested lookups apply to the
+    /// records the match actually consumed.
+    /// </summary>
+    /// <param name="iterator">The skipping glyph iterator.</param>
+    /// <param name="increment">The initial increment from the iterator's current position.</param>
+    /// <param name="sequence">The array of class values to match.</param>
+    /// <param name="classDefinitionTable">The class definition table used to map glyph IDs to class values.</param>
+    /// <param name="mask">The applying lookup's mask; ignored during context matching.</param>
+    /// <param name="contextMatch">Whether this matches backtrack or lookahead context.</param>
+    /// <param name="matches">The span receiving the matched positions, or default when they are not needed.</param>
+    /// <param name="matchEnd">The position one past the final matched element.</param>
+    /// <returns><see langword="true"/> if the entire sequence was matched; otherwise, <see langword="false"/>.</returns>
+    public static bool MatchClassSequence(
+        SkippingGlyphIterator iterator,
+        int increment,
+        ushort[] sequence,
+        ClassDefinitionTable classDefinitionTable,
+        uint mask,
+        bool contextMatch,
+        Span<int> matches,
+        out int matchEnd)
     {
         iterator.SetMatchContext(mask, contextMatch);
 
@@ -291,7 +424,7 @@ internal static class AdvancedTypographicUtils
             iterator,
             classDefinitionTable,
             static (component, data, table) => component == table.ClassIndexOf(data.GlyphId),
-            default,
+            matches,
             out matchEnd);
     }
 
@@ -335,6 +468,31 @@ internal static class AdvancedTypographicUtils
         uint mask,
         bool contextMatch,
         out int matchEnd)
+        => MatchCoverageSequence(iterator, coverageTable, startIndex, endExclusive, mask, contextMatch, default, out matchEnd);
+
+    /// <summary>
+    /// Matches a forward glyph sequence using coverage tables under the given
+    /// matcher context, recording where each element matched so nested lookups
+    /// apply to the records the match actually consumed.
+    /// </summary>
+    /// <param name="iterator">The skipping glyph iterator.</param>
+    /// <param name="coverageTable">The array of coverage tables to match against.</param>
+    /// <param name="startIndex">The starting index in the buffer.</param>
+    /// <param name="endExclusive">The exclusive end index in the buffer.</param>
+    /// <param name="mask">The applying lookup's mask; ignored during context matching.</param>
+    /// <param name="contextMatch">Whether this matches lookahead context.</param>
+    /// <param name="matches">The span receiving the matched positions, or default when they are not needed.</param>
+    /// <param name="matchEnd">The position one past the final matched element.</param>
+    /// <returns><see langword="true"/> if all coverage tables matched; otherwise, <see langword="false"/>.</returns>
+    public static bool MatchCoverageSequence(
+        SkippingGlyphIterator iterator,
+        CoverageTable[] coverageTable,
+        int startIndex,
+        int endExclusive,
+        uint mask,
+        bool contextMatch,
+        Span<int> matches,
+        out int matchEnd)
     {
         iterator.SetMatchContext(mask, contextMatch);
         return Match(
@@ -344,7 +502,7 @@ internal static class AdvancedTypographicUtils
             MatchDirection.Forward,
             endExclusive,
             static (component, data) => component.CoverageIndexOf(data.GlyphId) >= 0,
-            default,
+            matches,
             out matchEnd);
     }
 
@@ -384,12 +542,13 @@ internal static class AdvancedTypographicUtils
     /// <param name="iterator">The skipping glyph iterator.</param>
     /// <param name="rule">The chained sequence rule table to apply.</param>
     /// <param name="mask">The applying lookup's mask.</param>
+    /// <param name="matches">The span receiving the matched input positions, offset by one for the coverage-matched first glyph.</param>
     /// <returns><see langword="true"/> if all sequences matched; otherwise, <see langword="false"/>.</returns>
-    public static bool ApplyChainedSequenceRule(SkippingGlyphIterator iterator, ChainedSequenceRuleTable rule, uint mask)
+    public static bool ApplyChainedSequenceRule(SkippingGlyphIterator iterator, ChainedSequenceRuleTable rule, uint mask, Span<int> matches)
     {
         int matchEnd = iterator.Index + 1;
         if (rule.InputSequence.Length > 0
-            && !MatchSequence(iterator, 1, rule.InputSequence, mask, false, out matchEnd))
+            && !MatchSequence(iterator, 1, rule.InputSequence, mask, false, matches, out matchEnd))
         {
             return false;
         }
@@ -426,6 +585,7 @@ internal static class AdvancedTypographicUtils
     /// <param name="backtrackClassDefinitionTable">The class definition table for the backtrack sequence.</param>
     /// <param name="lookaheadClassDefinitionTable">The class definition table for the lookahead sequence.</param>
     /// <param name="mask">The applying lookup's mask.</param>
+    /// <param name="matches">The span receiving the matched input positions, offset by one for the coverage-matched first glyph.</param>
     /// <returns><see langword="true"/> if all sequences matched; otherwise, <see langword="false"/>.</returns>
     public static bool ApplyChainedClassSequenceRule(
         SkippingGlyphIterator iterator,
@@ -433,11 +593,12 @@ internal static class AdvancedTypographicUtils
         ClassDefinitionTable inputClassDefinitionTable,
         ClassDefinitionTable backtrackClassDefinitionTable,
         ClassDefinitionTable lookaheadClassDefinitionTable,
-        uint mask)
+        uint mask,
+        Span<int> matches)
     {
         int matchEnd = iterator.Index + 1;
         if (rule.InputSequence.Length > 0 &&
-            !MatchClassSequence(iterator, 1, rule.InputSequence, inputClassDefinitionTable, mask, false, out matchEnd))
+            !MatchClassSequence(iterator, 1, rule.InputSequence, inputClassDefinitionTable, mask, false, matches, out matchEnd))
         {
             return false;
         }
@@ -476,6 +637,7 @@ internal static class AdvancedTypographicUtils
     /// <param name="backtrack">The array of backtrack coverage tables.</param>
     /// <param name="lookahead">The array of lookahead coverage tables.</param>
     /// <param name="mask">The applying lookup's mask; the input matches under it.</param>
+    /// <param name="matches">The span receiving the matched input positions; the input coverage array covers the whole input including its first glyph.</param>
     /// <returns><see langword="true"/> if all coverages matched; otherwise, <see langword="false"/>.</returns>
     public static bool CheckAllCoverages(
         FontMetrics fontMetrics,
@@ -487,7 +649,8 @@ internal static class AdvancedTypographicUtils
         CoverageTable[] input,
         CoverageTable[] backtrack,
         CoverageTable[] lookahead,
-        uint mask)
+        uint mask,
+        Span<int> matches)
     {
         int endExclusive = index + count;
 
@@ -511,7 +674,7 @@ internal static class AdvancedTypographicUtils
 
         // Input starts at the current glyph position; lookahead starts exactly
         // one past the final matched input element.
-        if (!MatchCoverageSequence(iterator, input, index, endExclusive, mask, false, out int matchEnd))
+        if (!MatchCoverageSequence(iterator, input, index, endExclusive, mask, false, matches, out int matchEnd))
         {
             return false;
         }

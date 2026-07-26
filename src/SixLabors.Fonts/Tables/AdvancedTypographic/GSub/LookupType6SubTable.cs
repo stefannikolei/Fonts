@@ -119,10 +119,15 @@ internal sealed class LookupType6Format1SubTable : LookupSubTable
         SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
         ChainedSequenceRuleSetTable seqRuleSet = this.seqRuleSetTables[offset];
         ChainedSequenceRuleTable[] rules = seqRuleSet.SequenceRuleTables;
+
+        // Slot zero holds the coverage-matched glyph; the input match fills the
+        // rest, so nested lookups address the records the match consumed.
+        Span<int> matchPositions = stackalloc int[AdvancedTypographicUtils.MaxContextLength + 1];
+        matchPositions[0] = index;
         for (int i = 0; i < rules.Length; i++)
         {
             ChainedSequenceRuleTable ruleTable = rules[i];
-            if (!AdvancedTypographicUtils.ApplyChainedSequenceRule(iterator, ruleTable, lookupMask))
+            if (!AdvancedTypographicUtils.ApplyChainedSequenceRule(iterator, ruleTable, lookupMask, matchPositions[1..]))
             {
                 continue;
             }
@@ -136,7 +141,8 @@ internal sealed class LookupType6Format1SubTable : LookupSubTable
                 this.MarkFilteringSet,
                 ruleTable.SequenceLookupRecords,
                 buffer,
-                index,
+                matchPositions,
+                ruleTable.InputSequence.Length + 1,
                 count);
         }
 
@@ -310,11 +316,16 @@ internal sealed class LookupType6Format2SubTable : LookupSubTable
 
         // Apply ruleset for the given glyph class id.
         SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
+
+        // Slot zero holds the coverage-matched glyph; the input match fills the
+        // rest, so nested lookups address the records the match consumed.
+        Span<int> matchPositions = stackalloc int[AdvancedTypographicUtils.MaxContextLength + 1];
+        matchPositions[0] = index;
         for (int lookupIndex = 0; lookupIndex < rules.Length; lookupIndex++)
         {
             ChainedClassSequenceRuleTable ruleTable = rules[lookupIndex];
 
-            if (!AdvancedTypographicUtils.ApplyChainedClassSequenceRule(iterator, ruleTable, this.inputClassDefinitionTable, this.backtrackClassDefinitionTable, this.lookaheadClassDefinitionTable, lookupMask))
+            if (!AdvancedTypographicUtils.ApplyChainedClassSequenceRule(iterator, ruleTable, this.inputClassDefinitionTable, this.backtrackClassDefinitionTable, this.lookaheadClassDefinitionTable, lookupMask, matchPositions[1..]))
             {
                 continue;
             }
@@ -328,7 +339,8 @@ internal sealed class LookupType6Format2SubTable : LookupSubTable
                 this.MarkFilteringSet,
                 ruleTable.SequenceLookupRecords,
                 buffer,
-                index,
+                matchPositions,
+                ruleTable.InputSequence.Length + 1,
                 count);
         }
 
@@ -488,6 +500,9 @@ internal sealed class LookupType6Format3SubTable : LookupSubTable
             return false;
         }
 
+        // The input coverage array covers the whole input including its first
+        // glyph, so the match fills every position nested lookups address.
+        Span<int> matchPositions = stackalloc int[AdvancedTypographicUtils.MaxContextLength];
         if (!AdvancedTypographicUtils.CheckAllCoverages(
             fontMetrics,
             this.LookupFlags,
@@ -498,7 +513,8 @@ internal sealed class LookupType6Format3SubTable : LookupSubTable
             this.inputCoverageTables,
             this.backtrackCoverageTables,
             this.lookaheadCoverageTables,
-            lookupMask))
+            lookupMask,
+            matchPositions))
         {
             return false;
         }
@@ -513,7 +529,8 @@ internal sealed class LookupType6Format3SubTable : LookupSubTable
             this.MarkFilteringSet,
             this.sequenceLookupRecords,
             buffer,
-            index,
+            matchPositions,
+            this.inputCoverageTables.Length,
             count);
     }
 

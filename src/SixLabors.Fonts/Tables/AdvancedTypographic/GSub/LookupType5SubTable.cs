@@ -108,6 +108,11 @@ internal sealed class LookupType5Format1SubTable : LookupSubTable
         // https://docs.microsoft.com/en-us/typography/opentype/spec/gsub#example-7-contextual-substitution-format-1
         SequenceRuleSetTable ruleSetTable = this.seqRuleSetTables[offset];
         SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
+
+        // Slot zero holds the coverage-matched glyph; the sequence match fills
+        // the rest, so nested lookups address the records the match consumed.
+        Span<int> matchPositions = stackalloc int[AdvancedTypographicUtils.MaxContextLength + 1];
+        matchPositions[0] = index;
         foreach (SequenceRuleTable ruleTable in ruleSetTable.SequenceRuleTables)
         {
             int remaining = count - 1;
@@ -117,7 +122,7 @@ internal sealed class LookupType5Format1SubTable : LookupSubTable
                 continue;
             }
 
-            if (!AdvancedTypographicUtils.MatchSequence(iterator, 1, ruleTable.InputSequence, lookupMask, false))
+            if (!AdvancedTypographicUtils.MatchSequence(iterator, 1, ruleTable.InputSequence, lookupMask, false, matchPositions[1..], out _))
             {
                 continue;
             }
@@ -132,7 +137,8 @@ internal sealed class LookupType5Format1SubTable : LookupSubTable
                 this.MarkFilteringSet,
                 ruleTable.SequenceLookupRecords,
                 buffer,
-                index,
+                matchPositions,
+                seqLength + 1,
                 count);
         }
 
@@ -273,6 +279,11 @@ internal sealed class LookupType5Format2SubTable : LookupSubTable
         }
 
         SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
+
+        // Slot zero holds the coverage-matched glyph; the sequence match fills
+        // the rest, so nested lookups address the records the match consumed.
+        Span<int> matchPositions = stackalloc int[AdvancedTypographicUtils.MaxContextLength + 1];
+        matchPositions[0] = index;
         foreach (ClassSequenceRuleTable ruleTable in ruleSetTable.SequenceRuleTables)
         {
             int remaining = count - 1;
@@ -282,7 +293,7 @@ internal sealed class LookupType5Format2SubTable : LookupSubTable
                 continue;
             }
 
-            if (!AdvancedTypographicUtils.MatchClassSequence(iterator, 1, ruleTable.InputSequence, this.classDefinitionTable, lookupMask, false))
+            if (!AdvancedTypographicUtils.MatchClassSequence(iterator, 1, ruleTable.InputSequence, this.classDefinitionTable, lookupMask, false, matchPositions[1..], out _))
             {
                 continue;
             }
@@ -297,7 +308,8 @@ internal sealed class LookupType5Format2SubTable : LookupSubTable
                 this.MarkFilteringSet,
                 ruleTable.SequenceLookupRecords,
                 buffer,
-                index,
+                matchPositions,
+                seqLength + 1,
                 count);
         }
 
@@ -426,8 +438,11 @@ internal sealed class LookupType5Format3SubTable : LookupSubTable
         }
 
         // https://docs.microsoft.com/en-us/typography/opentype/spec/gsub#53-context-substitution-format-3-coverage-based-glyph-contexts
+        // The input coverage array covers the whole input including its first
+        // glyph, so the match fills every position nested lookups address.
         SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
-        if (!AdvancedTypographicUtils.MatchCoverageSequence(iterator, this.coverageTables, index, index + count, lookupMask, false))
+        Span<int> matchPositions = stackalloc int[AdvancedTypographicUtils.MaxContextLength];
+        if (!AdvancedTypographicUtils.MatchCoverageSequence(iterator, this.coverageTables, index, index + count, lookupMask, false, matchPositions, out _))
         {
             return false;
         }
@@ -442,7 +457,8 @@ internal sealed class LookupType5Format3SubTable : LookupSubTable
             this.MarkFilteringSet,
             this.sequenceLookupRecords,
             buffer,
-            index,
+            matchPositions,
+            this.coverageTables.Length,
             count);
     }
 

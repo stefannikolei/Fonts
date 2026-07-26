@@ -314,6 +314,13 @@ internal sealed class ShapingBuffer
     public bool IsNestedApplication => this.nestedApplicationDepth > 0;
 
     /// <summary>
+    /// Gets a value indicating whether a further nested lookup application would
+    /// exceed the maximum nesting depth. A font may chain contextual lookups
+    /// into each other without bound, so recursion is capped rather than trusted.
+    /// </summary>
+    public bool NestingLimitReached => this.nestedApplicationDepth >= Tables.AdvancedTypographic.AdvancedTypographicUtils.MaxNestingLevel;
+
+    /// <summary>
     /// Gets the text options used by this buffer.
     /// </summary>
     public TextOptions TextOptions { get; private set; }

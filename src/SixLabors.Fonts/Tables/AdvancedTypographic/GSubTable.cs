@@ -293,7 +293,12 @@ internal class GSubTable : Table
             // Skip the whole lookup when its coverage cannot intersect any glyph id
             // the buffer has ever contained; most fonts carry many lookups for
             // glyphs a given text never produces.
-            if (!featureLookupTable.Digest.MightIntersect(buffer.GlyphDigest))
+            // A lookup whose mask no record carries cannot match anything, so
+            // the whole pass is skipped rather than walked. Features that are
+            // registered for every plan but enabled only by particular text,
+            // such as the fraction trio, cost nothing elsewhere.
+            if ((featureMask & buffer.EnabledFeatureMaskUnion) == 0
+                || !featureLookupTable.Digest.MightIntersect(buffer.GlyphDigest))
             {
                 continue;
             }

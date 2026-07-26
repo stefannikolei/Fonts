@@ -117,14 +117,10 @@ internal class DefaultShaper : BaseShaper
     protected static readonly Tag VKernTag = Tag.Parse("vkrn");
 
     /// <summary>
-    /// The fraction slash code point (U+2044).
+    /// The fraction slash code point (U+2044), the only code point that forms
+    /// a fraction from the digit runs surrounding it.
     /// </summary>
     private static readonly CodePoint FractionSlash = new(0x2044);
-
-    /// <summary>
-    /// The solidus (slash) code point (U+002F).
-    /// </summary>
-    private static readonly CodePoint Slash = new(0x002F);
 
     /// <summary>
     /// The shaping stages accumulated during feature planning, in registration order.
@@ -179,14 +175,80 @@ internal class DefaultShaper : BaseShaper
         this.EnableFeature(buffer, index, count, RvnrTag);
 
         this.AddDirectionalFeatures(buffer, index, count);
-
-        // TODO: Fractional feature should be assigned here but disabled.
-        // They should then be enabled in AssignFeatures.
     }
 
     /// <inheritdoc />
     protected override void SetupMasks(ShapingBuffer buffer, int index, int count)
-        => this.AddDirectionalFeatures(buffer, index, count);
+    {
+        this.AddDirectionalFeatures(buffer, index, count);
+
+        if (buffer.HasFractionSlash)
+        {
+            this.SetupFractionMasks(buffer, index, count);
+        }
+    }
+
+    /// <summary>
+    /// Turns on the fraction features over the digit runs a fraction slash
+    /// joins: the numerator before it, the denominator after it, and the slash
+    /// itself. A slash without digits on both sides forms no fraction. The
+    /// numerator and denominator features swap roles for right-to-left text,
+    /// where the leading run is the denominator.
+    /// </summary>
+    /// <param name="buffer">The glyph shaping buffer.</param>
+    /// <param name="index">The zero-based index of the first element.</param>
+    /// <param name="count">The number of elements.</param>
+    private void SetupFractionMasks(ShapingBuffer buffer, int index, int count)
+    {
+        uint fracMask = this.Features.GetOrAddMask(FracTag);
+        uint numrMask = this.Features.GetOrAddMask(NumrTag);
+        uint dnomMask = this.Features.GetOrAddMask(DnomTag);
+
+        int end = index + count;
+        for (int i = index; i < end; i++)
+        {
+            if (buffer[i].CodePoint != FractionSlash)
+            {
+                continue;
+            }
+
+            int runStart = i;
+            while (runStart > index && CodePoint.IsDigit(buffer[runStart - 1].CodePoint))
+            {
+                runStart--;
+            }
+
+            int runEnd = i + 1;
+            while (runEnd < end && CodePoint.IsDigit(buffer[runEnd].CodePoint))
+            {
+                runEnd++;
+            }
+
+            // A slash missing digits on either side is just a slash.
+            if (runStart == i || runEnd == i + 1)
+            {
+                continue;
+            }
+
+            bool leftToRight = buffer[i].Direction != TextDirection.RightToLeft;
+            uint preMask = leftToRight ? numrMask | fracMask : fracMask | dnomMask;
+            uint postMask = leftToRight ? fracMask | dnomMask : numrMask | fracMask;
+
+            for (int j = runStart; j < i; j++)
+            {
+                buffer.EnableShapingFeature(j, preMask);
+            }
+
+            buffer.EnableShapingFeature(i, fracMask);
+
+            for (int j = i + 1; j < runEnd; j++)
+            {
+                buffer.EnableShapingFeature(j, postMask);
+            }
+
+            i = runEnd - 1;
+        }
+    }
 
     /// <summary>
     /// Adds the directional features once per direction span. A segment may span
@@ -274,11 +336,25 @@ internal class DefaultShaper : BaseShaper
             this.EnableFeature(buffer, index, count, VertTag);
         }
 
+        // Register the fraction trio without enabling it: the features exist
+        // for every plan, and each text turns them on over the digit runs that
+        // surround a fraction slash. A font without them has no lookups to
+        // apply, so registration alone costs nothing.
+        this.AddFeature(buffer, index, count, FracTag, false);
+        this.AddFeature(buffer, index, count, NumrTag, false);
+        this.AddFeature(buffer, index, count, DnomTag, false);
+
         // Add user defined features.
         foreach (Tag feature in this.featureTags)
         {
-            // We've already dealt with fractional features.
-            if (feature != FracTag && feature != NumrTag && feature != DnomTag)
+            if (feature == FracTag || feature == NumrTag || feature == DnomTag)
+            {
+                // The trio is registered off for automatic fraction forming; an
+                // explicit request turns it on over the whole segment, so the
+                // font's own fraction lookups apply wherever they match.
+                this.AddFeature(buffer, index, count, feature, true);
+            }
+            else
             {
                 this.EnableFeature(buffer, index, count, feature);
             }
@@ -288,13 +364,6 @@ internal class DefaultShaper : BaseShaper
     /// <inheritdoc />
     protected override void AssignFeatures(ShapingBuffer buffer, int index, int count)
     {
-        // TODO: We shouldn't be relying on the feature list
-        // User defined fractional features require special treatment.
-        // https://docs.microsoft.com/en-us/typography/opentype/spec/features_fj#tag-frac
-        if (this.HasFractions())
-        {
-            this.AssignFractionalFeatures(buffer, index, count);
-        }
     }
 
     /// <summary>
@@ -478,89 +547,4 @@ internal class DefaultShaper : BaseShaper
 
     /// <inheritdoc />
     public override List<ShapingStage> GetShapingStages() => this.shapingStages;
-
-    /// <summary>
-    /// Assigns fractional feature tags (numerator, denominator, fraction) to glyphs forming fraction sequences.
-    /// </summary>
-    /// <param name="buffer">The glyph shaping buffer.</param>
-    /// <param name="index">The zero-based index of the first element.</param>
-    /// <param name="count">The number of elements.</param>
-    private void AssignFractionalFeatures(ShapingBuffer buffer, int index, int count)
-    {
-        // Enable contextual fractions.
-        for (int i = index; i < index + count; i++)
-        {
-            ref GlyphShapingData shapingData = ref buffer[i];
-            if (shapingData.CodePoint == FractionSlash || shapingData.CodePoint == Slash)
-            {
-                int start = i;
-                int end = i + 1;
-
-                // Apply numerator.
-                if (start > 0)
-                {
-                    CodePoint numeratorCodePoint = buffer[start - 1].CodePoint;
-                    while (start > 0 && CodePoint.IsDigit(numeratorCodePoint))
-                    {
-                        this.AddFeature(buffer, start - 1, 1, NumrTag);
-                        this.AddFeature(buffer, start - 1, 1, FracTag);
-                        start--;
-                    }
-                }
-
-                // Apply denominator.
-                if (end < buffer.Count)
-                {
-                    CodePoint denominatorCodePoint = buffer[end].CodePoint;
-                    while (end < buffer.Count && CodePoint.IsDigit(denominatorCodePoint))
-                    {
-                        this.AddFeature(buffer, end, 1, DnomTag);
-                        this.AddFeature(buffer, end, 1, FracTag);
-                        end++;
-                    }
-                }
-
-                // Apply fraction slash.
-                this.AddFeature(buffer, i, 1, FracTag);
-                i = end - 1;
-            }
-        }
-    }
-
-    /// <summary>
-    /// Determines whether the user-specified feature tags include fractional features.
-    /// </summary>
-    /// <returns><see langword="true"/> if fractional features are present; otherwise, <see langword="false"/>.</returns>
-    private bool HasFractions()
-    {
-        bool hasNmr = false;
-        bool hasDnom = false;
-
-        // My kingdom for a binary search on IReadOnlyList
-        for (int i = 0; i < this.featureTags.Count; i++)
-        {
-            Tag feature = this.featureTags[i];
-            if (feature == FracTag)
-            {
-                return true;
-            }
-
-            if (feature == DnomTag)
-            {
-                hasDnom = true;
-            }
-
-            if (feature == NumrTag)
-            {
-                hasNmr = true;
-            }
-
-            if (hasDnom && hasNmr)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
 }

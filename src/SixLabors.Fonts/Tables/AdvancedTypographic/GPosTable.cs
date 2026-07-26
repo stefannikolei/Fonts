@@ -332,10 +332,12 @@ internal class GPosTable : Table
                 (Tag feature, ushort _, LookupTable featureLookupTable, uint featureMask, bool autoZwnj, bool autoZwj, bool perSyllable) = merged[m];
                 buffer.SetLookupMatchState(featureMask, autoZwnj, autoZwj, perSyllable);
 
-                // Skip the whole lookup when its coverage cannot intersect any
-                // glyph id the buffer has ever contained; most fonts carry
-                // many lookups for glyphs a given text never produces.
-                if (!featureLookupTable.Digest.MightIntersect(buffer.GlyphDigest))
+                // Skip the whole lookup when its mask reaches no record, or when
+                // its coverage cannot intersect any glyph id the buffer has ever
+                // contained; most fonts carry many lookups for glyphs a given
+                // text never produces.
+                if ((featureMask & buffer.EnabledFeatureMaskUnion) == 0
+                    || !featureLookupTable.Digest.MightIntersect(buffer.GlyphDigest))
                 {
                     continue;
                 }

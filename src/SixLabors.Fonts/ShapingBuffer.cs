@@ -104,6 +104,12 @@ internal sealed class ShapingBuffer
     private const ulong GlyphIdCacheMarkerFlag = 1UL << 63;
 
     /// <summary>
+    /// The fraction slash, U+2044, which forms fractions from the digit runs
+    /// surrounding it. The solidus U+002F does not.
+    /// </summary>
+    private const uint FractionSlashCodePoint = 0x2044;
+
+    /// <summary>
     /// The glyph id cache entry bits forming the lookup key: the marker, the
     /// codepoint, and the encoded following codepoint.
     /// </summary>
@@ -267,6 +273,22 @@ internal sealed class ShapingBuffer
     /// hide-ignorables stage can skip plain text without a scan.
     /// </summary>
     public bool HasDefaultIgnorables { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether any record carries the fraction
+    /// slash. Recorded as records enter the buffer so automatic fraction
+    /// forming costs nothing for the text that does not use it.
+    /// </summary>
+    public bool HasFractionSlash { get; set; }
+
+    /// <summary>
+    /// Gets the union of every feature bit enabled on any record, accumulated as
+    /// features are turned on. A lookup whose mask shares no bit with it cannot
+    /// match any record, so the drivers skip it without walking the buffer. The
+    /// union only ever grows within a pass, so it is a superset: it can cost a
+    /// walk that finds nothing, never skip a lookup that would have applied.
+    /// </summary>
+    public uint EnabledFeatureMaskUnion { get; private set; } = ShapePlanFeatures.GlobalFeatureMask;
 
     /// <summary>
     /// Gets a value indicating whether the applying lookup skips the zero width
@@ -472,6 +494,7 @@ internal sealed class ShapingBuffer
     {
         this.Count = 0;
         this.LigatureId = 1;
+        this.EnabledFeatureMaskUnion = ShapePlanFeatures.GlobalFeatureMask;
         this.glyphDigest = default;
         this.placeholderBidiRuns.Clear();
         this.SegmentPlans.Clear();
@@ -495,7 +518,9 @@ internal sealed class ShapingBuffer
     {
         this.Count = 0;
         this.LigatureId = 1;
+        this.EnabledFeatureMaskUnion = ShapePlanFeatures.GlobalFeatureMask;
         this.HasDefaultIgnorables = false;
+        this.HasFractionSlash = false;
         this.placeholderBidiRuns.Clear();
         this.SegmentPlans.Clear();
     }
@@ -579,6 +604,11 @@ internal sealed class ShapingBuffer
     /// <param name="mask">The feature's plan-assigned mask bit.</param>
     public void AddShapingFeatureRange(int index, int count, TagEntry feature, uint mask)
     {
+        if (feature.Enabled)
+        {
+            this.EnabledFeatureMaskUnion |= mask;
+        }
+
         int end = index + count;
         for (int i = index; i < end; i++)
         {
@@ -602,6 +632,8 @@ internal sealed class ShapingBuffer
     /// <param name="enabledMask">The fold of the enabled feature bits.</param>
     public void AddShapingFeatureMasks(int index, int count, uint registeredMask, uint enabledMask)
     {
+        this.EnabledFeatureMaskUnion |= enabledMask;
+
         int end = index + count;
         for (int i = index; i < end; i++)
         {
@@ -622,6 +654,7 @@ internal sealed class ShapingBuffer
     /// <param name="mask">The feature's plan-assigned mask bit.</param>
     public void EnableShapingFeature(int index, uint mask)
     {
+        this.EnabledFeatureMaskUnion |= mask;
         ref GlyphShapingData item = ref this.data[index];
         item.FeatureMask |= item.RegisteredFeatureMask & mask;
     }
@@ -683,6 +716,14 @@ internal sealed class ShapingBuffer
         // grapheme joiner) carry their own bits for the matcher's transparency
         // rules.
         uint value = (uint)codePoint.Value;
+
+        // The fraction slash is the only trigger for automatic fraction
+        // forming; recording it here keeps that stage free for other text.
+        if (value == FractionSlashCodePoint)
+        {
+            this.HasFractionSlash = true;
+        }
+
         if (value >= 0x80
             && UnicodeUtility.IsDefaultIgnorableCodePoint(value)
             && !UnicodeUtility.ShouldRenderWhiteSpaceOnly(codePoint))
@@ -1203,6 +1244,7 @@ internal sealed class ShapingBuffer
         // The hide-ignorables stage runs against this buffer, so the workspace's
         // knowledge of default ignorables must travel with its records.
         this.HasDefaultIgnorables |= workspace.HasDefaultIgnorables;
+        this.HasFractionSlash |= workspace.HasFractionSlash;
 
         uint verticalMask = ShapePlanFeatures.VerticalFeatureMask;
 
@@ -1285,6 +1327,7 @@ internal sealed class ShapingBuffer
         // The hide-ignorables stage runs against this buffer, so the workspace's
         // knowledge of default ignorables must travel with its records.
         this.HasDefaultIgnorables |= workspace.HasDefaultIgnorables;
+        this.HasFractionSlash |= workspace.HasFractionSlash;
 
         uint verticalMask = ShapePlanFeatures.VerticalFeatureMask;
 

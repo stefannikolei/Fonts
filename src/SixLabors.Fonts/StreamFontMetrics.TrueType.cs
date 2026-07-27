@@ -107,6 +107,7 @@ internal partial class StreamFontMetrics
         OS2Table os2 = reader.GetTable<OS2Table>();
         HorizontalMetricsTable htmx = reader.GetTable<HorizontalMetricsTable>();
         CMapTable cmap = reader.GetTable<CMapTable>();
+        cmap.SetSymbolFontPage(os2.FontPage);
         FpgmTable? fpgm = reader.TryGetTable<FpgmTable>();
         PrepTable? prep = reader.TryGetTable<PrepTable>();
         CvtTable? cvt = reader.TryGetTable<CvtTable>();

@@ -590,6 +590,8 @@ public static partial class Generator
         GenerateVerticalOrientationTrie();
         GenerateNormalizationData();
         GenerateMarkOrderingData();
+        GenerateArabicLegacyEncodingData();
+        GenerateArabicFallbackData();
         GenerateScriptDirectionData();
 
         List<Codepoint> codePoints = GenerateUniversalShapingDataTrie(ugc, uisc, uipc, uajt);

@@ -211,6 +211,7 @@ internal class ThaiShaper : DefaultShaper
     public ThaiShaper(ScriptClass script, TextOptions textOptions, FontMetrics fontMetrics, bool hasGsub)
         : base(script, MarkZeroingMode.PostGpos, textOptions)
     {
+        this.FallbackMarkPositioning = false;
         this.fontMetrics = fontMetrics;
         this.hasGsub = hasGsub;
     }

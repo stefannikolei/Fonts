@@ -70,6 +70,11 @@ internal abstract class BaseShaper
     public MarkZeroingMode MarkZeroingMode { get; protected set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether marks are positioned from glyph extents when no positioning table is available.
+    /// </summary>
+    public bool FallbackMarkPositioning { get; protected set; }
+
+    /// <summary>
     /// Gets or sets how far the text is taken apart and put back together before it
     /// is shaped. Defaults to joining the marks the font offers joined forms for,
     /// which is what a script without an engine of its own wants.

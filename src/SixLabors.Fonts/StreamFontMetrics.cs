@@ -531,6 +531,11 @@ internal partial class StreamFontMetrics : FontMetrics
                 }
             }
         }
+
+        if (gpos is null)
+        {
+            FallbackMarkPositioner.Apply(this, buffer);
+        }
     }
 
     /// <inheritdoc/>

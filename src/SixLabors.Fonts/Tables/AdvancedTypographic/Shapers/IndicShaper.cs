@@ -194,6 +194,7 @@ internal sealed class IndicShaper : DefaultShaper
     public IndicShaper(ScriptClass script, Tag unicodeScriptTag, TextOptions textOptions, FontMetrics fontMetrics)
         : base(script, MarkZeroingMode.None, textOptions)
     {
+        this.FallbackMarkPositioning = false;
         this.fontMetrics = fontMetrics;
         this.setupSyllablesAction = this.SetupSyllables;
         this.initialReorderAction = this.InitialReorder;

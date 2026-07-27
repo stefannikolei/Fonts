@@ -859,6 +859,108 @@ internal static class AdvancedTypographicUtils
     }
 
     /// <summary>
+    /// Replaces a matched glyph sequence with one ligature while preserving component attachment bookkeeping.
+    /// </summary>
+    /// <param name="fontMetrics">The font metrics.</param>
+    /// <param name="buffer">The shaping buffer.</param>
+    /// <param name="index">The index of the first matched glyph.</param>
+    /// <param name="matches">The indices of the remaining matched glyphs.</param>
+    /// <param name="glyphId">The ligature glyph identifier.</param>
+    /// <param name="feature">The feature applying the substitution.</param>
+    /// <param name="count">The number of glyphs in the current shaping segment.</param>
+    public static void ApplyLigatureSubstitution(FontMetrics fontMetrics, ShapingBuffer buffer, int index, ReadOnlySpan<int> matches, ushort glyphId, Tag feature, int count)
+    {
+        ref GlyphShapingData data = ref buffer[index];
+        GlyphShapingClass shapingClass = GetGlyphShapingClass(fontMetrics, buffer, data.GlyphId, ref data);
+        bool isBaseLigature = shapingClass.IsBase;
+        bool isMarkLigature = shapingClass.IsMark;
+
+        // A base followed only by marks remains a base, and marks combined only
+        // with marks remain attached to their existing base. Any non-mark
+        // component turns the result into a new ordinary ligature.
+        for (int i = 0; i < matches.Length; i++)
+        {
+            ref GlyphShapingData match = ref buffer[matches[i]];
+            if (!IsMarkGlyph(fontMetrics, match.GlyphId, ref match))
+            {
+                isBaseLigature = false;
+                isMarkLigature = false;
+                break;
+            }
+        }
+
+        bool isLigature = !isBaseLigature && !isMarkLigature;
+
+        // An ordinary ligature needs a fresh identity so later positioning can
+        // distinguish its components. A mark ligature keeps the identity and
+        // component of the mark stack it already belongs to.
+        int ligatureId = isLigature ? buffer.LigatureId++ : data.LigatureId;
+        int ligatureComponent = isLigature ? -1 : data.LigatureComponent;
+        int lastLigatureId = data.LigatureId;
+        int lastComponentCount = data.LigatureComponentCount;
+        int currentComponentCount = lastComponentCount;
+        int nextIndex = index + 1;
+
+        // Matching can skip marks between two components. Move those marks to
+        // the new ligature identity while translating their old component
+        // numbers past every component already consumed.
+        foreach (int matchIndex in matches)
+        {
+            if (isLigature)
+            {
+                while (nextIndex < matchIndex)
+                {
+                    ref GlyphShapingData current = ref buffer[nextIndex];
+                    int currentComponent = current.LigatureComponent == -1 ? lastComponentCount : current.LigatureComponent;
+                    current.LigatureId = ligatureId;
+                    current.LigatureComponent = currentComponentCount - lastComponentCount + Math.Min(currentComponent, lastComponentCount);
+                    nextIndex++;
+                }
+            }
+            else
+            {
+                nextIndex = matchIndex;
+            }
+
+            ref GlyphShapingData last = ref buffer[nextIndex];
+            lastLigatureId = last.LigatureId;
+            lastComponentCount = last.LigatureComponentCount;
+            currentComponentCount += lastComponentCount;
+            nextIndex++;
+        }
+
+        // A matched component can itself be a ligature whose attached marks
+        // follow the final matched glyph. Translate that contiguous tail too;
+        // stopping at the first different identity prevents stealing marks from
+        // the next base.
+        if (!isMarkLigature && lastLigatureId > 0)
+        {
+            int end = index + count;
+            for (int i = nextIndex; i < end; i++)
+            {
+                ref GlyphShapingData current = ref buffer[i];
+                if (current.LigatureId != lastLigatureId)
+                {
+                    break;
+                }
+
+                int currentComponent = current.LigatureComponent == -1 ? lastComponentCount : current.LigatureComponent;
+                current.LigatureId = ligatureId;
+                current.LigatureComponent = currentComponentCount - lastComponentCount + Math.Min(currentComponent, lastComponentCount);
+            }
+        }
+
+        // The matched component total is distinct from the text span represented by
+        // the glyph because marks ignored by the lookup remain separate records.
+        if (isLigature)
+        {
+            data.LigatureComponentCount = currentComponentCount;
+        }
+
+        buffer.Replace(index, matches, glyphId, ligatureId, ligatureComponent, feature);
+    }
+
+    /// <summary>
     /// Determines whether the specified glyph is a mark glyph based on GDEF class or Unicode properties.
     /// </summary>
     /// <param name="fontMetrics">The font metrics.</param>
@@ -867,18 +969,12 @@ internal static class AdvancedTypographicUtils
     /// <returns><see langword="true"/> if the glyph is a mark; otherwise, <see langword="false"/>.</returns>
     public static bool IsMarkGlyph(FontMetrics fontMetrics, ushort glyphId, ref GlyphShapingData shapingData)
     {
-        if (!fontMetrics.TryGetGlyphClass(glyphId, out GlyphClassDef? glyphClass) &&
-            !CodePoint.IsMark(shapingData.CodePoint))
+        if (fontMetrics.TryGetGlyphClass(glyphId, out GlyphClassDef? glyphClass))
         {
-            return false;
+            return glyphClass == GlyphClassDef.MarkGlyph;
         }
 
-        if (glyphClass != GlyphClassDef.MarkGlyph)
-        {
-            return false;
-        }
-
-        return true;
+        return CodePoint.IsMark(shapingData.CodePoint);
     }
 
     /// <summary>

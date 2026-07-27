@@ -10,6 +10,11 @@ namespace SixLabors.Fonts.Tables.General;
 internal sealed class OS2Table : Table
 {
     /// <summary>
+    /// The mask selecting the legacy font-page marker from version 0 style flags.
+    /// </summary>
+    private const ushort FontPageMask = 0xFF00;
+
+    /// <summary>
     /// The table name identifier.
     /// </summary>
     internal const string TableName = "OS/2";
@@ -369,6 +374,11 @@ internal sealed class OS2Table : Table
     public FontStyleSelection FontStyle { get; }
 
     /// <summary>
+    /// Gets the legacy font-page marker encoded by a version 0 table, or zero for later versions.
+    /// </summary>
+    public ushort FontPage { get; private set; }
+
+    /// <summary>
     /// Gets the visual weight class of the font.
     /// </summary>
     public ushort WeightClass => this.weightClass;
@@ -591,6 +601,7 @@ internal sealed class OS2Table : Table
 
         if (version == 0)
         {
+            version0Table.FontPage = (ushort)((ushort)fontStyle & FontPageMask);
             return version0Table;
         }
 

@@ -1030,8 +1030,9 @@ internal sealed class ShapingBuffer
     /// <param name="removalIndices">The indices at which to remove records.</param>
     /// <param name="glyphId">The replacement glyph id.</param>
     /// <param name="ligatureId">The ligature id.</param>
+    /// <param name="ligatureComponent">The ligature component retained by a mark ligature, or -1 for a new ligature.</param>
     /// <param name="feature">The feature to apply to the record at the specified index.</param>
-    public void Replace(int index, ReadOnlySpan<int> removalIndices, ushort glyphId, int ligatureId, Tag feature)
+    public void Replace(int index, ReadOnlySpan<int> removalIndices, ushort glyphId, int ligatureId, int ligatureComponent, Tag feature)
     {
         // Gather the merged codepoint bookkeeping from the component records
         // before any of them move.
@@ -1067,7 +1068,7 @@ internal sealed class ShapingBuffer
             produced.GlyphId = glyphId;
             produced.LigatureId = ligatureId;
             produced.IsLigated = true;
-            produced.LigatureComponent = -1;
+            produced.LigatureComponent = ligatureComponent;
             produced.IsSubstituted = true;
             produced.AppliedFeatureMask |= ShapePlanFeatures.GetVerticalMask(feature);
 
@@ -1109,7 +1110,7 @@ internal sealed class ShapingBuffer
         current.GlyphId = glyphId;
         current.LigatureId = ligatureId;
         current.IsLigated = true;
-        current.LigatureComponent = -1;
+        current.LigatureComponent = ligatureComponent;
         current.IsSubstituted = true;
         current.AppliedFeatureMask |= ShapePlanFeatures.GetVerticalMask(feature);
     }

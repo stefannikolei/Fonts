@@ -127,6 +127,7 @@ internal sealed class MyanmarShaper : DefaultShaper
     public MyanmarShaper(ScriptClass script, TextOptions textOptions, FontMetrics fontMetrics)
        : base(script, MarkZeroingMode.PreGPos, textOptions)
     {
+        this.FallbackMarkPositioning = false;
         this.textOptions = textOptions;
         this.fontMetrics = fontMetrics;
         this.setupSyllablesAction = this.SetupSyllables;

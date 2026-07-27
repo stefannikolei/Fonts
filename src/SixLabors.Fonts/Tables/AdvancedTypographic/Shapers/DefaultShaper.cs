@@ -174,6 +174,7 @@ internal class DefaultShaper : BaseShaper
     {
         this.ScriptClass = script;
         this.MarkZeroingMode = markZeroingMode;
+        this.FallbackMarkPositioning = true;
         this.kerningMode = textOptions.KerningMode;
         this.featureTags = textOptions.FeatureTags;
     }

@@ -139,6 +139,7 @@ internal sealed class KhmerShaper : DefaultShaper
     public KhmerShaper(ScriptClass script, TextOptions textOptions, FontMetrics fontMetrics)
         : base(script, MarkZeroingMode.None, textOptions)
     {
+        this.FallbackMarkPositioning = false;
         this.fontMetrics = fontMetrics;
         this.setupAndReorderAction = this.SetupAndReorder;
         this.clearSyllablesAction = ClearSyllables;

@@ -32,6 +32,7 @@ internal partial class StreamFontMetrics
         OS2Table os2 = reader.GetTable<OS2Table>();
         NameTable name = reader.GetTable<NameTable>();
         CMapTable cmap = reader.GetTable<CMapTable>();
+        cmap.SetSymbolFontPage(os2.FontPage);
         PostTable post = reader.GetTable<PostTable>();
         ICffTable? cff =
             (reader.TryGetTable<Cff1Table>() ?? (ICffTable?)reader.TryGetTable<Cff2Table>())

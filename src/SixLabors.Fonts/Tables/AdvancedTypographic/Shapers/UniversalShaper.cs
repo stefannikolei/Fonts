@@ -166,6 +166,7 @@ internal sealed class UniversalShaper : DefaultShaper
     public UniversalShaper(ScriptClass script, TextOptions textOptions, FontMetrics fontMetrics)
        : base(script, MarkZeroingMode.PreGPos, textOptions)
     {
+        this.FallbackMarkPositioning = false;
         this.fontMetrics = fontMetrics;
         this.setupSyllablesAction = this.SetupSyllables;
         this.reorderAction = this.Reorder;

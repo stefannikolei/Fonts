@@ -100,6 +100,12 @@ internal struct GlyphShapingData
     private byte ligatureComponentPlusOne;
 
     /// <summary>
+    /// The number of matched components represented by a ligature. Zero stores the
+    /// common single-component value without requiring initialization.
+    /// </summary>
+    private byte ligatureComponentCount;
+
+    /// <summary>
     /// Packed boolean shaping state addressed through the named flag constants above.
     /// Single bits keep the record narrow; the properties are the only readers and
     /// writers.
@@ -148,6 +154,7 @@ internal struct GlyphShapingData
         this.LigatureId = data.LigatureId;
         this.IsLigated = data.IsLigated;
         this.LigatureComponent = data.LigatureComponent;
+        this.LigatureComponentCount = data.LigatureComponentCount;
         this.IsSubstituted = data.IsSubstituted;
         this.IsDecomposed = data.IsDecomposed;
         this.IsPlaceholder = data.IsPlaceholder;
@@ -287,6 +294,17 @@ internal struct GlyphShapingData
     {
         readonly get => this.ligatureComponentPlusOne - 1;
         set => this.ligatureComponentPlusOne = (byte)(Math.Min(value, byte.MaxValue - 1) + 1);
+    }
+
+    /// <summary>
+    /// Gets or sets the number of matched components represented by this ligature.
+    /// This differs from <see cref="CodePointCount"/> because ignored marks may remain
+    /// between matched components.
+    /// </summary>
+    public int LigatureComponentCount
+    {
+        readonly get => this.ligatureComponentCount == 0 ? 1 : this.ligatureComponentCount;
+        set => this.ligatureComponentCount = (byte)Math.Min(value, byte.MaxValue);
     }
 
     /// <summary>

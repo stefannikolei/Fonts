@@ -7,9 +7,10 @@ namespace SixLabors.Fonts.Tables.AdvancedTypographic.Shapers;
 
 /// <summary>
 /// This is a shaper for Arabic, and other cursive scripts.
-/// The shaping state machine was ported from fontkit.
-/// <see href="https://github.com/foliojs/fontkit/blob/master/src/opentype/shapers/ArabicShaper.js"/>
 /// </summary>
+/// <remarks>
+/// The joining state machine and feature order follow <c>hb-ot-shaper-arabic.cc</c>.
+/// </remarks>
 internal sealed class ArabicShaper : DefaultShaper
 {
     /// <summary>
@@ -93,6 +94,21 @@ internal sealed class ArabicShaper : DefaultShaper
     private const byte Init = 7;
 
     /// <summary>
+    /// The pause action separating joining-form lookup stages.
+    /// </summary>
+    private readonly Action<ShapePlan, ShapingBuffer, int, int> pauseAction;
+
+    /// <summary>
+    /// The action applying presentation-form fallback after required ligatures.
+    /// </summary>
+    private readonly Action<ShapePlan, ShapingBuffer, int, int> fallbackAction;
+
+    /// <summary>
+    /// The font-resolved fallback substitutions, created on first use.
+    /// </summary>
+    private ArabicFallbackSubstitutions? fallbackSubstitutions;
+
+    /// <summary>
     /// Arabic joining state machine table. Each entry is [prevAction, curAction, nextState].
     /// Rows are states (0-6), columns are joining type categories.
     /// </summary>
@@ -129,6 +145,8 @@ internal sealed class ArabicShaper : DefaultShaper
     public ArabicShaper(ScriptClass script, TextOptions textOptions)
         : base(script, MarkZeroingMode.PostGpos, textOptions)
     {
+        this.pauseAction = Pause;
+        this.fallbackAction = this.ApplyFallback;
     }
 
     /// <inheritdoc/>
@@ -137,17 +155,17 @@ internal sealed class ArabicShaper : DefaultShaper
         this.EnableFeature(buffer, index, count, CcmpTag, ShapingFeatureFlags.ManualZwj);
         this.EnableFeature(buffer, index, count, LoclTag, ShapingFeatureFlags.ManualZwj);
 
-        this.AddFeature(buffer, index, count, IsolTag, ShapingFeatureFlags.ManualZwj, false, null, null);
-        this.AddFeature(buffer, index, count, FinaTag, ShapingFeatureFlags.ManualZwj, false, null, null);
-        this.AddFeature(buffer, index, count, Fin2Tag, ShapingFeatureFlags.ManualZwj, false, null, null);
-        this.AddFeature(buffer, index, count, Fin3Tag, ShapingFeatureFlags.ManualZwj, false, null, null);
-        this.AddFeature(buffer, index, count, MediTag, ShapingFeatureFlags.ManualZwj, false, null, null);
-        this.AddFeature(buffer, index, count, Med2Tag, ShapingFeatureFlags.ManualZwj, false, null, null);
-        this.AddFeature(buffer, index, count, InitTag, ShapingFeatureFlags.ManualZwj, false, null, null);
+        this.AddFeature(buffer, index, count, IsolTag, ShapingFeatureFlags.ManualZwj, false, null, this.pauseAction);
+        this.AddFeature(buffer, index, count, FinaTag, ShapingFeatureFlags.ManualZwj, false, null, this.pauseAction);
+        this.AddFeature(buffer, index, count, Fin2Tag, ShapingFeatureFlags.ManualZwj, false, null, this.pauseAction);
+        this.AddFeature(buffer, index, count, Fin3Tag, ShapingFeatureFlags.ManualZwj, false, null, this.pauseAction);
+        this.AddFeature(buffer, index, count, MediTag, ShapingFeatureFlags.ManualZwj, false, null, this.pauseAction);
+        this.AddFeature(buffer, index, count, Med2Tag, ShapingFeatureFlags.ManualZwj, false, null, this.pauseAction);
+        this.AddFeature(buffer, index, count, InitTag, ShapingFeatureFlags.ManualZwj, false, null, this.pauseAction);
 
         // The ligature trio and the required composition and ligature features
         // match the joiners themselves for this script's shaping model.
-        this.Features.AddFlags(RligTag, ShapingFeatureFlags.ManualZwj);
+        this.EnableFeature(buffer, index, count, RligTag, ShapingFeatureFlags.ManualZwj, null, this.fallbackAction);
         this.Features.AddFlags(CaltTag, ShapingFeatureFlags.ManualZwj);
         this.Features.AddFlags(LigaTag, ShapingFeatureFlags.ManualZwj);
         this.Features.AddFlags(CligTag, ShapingFeatureFlags.ManualZwj);
@@ -161,6 +179,12 @@ internal sealed class ArabicShaper : DefaultShaper
             this.EnableFeature(buffer, index, count, LigaTag);
             this.EnableFeature(buffer, index, count, CligTag);
         }
+    }
+
+    /// <inheritdoc/>
+    protected override void PlanPostprocessingFeatures(ShapingBuffer buffer, int index, int count)
+    {
+        base.PlanPostprocessingFeatures(buffer, index, count);
 
         this.EnableFeature(buffer, index, count, MsetTag, ShapingFeatureFlags.ManualZwj);
     }
@@ -171,5 +195,38 @@ internal sealed class ArabicShaper : DefaultShaper
         base.AssignFeatures(buffer, index, count);
 
         ArabicJoining.Apply(buffer, index, count, this.ScriptClass, this.Features);
+    }
+
+    /// <summary>
+    /// Separates joining-form features into distinct substitution stages.
+    /// </summary>
+    /// <param name="plan">The shaping plan.</param>
+    /// <param name="buffer">The shaping buffer.</param>
+    /// <param name="index">The zero-based index of the first record.</param>
+    /// <param name="count">The number of records in the segment.</param>
+    private static void Pause(ShapePlan plan, ShapingBuffer buffer, int index, int count)
+    {
+    }
+
+    /// <summary>
+    /// Applies presentation-form fallback when all four Arabic joining-form features are absent.
+    /// </summary>
+    /// <param name="plan">The shaping plan.</param>
+    /// <param name="buffer">The shaping buffer.</param>
+    /// <param name="index">The zero-based index of the first record.</param>
+    /// <param name="count">The number of records in the segment.</param>
+    private void ApplyFallback(ShapePlan plan, ShapingBuffer buffer, int index, int count)
+    {
+        if (this.ScriptClass != ScriptClass.Arabic
+            || plan.TryGetGSubFeatureLookups(in IsolTag, out _)
+            || plan.TryGetGSubFeatureLookups(in FinaTag, out _)
+            || plan.TryGetGSubFeatureLookups(in MediTag, out _)
+            || plan.TryGetGSubFeatureLookups(in InitTag, out _))
+        {
+            return;
+        }
+
+        this.fallbackSubstitutions ??= ArabicFallbackSubstitutions.Create(plan.FontMetrics);
+        this.fallbackSubstitutions.Apply(plan, buffer, index, count, InitTag, MediTag, FinaTag, IsolTag, RligTag);
     }
 }

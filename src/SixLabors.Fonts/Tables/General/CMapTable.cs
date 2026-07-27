@@ -1,8 +1,10 @@
 // Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
+using System.Buffers.Binary;
 using SixLabors.Fonts.Tables.General.CMap;
 using SixLabors.Fonts.Unicode;
+using SixLabors.Fonts.Unicode.Resources;
 using SixLabors.Fonts.WellKnownIds;
 
 namespace SixLabors.Fonts.Tables.General;
@@ -56,6 +58,11 @@ internal sealed class CMapTable : Table
     private readonly bool isSymbolic;
 
     /// <summary>
+    /// The legacy font-page marker controlling symbolic character remapping.
+    /// </summary>
+    private ushort symbolFontPage;
+
+    /// <summary>
     /// Cached codepoints available in the font.
     /// </summary>
     private CodePoint[]? codepoints;
@@ -83,6 +90,13 @@ internal sealed class CMapTable : Table
     /// Gets the subtables ordered by preferred platform.
     /// </summary>
     internal CMapSubTable[] Tables { get; }
+
+    /// <summary>
+    /// Sets the legacy font-page marker used by a symbolic character map.
+    /// </summary>
+    /// <param name="fontPage">The font-page marker, or zero for ordinary symbol remapping.</param>
+    public void SetSymbolFontPage(ushort fontPage)
+        => this.symbolFontPage = this.isSymbolic ? fontPage : (ushort)0;
 
     /// <summary>
     /// Gets the preferred platform ordering for subtable selection.
@@ -211,14 +225,21 @@ internal sealed class CMapTable : Table
             return true;
         }
 
-        // The text asked for a character the symbol font does not map, which is
-        // expected: such a font maps the same glyphs one private use page up.
-        // Retry there, since the caller's character code is what that page
-        // shadows.
-        if (this.isSymbolic && codePoint.Value <= SymbolPageLastShadowed)
+        if (this.isSymbolic && this.symbolFontPage == 0 && codePoint.Value <= SymbolPageLastShadowed)
         {
+            // An ordinary symbol font shadows one byte of character codes in its
+            // U+F000 private-use page.
             CodePoint shadowed = new(SymbolPageStart + codePoint.Value);
             if (this.characterMap.TryGetGlyphId(shadowed, out glyphId) && glyphId > 0)
+            {
+                return true;
+            }
+        }
+
+        if (this.isSymbolic && this.symbolFontPage != 0)
+        {
+            ushort mappedCodePoint = ArabicLegacyEncodingData.GetMappedCodePoint(this.symbolFontPage, codePoint.Value);
+            if (mappedCodePoint != 0 && this.characterMap.TryGetGlyphId(new CodePoint(mappedCodePoint), out glyphId) && glyphId > 0)
             {
                 return true;
             }
@@ -269,16 +290,30 @@ internal sealed class CMapTable : Table
                 values.Add(v);
             }
 
-            // A symbol font's page is reachable through the character codes it
-            // shadows as well as through the page itself, so both address the
-            // same glyph and both belong in the answer.
-            if (this.isSymbolic)
+            if (this.isSymbolic && this.symbolFontPage == 0)
             {
+                // An ordinary symbol font's page is reachable through the byte
+                // values it shadows as well as through the page itself.
                 foreach (int v in this.characterMap.GetAvailableCodePoints())
                 {
                     if (v >= SymbolPageStart && v <= SymbolPageStart + SymbolPageLastShadowed)
                     {
                         values.Add(v - SymbolPageStart);
+                    }
+                }
+            }
+            else if (this.isSymbolic)
+            {
+                ReadOnlySpan<byte> mappings = ArabicLegacyEncodingData.GetMappings(this.symbolFontPage);
+                for (int offset = 0; offset < mappings.Length; offset += ArabicLegacyEncodingData.MappingEntrySize)
+                {
+                    ushort mappedCodePoint = BinaryPrimitives.ReadUInt16LittleEndian(
+                        mappings.Slice(offset + ArabicLegacyEncodingData.MappedCodePointOffset, sizeof(ushort)));
+
+                    if (this.characterMap.TryGetGlyphId(new CodePoint(mappedCodePoint), out ushort glyphId) && glyphId > 0)
+                    {
+                        ushort codePoint = BinaryPrimitives.ReadUInt16LittleEndian(mappings.Slice(offset, sizeof(ushort)));
+                        values.Add(codePoint);
                     }
                 }
             }

@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using SixLabors.Fonts.Tables.AdvancedTypographic.GPos;
 using SixLabors.Fonts.Tables.AdvancedTypographic.Shapers;
 using SixLabors.Fonts.Unicode;
@@ -218,7 +219,9 @@ internal class GPosTable : Table
                 continue;
             }
 
-            ScriptClass current = CodePoint.GetScriptClass(buffer[i].CodePoint);
+            ScriptClass current = ScriptItemizer.ResolveScript(buffer, i);
+            CultureInfo culture = ScriptItemizer.ResolveCulture(buffer, i);
+            int textRunIndex = buffer[i].TextRunIndex;
 
             int index = i;
             int count = 1;
@@ -234,7 +237,20 @@ internal class GPosTable : Table
                     break;
                 }
 
-                ScriptClass next = CodePoint.GetScriptClass(nextData.CodePoint);
+                ScriptClass next = ScriptItemizer.ResolveScript(buffer, ni);
+                if (nextData.TextRunIndex != textRunIndex)
+                {
+                    // Positioning features use the same per-language boundary as
+                    // substitution when a fallback font created this segment.
+                    CultureInfo nextCulture = ScriptItemizer.ResolveCulture(buffer, ni);
+                    if (!string.Equals(nextCulture.Name, culture.Name, StringComparison.Ordinal))
+                    {
+                        break;
+                    }
+
+                    textRunIndex = nextData.TextRunIndex;
+                }
+
                 if (next != current &&
                     current is not ScriptClass.Common and not ScriptClass.Unknown and not ScriptClass.Inherited &&
                     next is not ScriptClass.Common and not ScriptClass.Unknown and not ScriptClass.Inherited)
@@ -257,7 +273,7 @@ internal class GPosTable : Table
             }
 
             Tag unicodeScriptTag = this.GetUnicodeScriptTag(current);
-            ShapePlan shapePlan = buffer.GetOrCreatePlan(current, unicodeScriptTag, fontMetrics);
+            ShapePlan shapePlan = buffer.GetOrCreatePlan(current, unicodeScriptTag, fontMetrics, culture);
 
             // Plan positioning features for each glyph. Records seeded across buffers
             // had their feature registrations cleared, so this pass re-plans.
@@ -330,14 +346,14 @@ internal class GPosTable : Table
         for (int g = 0; g < groups.Count; g++)
         {
             ShapePlanStageGroup<LookupTable> group = groups[g];
-            List<(Tag Feature, ushort Index, LookupTable LookupTable, uint Mask, bool AutoZwnj, bool AutoZwj, bool PerSyllable)> merged = group.Lookups;
+            List<(Tag Feature, ushort Index, LookupTable LookupTable, uint Mask, bool AutoZwnj, bool AutoZwj, bool Random, bool PerSyllable)> merged = group.Lookups;
 
             shapingStages[group.Start].PreProcessFeature(shapePlan, buffer, index, count);
 
             for (int m = 0; m < merged.Count; m++)
             {
-                (Tag feature, ushort _, LookupTable featureLookupTable, uint featureMask, bool autoZwnj, bool autoZwj, bool perSyllable) = merged[m];
-                buffer.SetLookupMatchState(featureMask, autoZwnj, autoZwj, perSyllable);
+                (Tag feature, ushort _, LookupTable featureLookupTable, uint featureMask, bool autoZwnj, bool autoZwj, bool random, bool perSyllable) = merged[m];
+                buffer.SetLookupMatchState(featureMask, autoZwnj, autoZwj, random, perSyllable);
 
                 // Skip the whole lookup when its mask reaches no record, or when
                 // its coverage cannot intersect any glyph id the buffer has ever
@@ -657,7 +673,9 @@ internal class GPosTable : Table
     /// Fixes cursive attachment positioning by propagating Y (or X for vertical) offsets.
     /// </summary>
     /// <remarks>
-    /// HarfBuzz 14.2.1, <c>tests/harfbuzz/src/OT/Layout/GPOS/GPOS.hh</c>, <c>GPOS::position_finish_offsets</c> and <c>propagate_attachment_offsets</c>, resolves the parent chain before adding the parent's minor-axis offset to a cursively attached glyph. The direction controls the outer traversal order, while recursion makes every parent complete before its child. This OpenType attachment propagation rule is not derivable from the Unicode Character Database.
+    /// The parent chain is resolved before its minor-axis offset is added to a
+    /// cursively attached child. Direction controls the outer traversal order,
+    /// while recursion completes every parent before its child.
     /// </remarks>
     /// <param name="buffer">The glyph positioning buffer.</param>
     /// <param name="index">The starting index.</param>

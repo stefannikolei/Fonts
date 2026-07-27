@@ -112,7 +112,7 @@ internal sealed class ArabicFallbackSubstitutions
         ApplyPresentationForms(fontMetrics, plan.Features.GetMask(isolatedTag), buffer, index, count, isolatedTag, IsolatedFormIndex);
 
         uint requiredLigaturesMask = plan.Features.GetMask(requiredLigaturesTag);
-        buffer.SetLookupMatchState(requiredLigaturesMask, true, false, false);
+        buffer.SetLookupMatchState(requiredLigaturesMask, true, false, false, false);
 
         count = ApplyLigatures(fontMetrics, buffer, index, count, requiredLigaturesTag, requiredLigaturesMask, this.threeCharacterLigatures, LookupFlags.IgnoreMarks);
         count = ApplyLigatures(fontMetrics, buffer, index, count, requiredLigaturesTag, requiredLigaturesMask, this.twoCharacterLigatures, LookupFlags.IgnoreMarks);

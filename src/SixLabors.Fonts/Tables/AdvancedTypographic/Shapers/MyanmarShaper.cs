@@ -119,6 +119,16 @@ internal sealed class MyanmarShaper : DefaultShaper
     private readonly Action<ShapePlan, ShapingBuffer, int, int> initialReorderAction;
 
     /// <summary>
+    /// The no-op action that separates basic features into individual lookup stages.
+    /// </summary>
+    private readonly Action<ShapePlan, ShapingBuffer, int, int> pauseAction;
+
+    /// <summary>
+    /// The action that clears syllable state after the basic features.
+    /// </summary>
+    private readonly Action<ShapePlan, ShapingBuffer, int, int> clearSyllablesAction;
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="MyanmarShaper"/> class.
     /// </summary>
     /// <param name="script">The script classification.</param>
@@ -132,6 +142,8 @@ internal sealed class MyanmarShaper : DefaultShaper
         this.fontMetrics = fontMetrics;
         this.setupSyllablesAction = this.SetupSyllables;
         this.initialReorderAction = this.InitialReorder;
+        this.pauseAction = Pause;
+        this.clearSyllablesAction = ClearSyllables;
 
         // Every character comes apart first, even one the font already draws whole.
         // This shaper divides a run into syllables and moves their pieces about, so a
@@ -146,11 +158,16 @@ internal sealed class MyanmarShaper : DefaultShaper
         this.EnableFeature(buffer, index, count, LoclTag, ShapingFeatureFlags.PerSyllable, this.setupSyllablesAction, null);
         this.EnableFeature(buffer, index, count, CcmpTag, ShapingFeatureFlags.PerSyllable);
 
-        this.EnableFeature(buffer, index, count, RphfTag, ShapingFeatureFlags.ManualZwj | ShapingFeatureFlags.PerSyllable, this.initialReorderAction, null);
-        this.EnableFeature(buffer, index, count, PrefTag, ShapingFeatureFlags.ManualZwj | ShapingFeatureFlags.PerSyllable);
-        this.EnableFeature(buffer, index, count, BlwfTag, ShapingFeatureFlags.ManualZwj | ShapingFeatureFlags.PerSyllable);
-        this.EnableFeature(buffer, index, count, PstfTag, ShapingFeatureFlags.ManualZwj | ShapingFeatureFlags.PerSyllable);
+        // Each basic feature consumes the previous feature's output. Explicit
+        // boundaries preserve that order even when the font stores their lookups
+        // in a different numerical order.
+        this.EnableFeature(buffer, index, count, RphfTag, ShapingFeatureFlags.ManualZwj | ShapingFeatureFlags.PerSyllable, this.initialReorderAction, this.pauseAction);
+        this.EnableFeature(buffer, index, count, PrefTag, ShapingFeatureFlags.ManualZwj | ShapingFeatureFlags.PerSyllable, null, this.pauseAction);
+        this.EnableFeature(buffer, index, count, BlwfTag, ShapingFeatureFlags.ManualZwj | ShapingFeatureFlags.PerSyllable, null, this.pauseAction);
+        this.EnableFeature(buffer, index, count, PstfTag, ShapingFeatureFlags.ManualZwj | ShapingFeatureFlags.PerSyllable, null, this.clearSyllablesAction);
 
+        // Syllable scoping ends with the basic forms. The presentation features
+        // below apply together over the resulting glyph stream.
         this.EnableFeature(buffer, index, count, PresTag, ShapingFeatureFlags.ManualZwj);
         this.EnableFeature(buffer, index, count, AbvsTag, ShapingFeatureFlags.ManualZwj);
         this.EnableFeature(buffer, index, count, BlwsTag, ShapingFeatureFlags.ManualZwj);
@@ -495,6 +512,38 @@ internal sealed class MyanmarShaper : DefaultShaper
     /// <returns><see langword="true"/> if the glyph is a consonant.</returns>
     private static bool IsConsonant(ref GlyphShapingData data)
         => data.Syllable.Type != SyllableType.None && (FlagUnsafe(data.Syllable.MyanmarCategory) & MyanmarConsonantFlags) != 0;
+
+    /// <summary>
+    /// Separates two basic feature stages without mutating the shaping buffer.
+    /// </summary>
+    /// <param name="plan">The shaping plan.</param>
+    /// <param name="buffer">The shaping buffer.</param>
+    /// <param name="index">The zero-based index of the first record.</param>
+    /// <param name="count">The number of records in the segment.</param>
+    private static void Pause(ShapePlan plan, ShapingBuffer buffer, int index, int count)
+    {
+    }
+
+    /// <summary>
+    /// Clears syllable state once the syllable-scoped basic features have run.
+    /// </summary>
+    /// <param name="plan">The shaping plan.</param>
+    /// <param name="buffer">The shaping buffer.</param>
+    /// <param name="index">The zero-based index of the first record.</param>
+    /// <param name="count">The number of records in the segment.</param>
+    private static void ClearSyllables(ShapePlan plan, ShapingBuffer buffer, int index, int count)
+    {
+        if (buffer.Role != ShapingBufferRole.Substitution)
+        {
+            return;
+        }
+
+        int end = index + count;
+        for (int i = index; i < end; i++)
+        {
+            buffer[i].Syllable = default;
+        }
+    }
 
     /// <summary>
     /// Finds the start index of the next syllable in the buffer.

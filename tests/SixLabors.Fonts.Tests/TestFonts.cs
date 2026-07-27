@@ -60,7 +60,7 @@ public static class TestFonts
     /// <summary>
     /// Gets a gsub test font file which has the following substitution for unit tests:
     /// - Chained Context Substitution, Format 3: x=y -> x>y
-    /// - Reverse Chaining Contextual Single Substitution: X89 -> XYZ
+    /// - Reverse Chaining Contextual Single Substitution: X889 -> XY89
     /// </summary>
     public static string GSubTestFontFile2 => GetFullPath("GsubTestFont2.ttf");
 

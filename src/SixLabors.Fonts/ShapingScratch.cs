@@ -135,10 +135,11 @@ internal sealed class ShapingScratch
     /// <param name="font">The font being shaped against.</param>
     /// <param name="direction">The line base direction or directional-run direction.</param>
     /// <param name="language">The language the text is written in.</param>
+    /// <param name="script">The script applied to the whole request, or <see langword="null"/> to infer scripts from the text.</param>
     /// <param name="features">The feature tags to turn on.</param>
     /// <param name="bidiMode">Whether the request is a logical line or one directional run.</param>
     /// <returns>The options.</returns>
-    public TextOptions GetShapingOptions(Font font, TextDirection direction, CultureInfo language, Tag[] features, TextBidiMode bidiMode)
+    public TextOptions GetShapingOptions(Font font, TextDirection direction, CultureInfo language, ScriptClass? script, Tag[] features, TextBidiMode bidiMode)
     {
         TextOptions current = this.shapingOptions ??= new TextOptions(font);
 
@@ -146,6 +147,7 @@ internal sealed class ShapingScratch
         current.TextDirection = direction;
         current.TextBidiMode = bidiMode;
         current.Culture = language;
+        current.Script = script;
         current.FeatureTags = features;
 
         return current;

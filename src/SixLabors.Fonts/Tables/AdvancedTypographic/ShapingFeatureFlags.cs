@@ -38,4 +38,10 @@ internal enum ShapingFeatureFlags : byte
     /// latches the syllable at the cursor and refuses records of any other.
     /// </summary>
     PerSyllable = 1 << 2,
+
+    /// <summary>
+    /// Alternate substitutions select from their set using the shaping buffer's
+    /// deterministic random sequence.
+    /// </summary>
+    Random = 1 << 3,
 }

@@ -185,7 +185,11 @@ internal struct SkippingGlyphIterator
         }
 
         this.SetMatchContext(0, true);
-        return this.Prev();
+
+        // The matcher must test the immediately preceding record before deciding
+        // whether it is transparent. Stepping here would discard a transparent
+        // record that the backtrack sequence explicitly names.
+        return --this.Index;
     }
 
     /// <summary>

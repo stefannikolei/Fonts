@@ -50,6 +50,7 @@ public class TextOptions
         this.CustomHyphen = options.CustomHyphen;
         this.TextDirection = options.TextDirection;
         this.TextBidiMode = options.TextBidiMode;
+        this.Script = options.Script;
         this.TextInteractionMode = options.TextInteractionMode;
         this.TextAlignment = options.TextAlignment;
         this.TextJustification = options.TextJustification;
@@ -230,6 +231,12 @@ public class TextOptions
     /// Gets or sets how bidirectional text is resolved.
     /// </summary>
     public TextBidiMode TextBidiMode { get; set; }
+
+    /// <summary>
+    /// Gets or sets the script applied to the whole shaping request, or
+    /// <see langword="null"/> when script runs are inferred from the text.
+    /// </summary>
+    public ScriptClass? Script { get; set; }
 
     /// <summary>
     /// Gets or sets how caret movement and selection model trailing breaking whitespace.

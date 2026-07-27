@@ -8,11 +8,6 @@ namespace SixLabors.Fonts.Tables.AdvancedTypographic;
 /// <summary>
 /// Positions combining marks from glyph extents when a script permits fallback positioning and the font has no positioning table.
 /// </summary>
-/// <remarks>
-/// The stacking and extent rules follow <c>hb-ot-shape-fallback.cc</c>, symbols
-/// <c>recategorize_combining_class</c>, <c>position_mark</c>, and <c>position_around_base</c>.
-/// They are shaping behavior rather than Unicode Character Database properties.
-/// </remarks>
 internal static class FallbackMarkPositioner
 {
     /// <summary>

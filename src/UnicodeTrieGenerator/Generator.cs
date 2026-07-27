@@ -594,6 +594,7 @@ public static partial class Generator
         GenerateArabicLegacyEncodingData();
         GenerateArabicFallbackData();
         GenerateScriptDirectionData();
+        GenerateScriptExtensionData();
 
         List<Codepoint> codePoints = GenerateUniversalShapingDataTrie(ugc, uisc, uipc, uajt, script);
         GenerateIndicShapingDataTrie([.. codePoints]);

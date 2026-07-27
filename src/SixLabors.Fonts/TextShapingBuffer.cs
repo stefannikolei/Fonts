@@ -2,6 +2,7 @@
 // Licensed under the Six Labors Split License.
 
 using System.Globalization;
+using SixLabors.Fonts.Unicode;
 
 namespace SixLabors.Fonts;
 
@@ -51,6 +52,12 @@ public sealed class TextShapingBuffer
     /// specific behaviour of the font's features.
     /// </summary>
     public CultureInfo Language { get; set; } = CultureInfo.InvariantCulture;
+
+    /// <summary>
+    /// Gets or sets the script to use for the entire shaping request, or
+    /// <see langword="null"/> to infer scripts from the text.
+    /// </summary>
+    public ScriptClass? Script { get; set; }
 
     /// <summary>
     /// Gets the number of shaped glyphs the last shaping call produced.

@@ -342,7 +342,7 @@ internal sealed class ShapePlan
             // from the tail because resolved lookups arrive mostly ascending, so
             // the insertion point is almost always at or near the end.
             ShapePlanStageGroup<TLookup> group = new(stageIndex, groupEnd);
-            List<(Tag Feature, ushort Index, TLookup LookupTable, uint Mask, bool AutoZwnj, bool AutoZwj, bool PerSyllable)> merged = group.Lookups;
+            List<(Tag Feature, ushort Index, TLookup LookupTable, uint Mask, bool AutoZwnj, bool AutoZwj, bool Random, bool PerSyllable)> merged = group.Lookups;
             for (int s = stageIndex; s < groupEnd; s++)
             {
                 Tag featureTag = stages[s].FeatureTag;
@@ -360,6 +360,7 @@ internal sealed class ShapePlan
                 ShapingFeatureFlags featureFlags = this.Features.GetFlags(featureTag);
                 bool autoZwnj = (featureFlags & ShapingFeatureFlags.ManualZwnj) == 0;
                 bool autoZwj = (featureFlags & ShapingFeatureFlags.ManualZwj) == 0;
+                bool random = (featureFlags & ShapingFeatureFlags.Random) != 0;
                 bool perSyllable = (featureFlags & ShapingFeatureFlags.PerSyllable) != 0;
 
                 foreach ((Tag Feature, ushort Index, TLookup LookupTable) featureLookup in lookups)
@@ -374,10 +375,10 @@ internal sealed class ShapePlan
                     bool alreadyMerged = false;
                     while (insertAt > 0)
                     {
-                        (Tag Feature, ushort Index, TLookup LookupTable, uint Mask, bool AutoZwnj, bool AutoZwj, bool PerSyllable) prior = merged[insertAt - 1];
+                        (Tag Feature, ushort Index, TLookup LookupTable, uint Mask, bool AutoZwnj, bool AutoZwj, bool Random, bool PerSyllable) prior = merged[insertAt - 1];
                         if (prior.Index == featureLookup.Index)
                         {
-                            merged[insertAt - 1] = (prior.Feature, prior.Index, prior.LookupTable, prior.Mask | featureMask, prior.AutoZwnj && autoZwnj, prior.AutoZwj && autoZwj, prior.PerSyllable);
+                            merged[insertAt - 1] = (prior.Feature, prior.Index, prior.LookupTable, prior.Mask | featureMask, prior.AutoZwnj && autoZwnj, prior.AutoZwj && autoZwj, prior.Random, prior.PerSyllable);
                             alreadyMerged = true;
                             break;
                         }
@@ -392,7 +393,7 @@ internal sealed class ShapePlan
 
                     if (!alreadyMerged)
                     {
-                        merged.Insert(insertAt, (featureLookup.Feature, featureLookup.Index, featureLookup.LookupTable, featureMask, autoZwnj, autoZwj, perSyllable));
+                        merged.Insert(insertAt, (featureLookup.Feature, featureLookup.Index, featureLookup.LookupTable, featureMask, autoZwnj, autoZwj, random, perSyllable));
                     }
                 }
             }

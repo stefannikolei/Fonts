@@ -122,6 +122,8 @@ internal static class ShaperFactory
             ? new MyanmarShaper(script, textOptions, fontMetrics)
             : new DefaultShaper(script, textOptions),
 
+            ScriptClass.MyanmarZawgyi => new MyanmarZawgyiShaper(script, textOptions),
+
             // Universal
             ScriptClass.Balinese
             or ScriptClass.Batak

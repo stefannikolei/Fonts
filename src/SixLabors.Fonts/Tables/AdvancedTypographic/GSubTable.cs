@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using SixLabors.Fonts.Tables.AdvancedTypographic.GSub;
 using SixLabors.Fonts.Tables.AdvancedTypographic.Shapers;
 using SixLabors.Fonts.Unicode;
@@ -166,7 +167,8 @@ internal class GSubTable : Table
             ScriptClass current = ScriptItemizer.ReadRun(buffer, ref i, maxCount, out int count);
 
             Tag unicodeScriptTag = this.GetUnicodeScriptTag(current);
-            ShapePlan shapePlan = buffer.GetOrCreatePlan(current, unicodeScriptTag, fontMetrics);
+            CultureInfo culture = ScriptItemizer.ResolveCulture(buffer, index);
+            ShapePlan shapePlan = buffer.GetOrCreatePlan(current, unicodeScriptTag, fontMetrics, culture);
 
             BaseShaper shaper = shapePlan.Shaper;
 
@@ -249,7 +251,7 @@ internal class GSubTable : Table
         FontMetrics fontMetrics,
         ShapingBuffer buffer,
         ref SkippingGlyphIterator iterator,
-        List<(Tag Feature, ushort Index, LookupTable LookupTable, uint Mask, bool AutoZwnj, bool AutoZwj, bool PerSyllable)> merged,
+        List<(Tag Feature, ushort Index, LookupTable LookupTable, uint Mask, bool AutoZwnj, bool AutoZwj, bool Random, bool PerSyllable)> merged,
         int index,
         ref int count,
         ref int i,
@@ -260,7 +262,7 @@ internal class GSubTable : Table
     {
         for (int m = 0; m < merged.Count; m++)
         {
-            (Tag feature, ushort _, LookupTable featureLookupTable, uint featureMask, bool autoZwnj, bool autoZwj, bool perSyllable) = merged[m];
+            (Tag feature, ushort _, LookupTable featureLookupTable, uint featureMask, bool autoZwnj, bool autoZwj, bool random, bool perSyllable) = merged[m];
 
             // Skip the whole lookup when its coverage cannot intersect any glyph id
             // the buffer has ever contained; most fonts carry many lookups for
@@ -275,8 +277,36 @@ internal class GSubTable : Table
                 continue;
             }
 
-            buffer.SetLookupMatchState(featureMask, autoZwnj, autoZwj, perSyllable);
+            buffer.SetLookupMatchState(featureMask, autoZwnj, autoZwj, random, perSyllable);
             iterator.Reset(index, featureLookupTable.LookupFlags, featureLookupTable.MarkFilteringSet);
+
+            if (featureLookupTable.IsReverse)
+            {
+                // Each replacement may create the context needed by a glyph to its
+                // left, so reverse lookups walk the segment end-to-start in place.
+                int reverseSegmentEnd = index + count;
+                for (int position = reverseSegmentEnd - 1; position >= index; position--)
+                {
+                    if (buffer.Count >= maxCount || currentOperations++ >= maxOperationsCount)
+                    {
+                        collectionCount = buffer.Count;
+                        return;
+                    }
+
+                    ref GlyphShapingData glyphData = ref buffer[position];
+                    if ((glyphData.FeatureMask & featureMask) == 0
+                        || !featureLookupTable.Digest.MightContain(glyphData.GlyphId)
+                        || iterator.IsIgnored(position))
+                    {
+                        continue;
+                    }
+
+                    featureLookupTable.TrySubstitution(fontMetrics, this, buffer, feature, featureMask, position, reverseSegmentEnd - position);
+                }
+
+                collectionCount = buffer.Count;
+                continue;
+            }
 
             // One output pass per lookup: the cursor consumes the input side and
             // every record streams to the output side exactly once, so a length

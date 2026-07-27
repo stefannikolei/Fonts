@@ -116,9 +116,6 @@ internal static class LookupType5SubTable
         public override void CollectDigest(ref GlyphSetDigest digest) => this.markCoverage.CollectDigest(ref digest);
 
         /// <inheritdoc/>
-        /// <remarks>
-        /// The backward search and component selection are transcribed from HarfBuzz 14.2.1, <c>src/OT/Layout/GPOS/MarkLigPosFormat1.hh</c>, symbol <c>MarkLigPosFormat1_2::apply</c>. Default-ignorable transparency is defined by <c>matcher_t::may_skip</c> in <c>src/hb-ot-layout-gsubgpos.hh</c>. These rules are shaping behavior and are not derivable from the Unicode Character Database.
-        /// </remarks>
         public override bool TryUpdatePosition(
             FontMetrics fontMetrics,
             GPosTable table,

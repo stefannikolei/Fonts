@@ -122,6 +122,21 @@ internal sealed class ShapingBuffer
     private const int DottedCircleCodePoint = 0x25CC;
 
     /// <summary>
+    /// The multiplier used by the deterministic random sequence.
+    /// </summary>
+    private const uint RandomMultiplier = 48271;
+
+    /// <summary>
+    /// The modulus used by the deterministic random sequence.
+    /// </summary>
+    private const uint RandomModulus = 2147483647;
+
+    /// <summary>
+    /// The current deterministic random state.
+    /// </summary>
+    private uint randomState = 1;
+
+    /// <summary>
     /// The glyph id cache entry bits forming the lookup key: the marker, the
     /// codepoint, and the encoded following codepoint.
     /// </summary>
@@ -248,7 +263,6 @@ internal sealed class ShapingBuffer
     {
         this.TextOptions = textOptions;
         this.Role = role;
-        this.LanguageTags = ResolveLanguageTags(textOptions);
     }
 
     /// <summary>
@@ -338,6 +352,11 @@ internal sealed class ShapingBuffer
     public bool LookupPerSyllable { get; private set; }
 
     /// <summary>
+    /// Gets a value indicating whether the applying lookup selects random alternates.
+    /// </summary>
+    public bool LookupRandom { get; private set; }
+
+    /// <summary>
     /// Gets the applying lookup's combined mask. Nested lookups inside
     /// contextual matches apply under the outer lookup's mask, so the stamped
     /// value holds for the whole application.
@@ -387,13 +406,6 @@ internal sealed class ShapingBuffer
     /// Gets the text options used by this buffer.
     /// </summary>
     public TextOptions TextOptions { get; private set; }
-
-    /// <summary>
-    /// Gets the candidate OpenType language system tags resolved from
-    /// <see cref="TextOptions.Culture"/>, most specific first, or an empty array when
-    /// the culture expresses no language preference. Resolved once per shaping pass.
-    /// </summary>
-    public Tag[] LanguageTags { get; private set; }
 
     /// <summary>
     /// Gets the approximate membership filter over every glyph id the buffer has ever
@@ -535,6 +547,7 @@ internal sealed class ShapingBuffer
     {
         this.Count = 0;
         this.LigatureId = 1;
+        this.randomState = 1;
         this.EnabledFeatureMaskUnion = ShapePlanFeatures.GlobalFeatureMask;
         this.glyphDigest = default;
         this.placeholderBidiRuns.Clear();
@@ -551,7 +564,6 @@ internal sealed class ShapingBuffer
         {
             this.planCache.Clear();
             this.TextOptions = textOptions;
-            this.LanguageTags = ResolveLanguageTags(textOptions);
             this.languageKey = language;
             this.featureKey = textOptions.FeatureTags;
         }
@@ -582,10 +594,12 @@ internal sealed class ShapingBuffer
     /// <param name="mask">The lookup's combined mask.</param>
     /// <param name="autoZwnj">Whether the lookup skips the zero width non-joiner during context matching.</param>
     /// <param name="autoZwj">Whether the lookup skips the zero width joiner.</param>
+    /// <param name="random">Whether alternate substitutions select randomly.</param>
     /// <param name="perSyllable">Whether matching is confined to one syllable.</param>
-    public void SetLookupMatchState(uint mask, bool autoZwnj, bool autoZwj, bool perSyllable)
+    public void SetLookupMatchState(uint mask, bool autoZwnj, bool autoZwj, bool random, bool perSyllable)
     {
         this.LookupMask = mask;
+        this.LookupRandom = random;
 
         // Consecutive lookups mostly share their joiner handling, so the packed
         // bytes are only rebuilt when one of their five inputs actually changed.
@@ -607,6 +621,16 @@ internal sealed class ShapingBuffer
         this.packedFlagsHadIgnorables = this.HasDefaultIgnorables;
         this.InputMatchFlags = SkippingGlyphIterator.PackMatchFlags(this, false);
         this.ContextMatchFlags = SkippingGlyphIterator.PackMatchFlags(this, true);
+    }
+
+    /// <summary>
+    /// Advances and returns the deterministic random sequence used by alternate substitution.
+    /// </summary>
+    /// <returns>The next random value.</returns>
+    public uint NextRandomNumber()
+    {
+        this.randomState = unchecked(this.randomState * RandomMultiplier) % RandomModulus;
+        return this.randomState;
     }
 
     /// <summary>
@@ -990,6 +1014,24 @@ internal sealed class ShapingBuffer
     }
 
     /// <summary>
+    /// Performs a 1:1 replacement without changing the record's ligature attachment.
+    /// </summary>
+    /// <param name="index">The zero-based index of the record to replace.</param>
+    /// <param name="glyphId">The replacement glyph id.</param>
+    /// <param name="feature">The feature to apply to the record at the specified index.</param>
+    public void ReplaceInPlace(int index, ushort glyphId, Tag feature)
+    {
+        this.glyphDigest.Add(glyphId);
+
+        // Reverse substitutions change only the glyph identity. Attachment metadata
+        // must survive because later mark positioning still targets the same record.
+        ref GlyphShapingData current = ref this.data[index];
+        current.GlyphId = glyphId;
+        current.IsSubstituted = true;
+        current.AppliedFeatureMask |= ShapePlanFeatures.GetVerticalMask(feature);
+    }
+
+    /// <summary>
     /// Performs a 1:1 replacement of a glyph id at the given position while removing a
     /// series of records at the given positions within the sequence.
     /// </summary>
@@ -1223,8 +1265,16 @@ internal sealed class ShapingBuffer
             }
 
             ref GlyphShapingData first = ref this.ProduceFromCursor();
+            bool preservesLigatureAttachment = first.LigatureId > 0;
             first.GlyphId = glyphIds[0];
-            first.LigatureComponent = 0;
+            if (!preservesLigatureAttachment)
+            {
+                // A free-standing expansion numbers its outputs as components.
+                // When the input is already attached to a ligature, every output
+                // must retain that existing attachment instead.
+                first.LigatureComponent = 0;
+            }
+
             first.IsSubstituted = true;
             first.IsDecomposed = true;
             this.glyphDigest.Add(glyphIds[0]);
@@ -1241,8 +1291,12 @@ internal sealed class ShapingBuffer
                     GlyphShapingData appended = new(template, false)
                     {
                         GlyphId = glyphIds[i],
-                        LigatureComponent = i,
                     };
+
+                    if (!preservesLigatureAttachment)
+                    {
+                        appended.LigatureComponent = i;
+                    }
 
                     appended.AppliedFeatureMask |= mask;
                     this.glyphDigest.Add(glyphIds[i]);
@@ -1256,8 +1310,15 @@ internal sealed class ShapingBuffer
         if (glyphIds.Length > 0)
         {
             this.glyphDigest.Add(glyphIds[0]);
+            bool preservesLigatureAttachment = this.data[index].LigatureId > 0;
             this.data[index].GlyphId = glyphIds[0];
-            this.data[index].LigatureComponent = 0;
+            if (!preservesLigatureAttachment)
+            {
+                // Preserve an existing attachment across every output; only an
+                // unattached expansion creates new component indices.
+                this.data[index].LigatureComponent = 0;
+            }
+
             this.data[index].IsSubstituted = true;
             this.data[index].IsDecomposed = true;
 
@@ -1273,8 +1334,12 @@ internal sealed class ShapingBuffer
                     GlyphShapingData inserted = new(template, false)
                     {
                         GlyphId = glyphIds[i],
-                        LigatureComponent = i,
                     };
+
+                    if (!preservesLigatureAttachment)
+                    {
+                        inserted.LigatureComponent = i;
+                    }
 
                     inserted.AppliedFeatureMask |= mask;
                     this.glyphDigest.Add(glyphIds[i]);
@@ -1688,12 +1753,13 @@ internal sealed class ShapingBuffer
     /// <param name="script">The script class to shape.</param>
     /// <param name="unicodeScriptTag">The resolved OpenType script tag.</param>
     /// <param name="fontMetrics">The font metrics the plan binds to.</param>
+    /// <param name="culture">The culture whose language system the plan selects.</param>
     /// <returns>The <see cref="ShapePlan"/>.</returns>
-    public ShapePlan GetOrCreatePlan(ScriptClass script, Tag unicodeScriptTag, FontMetrics fontMetrics)
+    public ShapePlan GetOrCreatePlan(ScriptClass script, Tag unicodeScriptTag, FontMetrics fontMetrics, CultureInfo culture)
     {
         // The plan carries the language system the font's features were selected
         // through, so a plan built for one language cannot stand in for another.
-        string language = this.TextOptions.Culture?.Name ?? string.Empty;
+        string language = culture.Name;
 
         List<(ScriptClass Script, Tag ScriptTag, FontMetrics FontMetrics, string Language, ShapePlan Plan)> cache = this.planCache;
         for (int i = 0; i < cache.Count; i++)
@@ -1708,7 +1774,8 @@ internal sealed class ShapingBuffer
             }
         }
 
-        ShapePlan plan = ShapePlan.Build(fontMetrics, script, unicodeScriptTag, this.TextOptions, this.LanguageTags);
+        Tag[] languageTags = ResolveLanguageTags(culture);
+        ShapePlan plan = ShapePlan.Build(fontMetrics, script, unicodeScriptTag, this.TextOptions, languageTags);
         if (plan.IsCacheable)
         {
             cache.Add((script, unicodeScriptTag, fontMetrics, language, plan));
@@ -1814,17 +1881,13 @@ internal sealed class ShapingBuffer
         => !this.positions[index].IsPositioned && this.metrics[index].Metrics.FontMetrics == fontMetrics;
 
     /// <summary>
-    /// Resolves the candidate OpenType language system tags for the options' culture.
-    /// A null culture takes the ambient current culture; the invariant culture
-    /// expresses no language preference.
+    /// Resolves the candidate OpenType language system tags for a culture. The
+    /// invariant culture expresses no language preference.
     /// </summary>
-    /// <param name="textOptions">The text options.</param>
+    /// <param name="culture">The culture to resolve.</param>
     /// <returns>The candidate tags, most specific first.</returns>
-    private static Tag[] ResolveLanguageTags(TextOptions textOptions)
-    {
-        CultureInfo culture = textOptions.Culture ?? CultureInfo.CurrentCulture;
-        return OpenTypeLanguageTagMap.TryGetTags(culture, out Tag[] tags) ? tags : [];
-    }
+    private static Tag[] ResolveLanguageTags(CultureInfo culture)
+        => OpenTypeLanguageTagMap.TryGetTags(culture, out Tag[] tags) ? tags : [];
 
     /// <summary>
     /// Appends one record and returns an interior reference to it. The slot may hold a

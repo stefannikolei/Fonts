@@ -92,6 +92,7 @@ internal sealed class LookupTable
         this.LookupFlags = lookupFlags;
         this.MarkFilteringSet = markFilteringSet;
         this.LookupSubTables = lookupSubTables;
+        this.IsReverse = lookupType == 8 || (lookupType == 7 && lookupSubTables.Length > 0 && lookupSubTables[0].IsReverse);
 
         // The union of every subtable's gating coverage: a glyph outside the digest
         // cannot be affected by any subtable of this lookup, so application skips it
@@ -137,6 +138,11 @@ internal sealed class LookupTable
     /// Gets the approximate membership filter for the glyphs this lookup can affect.
     /// </summary>
     public GlyphSetDigest Digest { get; }
+
+    /// <summary>
+    /// Gets a value indicating whether this lookup applies from the end of the glyph sequence to the beginning.
+    /// </summary>
+    public bool IsReverse { get; }
 
     /// <summary>
     /// Loads the <see cref="LookupTable"/> from the binary reader at the given offset.
@@ -330,6 +336,11 @@ internal abstract class LookupSubTable
     /// replacements run in place and the driver alone advances the cursor.
     /// </summary>
     public virtual bool ConsumesDirectly => false;
+
+    /// <summary>
+    /// Gets a value indicating whether the owning lookup applies from the end of the glyph sequence to the beginning.
+    /// </summary>
+    public virtual bool IsReverse => false;
 
     /// <summary>
     /// Gets or sets the approximate membership filter for the glyphs this subtable can

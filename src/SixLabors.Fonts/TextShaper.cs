@@ -110,7 +110,7 @@ public static partial class TextShaper
         ShapingScratch scratch = ScratchPool.Get();
         try
         {
-            TextOptions options = scratch.GetShapingOptions(font, buffer.Direction, buffer.Language, features, bidiMode);
+            TextOptions options = scratch.GetShapingOptions(font, buffer.Direction, buffer.Language, buffer.Script, features, bidiMode);
             ShapingBuffer shaped = ShapeCore(buffer.Text, options, scratch, null);
 
             if (bidiMode == TextBidiMode.Normal)

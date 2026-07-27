@@ -140,7 +140,18 @@ internal static class LookupType2SubTable
             if (coverage > -1 && coverage < this.pairSets.Length)
             {
                 PairSetTable pairSet = this.pairSets[coverage];
-                ushort glyphId2 = buffer[index + 1].GlyphId;
+                SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
+                iterator.SetMatchContext(uint.MaxValue, false);
+
+                // Lookup flags and positioning transparency determine the second
+                // member of the pair; ignored glyphs may remain between both members.
+                int secondIndex = iterator.Next();
+                if (secondIndex >= index + count)
+                {
+                    return false;
+                }
+
+                ushort glyphId2 = buffer[secondIndex].GlyphId;
                 if (glyphId2 == 0)
                 {
                     return false;
@@ -152,7 +163,7 @@ internal static class LookupType2SubTable
                     AdvancedTypographicUtils.ApplyPosition(fontMetrics, buffer, index, record1, feature);
 
                     ValueRecord record2 = pairValueRecord.ValueRecord2;
-                    AdvancedTypographicUtils.ApplyPosition(fontMetrics, buffer, index + 1, record2, feature);
+                    AdvancedTypographicUtils.ApplyPosition(fontMetrics, buffer, secondIndex, record2, feature);
 
                     return true;
                 }
@@ -366,7 +377,18 @@ internal static class LookupType2SubTable
             if (coverage > -1)
             {
                 int classDef1 = this.classDefinitionTable1.ClassIndexOf(glyphId);
-                ushort glyphId2 = buffer[index + 1].GlyphId;
+                SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
+                iterator.SetMatchContext(uint.MaxValue, false);
+
+                // Class-pair matching observes the same lookup filtering as
+                // individual-pair matching, including transparent intervening glyphs.
+                int secondIndex = iterator.Next();
+                if (secondIndex >= index + count)
+                {
+                    return false;
+                }
+
+                ushort glyphId2 = buffer[secondIndex].GlyphId;
                 if (glyphId2 == 0)
                 {
                     return false;
@@ -381,7 +403,7 @@ internal static class LookupType2SubTable
                 AdvancedTypographicUtils.ApplyPosition(fontMetrics, buffer, index, record1, feature);
 
                 ValueRecord record2 = class2Record.ValueRecord2;
-                AdvancedTypographicUtils.ApplyPosition(fontMetrics, buffer, index + 1, record2, feature);
+                AdvancedTypographicUtils.ApplyPosition(fontMetrics, buffer, secondIndex, record2, feature);
 
                 return true;
             }

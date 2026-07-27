@@ -134,6 +134,7 @@ internal sealed class UnicodeScriptTagMap : Dictionary<ScriptClass, Tag[]>
             { ScriptClass.MeeteiMayek, new[] { Tag.Parse("mtei") } },
             { ScriptClass.Multani, new[] { Tag.Parse("mult") } },
             { ScriptClass.Myanmar, new[] { Tag.Parse("mym2"), Tag.Parse("mymr") } },
+            { ScriptClass.MyanmarZawgyi, new[] { Tag.Parse("qaag") } },
             { ScriptClass.Nandinagari, new[] { Tag.Parse("nand") } },
             { ScriptClass.OldNorthArabian, new[] { Tag.Parse("narb") } },
             { ScriptClass.Nabataean, new[] { Tag.Parse("nbat") } },

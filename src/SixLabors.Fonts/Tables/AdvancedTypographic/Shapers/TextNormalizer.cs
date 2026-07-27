@@ -11,21 +11,24 @@ namespace SixLabors.Fonts.Tables.AdvancedTypographic.Shapers;
 /// is shaped the same way.
 /// </summary>
 /// <remarks>
-/// <para>
 /// This follows the Unicode normalization algorithm but departs from it in one
 /// respect that matters for shaping: a character comes apart, and a pair joins,
 /// only when the font can draw the result. A font offering the joined form gets it,
 /// because a joined form usually carries better mark positioning than a font's own
 /// mark attachment would give; a font offering only the parts gets the parts.
-/// </para>
-/// <para>
-/// Derived from <c>_hb_ot_shape_normalize</c> in <c>hb-ot-shape-normalize.cc</c> of
-/// HarfBuzz 14.2.1, including its three-round structure and the decision in each
-/// round.
-/// </para>
 /// </remarks>
 internal static class TextNormalizer
 {
+    /// <summary>
+    /// The hyphen used when a font cannot draw the non-breaking form.
+    /// </summary>
+    private const int HyphenCodePoint = 0x2010;
+
+    /// <summary>
+    /// The non-breaking hyphen, whose visible fallback is the ordinary hyphen.
+    /// </summary>
+    private const int NonBreakingHyphenCodePoint = 0x2011;
+
     /// <summary>
     /// The longest run of marks that is ordered. A run longer than this is left
     /// alone, because ordering it costs more than the ordering is worth.
@@ -194,6 +197,20 @@ internal static class TextNormalizer
     private static int DecomposeOne(BaseShaper shaper, FontMetrics fontMetrics, ShapingBuffer buffer, int i, bool mayShortCircuit, out int produced)
     {
         CodePoint codePoint = buffer[i].CodePoint;
+
+        if (codePoint.Value == NonBreakingHyphenCodePoint && !fontMetrics.TryGetGlyphId(codePoint, out _))
+        {
+            // The non-breaking character changes line-breaking behavior, not its
+            // visible form. When the font omits it, use the ordinary hyphen glyph
+            // while retaining the original text bookkeeping on the record.
+            CodePoint hyphen = new(HyphenCodePoint);
+            if (fontMetrics.TryGetGlyphId(hyphen, out ushort hyphenGlyph))
+            {
+                buffer.SetGlyphId(i, hyphenGlyph);
+                produced = 1;
+                return 0;
+            }
+        }
 
         // A character that cannot come apart is kept exactly as it stands, whether or
         // not the font draws it, so the font is never asked about it. Testing that

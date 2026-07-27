@@ -4,13 +4,14 @@
 namespace SixLabors.Fonts.Unicode;
 
 /// <summary>
-/// Unicode Script property values.
+/// Script values used when shaping text.
 /// <see href="https://www.unicode.org/reports/tr24/#Script"/>
 /// </summary>
 /// <remarks>
 /// <see cref="Common"/> and <see cref="Inherited"/> are Unicode script values.
 /// <see cref="Default"/> is an OpenType fallback tag rather than a Unicode Script
-/// property value.
+/// property value. <see cref="MyanmarZawgyi"/> explicitly selects shaping for the
+/// legacy Zawgyi encoding and is not a Unicode Script property value.
 /// </remarks>
 public enum ScriptClass
 {
@@ -897,5 +898,10 @@ public enum ScriptClass
     /// <summary>
     /// OpenType default script tag. Shortcode: DFLT.
     /// </summary>
-    Default = 999
+    Default = 999,
+
+    /// <summary>
+    /// Myanmar encoded using the legacy Zawgyi convention. Shortcode: Qaag.
+    /// </summary>
+    MyanmarZawgyi = 1000
 }

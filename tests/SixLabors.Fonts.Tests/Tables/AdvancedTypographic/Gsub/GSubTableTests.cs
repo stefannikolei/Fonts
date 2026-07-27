@@ -425,8 +425,11 @@ public partial class GSubTableTests
         // arrange
         Font font = TestFonts.GetFont(TestFonts.GSubTestFontFile2, 12);
         ColorGlyphRenderer renderer = new();
-        string testStr = "X89"; // X89 -> XYZ
-        int[] expectedGlyphIndices = [57, 58, 59];
+        string testStr = "X889";
+
+        // The first eight is covered, preceded by X, and followed by the required
+        // eight-nine lookahead, so only that covered glyph changes to Y.
+        int[] expectedGlyphIndices = [57, 58, 25, 26];
 
         // act
         TextRenderer.RenderTo(renderer, testStr, new TextOptions(font));

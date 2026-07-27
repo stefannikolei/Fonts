@@ -44,5 +44,5 @@ internal sealed class ShapePlanStageGroup<TLookup>
     /// lookup skips a joiner automatically only when every registering feature
     /// allows it. Application consumes the list directly.
     /// </summary>
-    public List<(Tag Feature, ushort Index, TLookup LookupTable, uint Mask, bool AutoZwnj, bool AutoZwj, bool PerSyllable)> Lookups { get; }
+    public List<(Tag Feature, ushort Index, TLookup LookupTable, uint Mask, bool AutoZwnj, bool AutoZwj, bool Random, bool PerSyllable)> Lookups { get; }
 }

@@ -17,6 +17,11 @@ internal class DefaultShaper : BaseShaper
     protected static readonly Tag RvnrTag = Tag.Parse("rvrn");
 
     /// <summary>
+    /// The random alternate feature tag.
+    /// </summary>
+    protected static readonly Tag RandTag = Tag.Parse("rand");
+
+    /// <summary>
     /// The 'ltra' (left-to-right alternates) feature tag.
     /// </summary>
     protected static readonly Tag LtraTag = Tag.Parse("ltra");
@@ -191,6 +196,7 @@ internal class DefaultShaper : BaseShaper
         this.EnableFeature(buffer, index, count, RvnrTag);
 
         this.AddDirectionalFeatures(buffer, index, count);
+        this.EnableFeature(buffer, index, count, RandTag, ShapingFeatureFlags.Random);
     }
 
     /// <inheritdoc />
@@ -311,9 +317,6 @@ internal class DefaultShaper : BaseShaper
     }
 
     /// <inheritdoc />
-    /// <remarks>
-    /// The common and horizontal feature sets are transcribed from HarfBuzz 14.2.1, <c>src/hb-ot-shape.cc</c>, symbols <c>common_features</c> and <c>horizontal_features</c>. The feature sets are shaping behavior and are not derivable from the Unicode Character Database.
-    /// </remarks>
     protected override void PlanPostprocessingFeatures(ShapingBuffer buffer, int index, int count)
     {
         // Add common features.

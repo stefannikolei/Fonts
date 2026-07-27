@@ -2,6 +2,7 @@
 // Licensed under the Six Labors Split License.
 
 using System.Globalization;
+using SixLabors.Fonts.Unicode;
 
 namespace SixLabors.Fonts.Tests;
 
@@ -199,6 +200,58 @@ public class TextShaperTests
         Assert.Equal(0, glyphs[0].GlyphId);
     }
 
+    [Fact]
+    public void ZawgyiScriptOverrideAppliesThroughTextOptionsAndTextRun()
+    {
+        const string text = "\u1000\u103A\u1004\u1037\u1039\u1041";
+        string fontPath = Path.Combine(TestEnvironment.SolutionDirectoryFullPath, "tests", "harfbuzz", "test", "shape", "data", "in-house", "fonts", "ab14b4eb9d7a67e293f51d30d719add06c9d6e06.ttf");
+        Font font = new FontCollection().Add(fontPath).CreateFont(16);
+
+        // The shaping buffer establishes the expected Zawgyi glyph stream using
+        // the direct API.
+        TextShapingBuffer buffer = new()
+        {
+            Script = ScriptClass.MyanmarZawgyi
+        };
+        buffer.Add(text);
+        TextShaper.ShapeRun(font, buffer);
+
+        TextOptions options = new(font)
+        {
+            Script = ScriptClass.MyanmarZawgyi
+        };
+        using TextShaper.ShapedTextScope wholeTextScope = TextShaper.ShapeText(text, options, null);
+        ShapedText wholeText = wholeTextScope.Shaped;
+
+        Assert.Equal(buffer.Count, wholeText.GlyphCount);
+        for (int i = 0; i < buffer.Count; i++)
+        {
+            Assert.Equal(buffer[i].GlyphId, wholeText.Infos[i].GlyphId);
+        }
+
+        // A run selection is more specific than the whole-text selection, so it
+        // can identify Zawgyi inside otherwise ordinary Myanmar text.
+        options.Script = ScriptClass.Myanmar;
+        options.TextRuns =
+        [
+            new TextRun
+            {
+                Start = 0,
+                End = text.GetGraphemeCount(),
+                Script = ScriptClass.MyanmarZawgyi
+            }
+        ];
+
+        using TextShaper.ShapedTextScope runScope = TextShaper.ShapeText(text, options, null);
+        ShapedText runText = runScope.Shaped;
+
+        Assert.Equal(buffer.Count, runText.GlyphCount);
+        for (int i = 0; i < buffer.Count; i++)
+        {
+            Assert.Equal(buffer[i].GlyphId, runText.Infos[i].GlyphId);
+        }
+    }
+
     [Theory]
     [InlineData("ro-RO")]
     [InlineData("ro-MD")]
@@ -281,6 +334,30 @@ public class TextShaperTests
 
         Assert.Single(glyphs);
         Assert.Equal(expectedGlyphId, glyphs[0].GlyphId);
+    }
+
+    [Fact]
+    public void Shape_TextRunCultureOverridesTextOptionsCulture()
+    {
+        Font font = new FontCollection().Add(TestFonts.LanguageTagsFile).CreateFont(72);
+        TextOptions options = new(font)
+        {
+            Culture = CultureInfo.InvariantCulture,
+            TextRuns =
+            [
+                new TextRun { Start = 0, End = 1, Culture = new CultureInfo("zh-CN") },
+                new TextRun { Start = 1, End = 2, Culture = new CultureInfo("zh-TW") }
+            ]
+        };
+
+        // Both characters use the same script, so distinct glyphs prove the
+        // language override also forms a shaping boundary between adjacent runs.
+        using TextShaper.ShapedTextScope scope = TextShaper.ShapeText("JJ", options, null);
+        ShapedText shaped = scope.Shaped;
+
+        Assert.Equal(2, shaped.GlyphCount);
+        Assert.Equal(4, shaped.Infos[0].GlyphId);
+        Assert.Equal(5, shaped.Infos[1].GlyphId);
     }
 
     [Fact]

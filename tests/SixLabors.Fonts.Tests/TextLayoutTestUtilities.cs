@@ -155,6 +155,7 @@ internal static class TextLayoutTestUtilities
             CustomEllipsis = options.CustomEllipsis,
             TextDirection = options.TextDirection,
             TextBidiMode = options.TextBidiMode,
+            Script = options.Script,
             TextInteractionMode = options.TextInteractionMode,
             TextAlignment = options.TextAlignment,
             TextJustification = options.TextJustification,
@@ -180,6 +181,8 @@ internal static class TextLayoutTestUtilities
                     FontWeight = run.FontWeight,
                     Start = run.Start,
                     End = run.End,
+                    Script = run.Script,
+                    Culture = run.Culture,
                     TextAttributes = run.TextAttributes,
                     TextDecorations = run.TextDecorations,
                 };

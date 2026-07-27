@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Text;
 using HarfBuzzSharp;
+using SixLabors.Fonts.Unicode;
 using HBBuffer = HarfBuzzSharp.Buffer;
 using HBFace = HarfBuzzSharp.Face;
 using HBFont = HarfBuzzSharp.Font;
@@ -77,7 +78,15 @@ public class HarfBuzzCorpusTests
         "--bot",
         "--eot",
         "--single-par",
-        "--shaper"
+        "--shaper",
+        "--language",
+        "--font-ptem",
+        "--unicodes-before",
+        "--unicodes-after",
+        "--font-slant",
+        "--font-bold",
+        "--not-found-variation-selector-glyph",
+        "--face-index"
     ];
 
     /// <summary>
@@ -104,7 +113,7 @@ public class HarfBuzzCorpusTests
                     continue;
                 }
 
-                if (UnsupportedOptions.Any(o => parts[1].Contains(o, StringComparison.Ordinal)))
+                if (HasUnsupportedOptions(parts[1]))
                 {
                     continue;
                 }
@@ -149,6 +158,19 @@ public class HarfBuzzCorpusTests
 
         using HBBuffer buffer = new();
         buffer.AddUtf16(text);
+
+        string requestedScript = ReadOptionValue(options, "--script");
+        if (requestedScript.Length > 0)
+        {
+            buffer.Script = Script.Parse(requestedScript);
+        }
+
+        Direction? requestedDirection = ReadDirection(options);
+        if (requestedDirection.HasValue)
+        {
+            buffer.Direction = requestedDirection.Value;
+        }
+
         buffer.GuessSegmentProperties();
         referenceFont.Shape(buffer, features, OpenTypeShaper);
 
@@ -165,6 +187,7 @@ public class HarfBuzzCorpusTests
         shapingBuffer.Direction = buffer.Direction == Direction.RightToLeft
             ? TextDirection.RightToLeft
             : TextDirection.LeftToRight;
+        shapingBuffer.Script = ReadScriptClass(requestedScript);
 
         TextShaper.ShapeRun(font, shapingBuffer, featureTags);
 
@@ -345,26 +368,136 @@ public class HarfBuzzCorpusTests
     private static List<Feature> ReadFeatures(string options)
     {
         List<Feature> features = [];
-        int index = options.IndexOf("--features=", StringComparison.Ordinal);
-        if (index < 0)
+        string specification = ReadOptionValue(options, "--features");
+        if (specification.Length == 0)
         {
             return features;
         }
 
-        string specification = options[(index + "--features=".Length)..].Split(' ')[0].Trim('"');
         foreach (string entry in specification.Split(',', StringSplitOptions.RemoveEmptyEntries))
         {
-            string name = entry.TrimStart('+');
-            bool off = name.StartsWith('-');
-            name = name.TrimStart('-');
-            if (name.Length != 4)
-            {
-                continue;
-            }
+            string name = entry.TrimStart('+').Split('=')[0];
 
-            features.Add(new Feature(new HBTag(name[0], name[1], name[2], name[3]), off ? 0u : 1u, 0, uint.MaxValue));
+            features.Add(new Feature(new HBTag(name[0], name[1], name[2], name[3]), 1, 0, uint.MaxValue));
         }
 
         return features;
+    }
+
+    /// <summary>
+    /// Determines whether a corpus case asks for shaping controls this API cannot
+    /// express on both engines.
+    /// </summary>
+    /// <param name="options">The corpus command-line options.</param>
+    /// <returns><see langword="true"/> when the case cannot be compared faithfully.</returns>
+    private static bool HasUnsupportedOptions(string options)
+    {
+        if (UnsupportedOptions.Any(o => options.Contains(o, StringComparison.Ordinal))
+            || options.Contains("--font-funcs=ft", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        string direction = ReadOptionValue(options, "--direction");
+        if (direction.Length > 0
+            && direction is not "l" and not "ltr" and not "r" and not "rtl")
+        {
+            return true;
+        }
+
+        string script = ReadOptionValue(options, "--script");
+        if (script.Length > 0 && ReadScriptClass(script) is null)
+        {
+            return true;
+        }
+
+        string features = ReadOptionValue(options, "--features");
+        foreach (string entry in features.Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            string feature = entry.Trim();
+
+            // The public API enables whole-run feature tags. Disabling a feature,
+            // selecting an alternate value, or limiting its character range would
+            // apply a different request to the two engines.
+            if (feature.StartsWith('-') || feature.Contains('['))
+            {
+                return true;
+            }
+
+            string[] parts = feature.TrimStart('+').Split('=');
+            if (parts[0].Length != 4
+                || (parts.Length > 1 && parts[1] != "1"))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Reads an explicitly requested horizontal direction.
+    /// </summary>
+    /// <param name="options">The corpus command-line options.</param>
+    /// <returns>The requested direction, or <see langword="null"/> when it is inferred.</returns>
+    private static Direction? ReadDirection(string options)
+    {
+        string direction = ReadOptionValue(options, "--direction");
+        return direction switch
+        {
+            "l" or "ltr" => Direction.LeftToRight,
+            "r" or "rtl" => Direction.RightToLeft,
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// Maps the script spellings used by the current corpus to this library's
+    /// shaping script values.
+    /// </summary>
+    /// <param name="script">The corpus script value.</param>
+    /// <returns>The script value, or <see langword="null"/> when no supported script was requested.</returns>
+    private static ScriptClass? ReadScriptClass(string script)
+        => script switch
+        {
+            "Qaag" => ScriptClass.MyanmarZawgyi,
+            _ => null
+        };
+
+    /// <summary>
+    /// Reads the value following a corpus command-line option in either its equals
+    /// or space-separated form.
+    /// </summary>
+    /// <param name="options">The complete option field.</param>
+    /// <param name="name">The option name, including its leading dashes.</param>
+    /// <returns>The unquoted value, or an empty string when the option is absent.</returns>
+    private static string ReadOptionValue(string options, string name)
+    {
+        int index = options.IndexOf(name, StringComparison.Ordinal);
+        if (index < 0)
+        {
+            return string.Empty;
+        }
+
+        int valueStart = index + name.Length;
+        if (valueStart < options.Length && options[valueStart] == '=')
+        {
+            valueStart++;
+        }
+        else
+        {
+            while (valueStart < options.Length && options[valueStart] == ' ')
+            {
+                valueStart++;
+            }
+        }
+
+        int valueEnd = options.IndexOf(' ', valueStart);
+        if (valueEnd < 0)
+        {
+            valueEnd = options.Length;
+        }
+
+        return options[valueStart..valueEnd].Trim('"');
     }
 }

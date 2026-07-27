@@ -262,11 +262,11 @@ internal sealed class LookupType5Format2SubTable : LookupSubTable
             return false;
         }
 
-        // TODO: Check this.
-        // https://docs.microsoft.com/en-us/typography/opentype/spec/gsub#52-context-substitution-format-2-class-based-glyph-contexts
         int offset = this.classDefinitionTable.ClassIndexOf(glyphId);
-        if (offset < 0)
+        if (offset < 0 || offset >= this.sequenceRuleSetTables.Length)
         {
+            // A font may assign a class without supplying a corresponding rule set.
+            // The absent set has no substitutions rather than indexing past the table.
             return false;
         }
 

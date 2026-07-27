@@ -1,6 +1,7 @@
 // Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using SixLabors.Fonts.Unicode;
 
@@ -33,6 +34,19 @@ public class TextRun
     /// supplied by the owning text options.
     /// </summary>
     public FontWeight? FontWeight { get; set; }
+
+    /// <summary>
+    /// Gets or sets the script to use for this run, or <see langword="null"/> to
+    /// use the script selection supplied by the owning text options.
+    /// </summary>
+    public ScriptClass? Script { get; set; }
+
+    /// <summary>
+    /// Gets or sets the culture used to select language-specific shaping for this
+    /// run, or <see langword="null"/> to use the culture supplied by the owning
+    /// text options.
+    /// </summary>
+    public CultureInfo? Culture { get; set; }
 
     /// <summary>
     /// Gets or sets the text attributes applied to this run.

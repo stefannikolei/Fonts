@@ -535,7 +535,7 @@ internal static class AdvancedTypographicUtils
     /// Per the spec, backtrack[0] matches i-1, then i-2, and so on. Backtrack is
     /// always context, so joiners are transparent to it.
     /// </summary>
-    /// <param name="iterator">The skipping glyph iterator.</param>
+    /// <param name="iterator">The skipping glyph iterator, already stamped at the applying glyph for backtrack matching.</param>
     /// <param name="backtrack">The array of backtrack coverage tables to match against.</param>
     /// <param name="startIndex">The starting index in the buffer (the first backtrack position).</param>
     /// <param name="endExclusive">The exclusive end index in the buffer.</param>
@@ -546,7 +546,6 @@ internal static class AdvancedTypographicUtils
         int startIndex,
         int endExclusive)
     {
-        iterator.SetMatchContext(0, true);
         return Match(
             iterator,
             startIndex,
@@ -931,9 +930,9 @@ internal static class AdvancedTypographicUtils
         }
 
         // A matched component can itself be a ligature whose attached marks
-        // follow the final matched glyph. Translate that contiguous tail too;
-        // stopping at the first different identity prevents stealing marks from
-        // the next base.
+        // follow the final matched glyph. Translate only its contiguous component
+        // records: a shared identity without a component marks the end of that
+        // attachment tail just as surely as a different identity does.
         if (!isMarkLigature && lastLigatureId > 0)
         {
             int end = index + count;
@@ -945,7 +944,12 @@ internal static class AdvancedTypographicUtils
                     break;
                 }
 
-                int currentComponent = current.LigatureComponent == -1 ? lastComponentCount : current.LigatureComponent;
+                int currentComponent = current.LigatureComponent;
+                if (currentComponent < 0)
+                {
+                    break;
+                }
+
                 current.LigatureId = ligatureId;
                 current.LigatureComponent = currentComponentCount - lastComponentCount + Math.Min(currentComponent, lastComponentCount);
             }

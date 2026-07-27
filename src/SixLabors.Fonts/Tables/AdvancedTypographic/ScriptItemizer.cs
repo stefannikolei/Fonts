@@ -1,14 +1,16 @@
 // Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
+using System.Globalization;
 using SixLabors.Fonts.Tables.AdvancedTypographic.Shapers;
 using SixLabors.Fonts.Unicode;
+using SixLabors.Fonts.Unicode.Resources;
 
 namespace SixLabors.Fonts.Tables.AdvancedTypographic;
 
 /// <summary>
-/// Splits a shaping buffer into runs of a single script and plans a shaper for
-/// each run.
+/// Splits a shaping buffer into runs of a single script and language and plans a
+/// shaper for each run.
 /// <para>
 /// Planning is what prepares a run's text and registers its features, so it
 /// belongs to every font rather than to the fonts that carry a substitution
@@ -34,15 +36,33 @@ internal static class ScriptItemizer
     /// <returns>The script of the run.</returns>
     public static ScriptClass ReadRun(ShapingBuffer buffer, ref int index, int maxCount, out int count)
     {
-        ScriptClass current = CodePoint.GetScriptClass(buffer[index].CodePoint);
+        ScriptClass current = ResolveScript(buffer, index);
+        CultureInfo culture = ResolveCulture(buffer, index);
+        int textRunIndex = buffer[index].TextRunIndex;
         count = 1;
 
         while (index < buffer.Count - 1)
         {
-            ScriptClass next = CodePoint.GetScriptClass(buffer[index + 1].CodePoint);
+            CodePoint nextCodePoint = buffer[index + 1].CodePoint;
+            ScriptClass next = ResolveScript(buffer, index + 1);
+            int nextTextRunIndex = buffer[index + 1].TextRunIndex;
+            if (nextTextRunIndex != textRunIndex)
+            {
+                // Language-system features differ within the same script, so a
+                // culture change is a shaping boundary even when the script matches.
+                CultureInfo nextCulture = ResolveCulture(buffer, index + 1);
+                if (!string.Equals(nextCulture.Name, culture.Name, StringComparison.Ordinal))
+                {
+                    break;
+                }
+
+                textRunIndex = nextTextRunIndex;
+            }
+
             if (next != current &&
                 current is not ScriptClass.Common and not ScriptClass.Unknown and not ScriptClass.Inherited &&
-                next is not ScriptClass.Common and not ScriptClass.Unknown and not ScriptClass.Inherited)
+                next is not ScriptClass.Common and not ScriptClass.Unknown and not ScriptClass.Inherited &&
+                !ScriptExtensionData.Contains(nextCodePoint, current))
             {
                 break;
             }
@@ -65,13 +85,38 @@ internal static class ScriptItemizer
     }
 
     /// <summary>
+    /// Resolves the script that applies to one shaping record.
+    /// </summary>
+    /// <param name="buffer">The glyph shaping buffer.</param>
+    /// <param name="index">The zero-based record index.</param>
+    /// <returns>The explicit run script, the whole-text script, or the script inferred from the character, in that order.</returns>
+    public static ScriptClass ResolveScript(ShapingBuffer buffer, int index)
+    {
+        ref GlyphShapingData data = ref buffer[index];
+        ScriptClass? script = buffer.TextRuns[data.TextRunIndex].Script ?? buffer.TextOptions.Script;
+
+        // Explicit metadata belongs to the whole declared run, including its
+        // punctuation and any characters whose Unicode Script value differs.
+        return script ?? CodePoint.GetScriptClass(data.CodePoint);
+    }
+
+    /// <summary>
+    /// Resolves the culture that applies to one shaping record.
+    /// </summary>
+    /// <param name="buffer">The glyph shaping buffer.</param>
+    /// <param name="index">The zero-based record index.</param>
+    /// <returns>The explicit run culture, the whole-text culture, or the current culture, in that order.</returns>
+    public static CultureInfo ResolveCulture(ShapingBuffer buffer, int index)
+    {
+        ref GlyphShapingData data = ref buffer[index];
+        return buffer.TextRuns[data.TextRunIndex].Culture ?? buffer.TextOptions.Culture ?? CultureInfo.CurrentCulture;
+    }
+
+    /// <summary>
     /// Plans a shaper over every run of the buffer and records the runs for the
     /// positioning pass. Used for a font that carries no substitution table,
     /// where there are no lookups to apply but the text still has to be prepared.
     /// </summary>
-    /// <remarks>
-    /// Stage actions are applied without a substitution table to match HarfBuzz 14.2.1, <c>src/hb-ot-layout.cc</c>, symbol <c>hb_ot_map_t::apply</c>, called by <c>hb_ot_shape_plan_t::substitute</c> in <c>src/hb-ot-shape.cc</c>. The stage-action rule is shaping behavior and is not derivable from the Unicode Character Database.
-    /// </remarks>
     /// <param name="fontMetrics">The font metrics.</param>
     /// <param name="buffer">The glyph shaping buffer.</param>
     public static void PlanRuns(FontMetrics fontMetrics, ShapingBuffer buffer)
@@ -86,7 +131,8 @@ internal static class ScriptItemizer
 
             // With no substitution table the font offers no script of its own, so
             // the run is planned against the default design.
-            ShapePlan shapePlan = buffer.GetOrCreatePlan(script, default, fontMetrics);
+            CultureInfo culture = ResolveCulture(buffer, index);
+            ShapePlan shapePlan = buffer.GetOrCreatePlan(script, default, fontMetrics, culture);
 
             // Preparing the text can insert records, so the run grows with it.
             int collectionCount = buffer.Count;

@@ -140,10 +140,20 @@ internal sealed class LookupType3Format1SubTable : LookupSubTable
 
         if (offset > -1 && offset < this.alternateSetTables.Length)
         {
-            // TODO: We're just choosing the first alternative here.
-            // It looks like the choice is arbitrary and should be determined by
-            // the client.
-            buffer.Replace(index, this.alternateSetTables[offset].AlternateGlyphs[0], feature);
+            ushort[] alternates = this.alternateSetTables[offset].AlternateGlyphs;
+            if (alternates.Length == 0)
+            {
+                return false;
+            }
+
+            // Ordinary alternate features select their first requested value. The
+            // random feature advances once for each replaceable glyph and maps that
+            // value onto the font's alternate set.
+            int alternateIndex = buffer.LookupRandom
+                ? (int)(buffer.NextRandomNumber() % (uint)alternates.Length)
+                : 0;
+
+            buffer.Replace(index, alternates[alternateIndex], feature);
             return true;
         }
 

@@ -243,7 +243,7 @@ internal class GPosTable : Table
                     // Positioning features use the same per-language boundary as
                     // substitution when a fallback font created this segment.
                     CultureInfo nextCulture = ScriptItemizer.ResolveCulture(buffer, ni);
-                    if (!string.Equals(nextCulture.Name, culture.Name, StringComparison.Ordinal))
+                    if (!ReferenceEquals(nextCulture, culture) && !string.Equals(nextCulture.Name, culture.Name, StringComparison.Ordinal))
                     {
                         break;
                     }

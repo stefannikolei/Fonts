@@ -51,7 +51,7 @@ internal static class ScriptItemizer
                 // Language-system features differ within the same script, so a
                 // culture change is a shaping boundary even when the script matches.
                 CultureInfo nextCulture = ResolveCulture(buffer, index + 1);
-                if (!string.Equals(nextCulture.Name, culture.Name, StringComparison.Ordinal))
+                if (!ReferenceEquals(nextCulture, culture) && !string.Equals(nextCulture.Name, culture.Name, StringComparison.Ordinal))
                 {
                     break;
                 }

@@ -56,7 +56,7 @@ public class HarfBuzzDifferentialTests
         TextShapingBuffer shapingBuffer = new();
         shapingBuffer.Add(text);
         shapingBuffer.Direction = rightToLeft ? TextDirection.RightToLeft : TextDirection.LeftToRight;
-        TextShaper.Shape(font, shapingBuffer);
+        TextShaper.ShapeRun(font, shapingBuffer);
 
         ReadOnlySpan<ShapedGlyph> glyphs = shapingBuffer.Glyphs;
 

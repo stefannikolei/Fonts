@@ -166,7 +166,7 @@ public class HarfBuzzCorpusTests
             ? TextDirection.RightToLeft
             : TextDirection.LeftToRight;
 
-        TextShaper.Shape(font, shapingBuffer, featureTags);
+        TextShaper.ShapeRun(font, shapingBuffer, featureTags);
 
         string actual = Describe(shapingBuffer);
 

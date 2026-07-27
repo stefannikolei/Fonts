@@ -108,7 +108,7 @@ public class ShapeTextBenchmark : IDisposable
         // pay, leaving the two sides doing different work.
         this.shapingBuffer.Add(this.text);
         this.shapingBuffer.Direction = this.direction;
-        TextShaper.Shape(this.font!, this.shapingBuffer);
+        TextShaper.ShapeRun(this.font!, this.shapingBuffer);
 
         ReadOnlySpan<ShapedGlyph> glyphs = this.shapingBuffer.Glyphs;
         int advanceSum = 0;

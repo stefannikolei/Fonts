@@ -130,22 +130,21 @@ internal sealed class ShapingScratch
     public void ClearBidiRuns() => this.BidiRunCount = 0;
 
     /// <summary>
-    /// Returns the options carrying the properties of one run, refreshed in place.
-    /// The run is taken as reading the one way throughout, so the direction stands
-    /// whichever way the text would read on its own.
+    /// Returns the options carrying the public shaping request, refreshed in place.
     /// </summary>
     /// <param name="font">The font being shaped against.</param>
-    /// <param name="direction">The direction the run reads in.</param>
-    /// <param name="language">The language the run is written in.</param>
-    /// <param name="features">The feature tags to turn on for the run.</param>
+    /// <param name="direction">The line base direction or directional-run direction.</param>
+    /// <param name="language">The language the text is written in.</param>
+    /// <param name="features">The feature tags to turn on.</param>
+    /// <param name="bidiMode">Whether the request is a logical line or one directional run.</param>
     /// <returns>The options.</returns>
-    public TextOptions GetShapingOptions(Font font, TextDirection direction, CultureInfo language, Tag[] features)
+    public TextOptions GetShapingOptions(Font font, TextDirection direction, CultureInfo language, Tag[] features, TextBidiMode bidiMode)
     {
         TextOptions current = this.shapingOptions ??= new TextOptions(font);
 
         current.Font = font;
         current.TextDirection = direction;
-        current.TextBidiMode = TextBidiMode.Override;
+        current.TextBidiMode = bidiMode;
         current.Culture = language;
         current.FeatureTags = features;
 

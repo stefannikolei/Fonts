@@ -7,19 +7,20 @@ using SixLabors.Fonts.Tables.AdvancedTypographic;
 namespace SixLabors.Fonts;
 
 /// <summary>
-/// Encapsulates logic for shaping one run of text into a positioned glyph stream.
+/// Encapsulates logic for shaping text into a positioned glyph stream.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The text of a run and the properties it is shaped under are set on a
-/// <see cref="TextShapingBuffer"/>, the buffer is shaped against a font, and the
-/// glyphs are read back from it. Shaping applies the font's substitution and
-/// positioning features; it does not divide the text, break lines, or scale.
+/// The text and its properties are set on a <see cref="TextShapingBuffer"/>, the
+/// buffer is shaped against a font, and the glyphs are read back from it. Shaping
+/// applies the font's substitution and positioning features but does not wrap or
+/// scale the text.
 /// </para>
 /// <para>
-/// A run reads one way throughout. A caller holding text of mixed direction
-/// divides it into runs itself, shapes each of them, and places them against one
-/// another once it knows where its lines break.
+/// <see cref="Shape(Font, TextShapingBuffer)"/> treats the text as one unwrapped
+/// logical line and resolves mixed-direction text. <see cref="ShapeRun(Font,
+/// TextShapingBuffer)"/> shapes one directional run that has already been selected
+/// by the caller.
 /// </para>
 /// <para>
 /// Advances and offsets are expressed in font design units; see
@@ -29,31 +30,76 @@ namespace SixLabors.Fonts;
 public static partial class TextShaper
 {
     /// <summary>
-    /// Shapes the buffer's text against the font, replacing the buffer's glyphs.
+    /// Shapes the buffer's text as one unwrapped logical line, replacing the
+    /// buffer's glyphs with the line's visually ordered glyphs.
     /// </summary>
     /// <param name="font">The font to shape against.</param>
-    /// <param name="buffer">The buffer holding the run, which receives the glyphs.</param>
+    /// <param name="buffer">The buffer holding the line, which receives the glyphs.</param>
     public static void Shape(Font font, TextShapingBuffer buffer)
     {
         Guard.NotNull(font, nameof(font));
         Guard.NotNull(buffer, nameof(buffer));
 
-        Shape(font, buffer, []);
+        ShapeIntoBuffer(font, buffer, [], TextBidiMode.Normal);
     }
 
     /// <summary>
-    /// Shapes the buffer's text against the font with the given features turned on,
-    /// replacing the buffer's glyphs.
+    /// Shapes the buffer's text as one unwrapped logical line with the given
+    /// features turned on, replacing the buffer's glyphs with the line's visually
+    /// ordered glyphs.
     /// </summary>
     /// <param name="font">The font to shape against.</param>
-    /// <param name="buffer">The buffer holding the run, which receives the glyphs.</param>
-    /// <param name="features">The feature tags to turn on for the run.</param>
+    /// <param name="buffer">The buffer holding the line, which receives the glyphs.</param>
+    /// <param name="features">The feature tags to turn on for the line.</param>
     public static void Shape(Font font, TextShapingBuffer buffer, Tag[] features)
     {
         Guard.NotNull(font, nameof(font));
         Guard.NotNull(buffer, nameof(buffer));
         Guard.NotNull(features, nameof(features));
 
+        ShapeIntoBuffer(font, buffer, features, TextBidiMode.Normal);
+    }
+
+    /// <summary>
+    /// Shapes the buffer's text as one directional run, replacing the buffer's
+    /// glyphs with the glyphs in reading order.
+    /// </summary>
+    /// <param name="font">The font to shape against.</param>
+    /// <param name="buffer">The buffer holding the run, which receives the glyphs.</param>
+    public static void ShapeRun(Font font, TextShapingBuffer buffer)
+    {
+        Guard.NotNull(font, nameof(font));
+        Guard.NotNull(buffer, nameof(buffer));
+
+        ShapeIntoBuffer(font, buffer, [], TextBidiMode.Override);
+    }
+
+    /// <summary>
+    /// Shapes the buffer's text as one directional run with the given features
+    /// turned on, replacing the buffer's glyphs with the glyphs in reading order.
+    /// </summary>
+    /// <param name="font">The font to shape against.</param>
+    /// <param name="buffer">The buffer holding the run, which receives the glyphs.</param>
+    /// <param name="features">The feature tags to turn on for the run.</param>
+    public static void ShapeRun(Font font, TextShapingBuffer buffer, Tag[] features)
+    {
+        Guard.NotNull(font, nameof(font));
+        Guard.NotNull(buffer, nameof(buffer));
+        Guard.NotNull(features, nameof(features));
+
+        ShapeIntoBuffer(font, buffer, features, TextBidiMode.Override);
+    }
+
+    /// <summary>
+    /// Shapes the buffer under the selected bidirectional contract and publishes
+    /// the resulting glyphs.
+    /// </summary>
+    /// <param name="font">The font to shape against.</param>
+    /// <param name="buffer">The buffer holding the text and receiving the glyphs.</param>
+    /// <param name="features">The feature tags to turn on.</param>
+    /// <param name="bidiMode">Whether the text is a logical line or one directional run.</param>
+    private static void ShapeIntoBuffer(Font font, TextShapingBuffer buffer, Tag[] features, TextBidiMode bidiMode)
+    {
         if (buffer.Text.IsEmpty)
         {
             buffer.Reserve(0);
@@ -64,17 +110,23 @@ public static partial class TextShaper
         ShapingScratch scratch = ScratchPool.Get();
         try
         {
-            TextOptions options = scratch.GetShapingOptions(font, buffer.Direction, buffer.Language, features);
+            TextOptions options = scratch.GetShapingOptions(font, buffer.Direction, buffer.Language, features, bidiMode);
             ShapingBuffer shaped = ShapeCore(buffer.Text, options, scratch, null);
 
-            // Shaping hands the run back in the order it is read, as the callers of
-            // a shaping API expect. A run that reads backwards is turned around whole,
-            // once, after positioning: every record moves, including the characters
-            // carrying no direction of their own such as the joiners. Turning the
-            // run's parts around separately would strand those where they were
-            // written, because they belong to no directional run.
-            if (scratch.RunReadsRightToLeft)
+            if (bidiMode == TextBidiMode.Normal)
             {
+                // ShapeCore deliberately leaves positioned records in logical order
+                // because layout cannot choose visual order until line breaking. This
+                // API fixes the boundary at the complete unwrapped buffer, so the same
+                // per-line L2 transformation used by layout can run immediately.
+                BidiReordering.Reorder(shaped, scratch.BidiRuns, scratch.BidiMap);
+            }
+            else if (scratch.RunReadsRightToLeft)
+            {
+                // A directional run has no internal bidi segmentation: its stated
+                // direction applies to every ordinary character. Turning an RTL run
+                // around whole after positioning keeps joiners and other neutral
+                // records attached to the same neighbours as the logical input.
                 shaped.ReverseRange(0, shaped.Count);
             }
 

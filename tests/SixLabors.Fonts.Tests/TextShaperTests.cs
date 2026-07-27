@@ -108,7 +108,7 @@ public class TextShaperTests
         TextShapingBuffer buffer = new();
         buffer.Add("سلام");
         buffer.Direction = TextDirection.RightToLeft;
-        TextShaper.Shape(font, buffer);
+        TextShaper.ShapeRun(font, buffer);
 
         ReadOnlySpan<ShapedGlyph> glyphs = buffer.Glyphs;
 
@@ -116,6 +116,74 @@ public class TextShaperTests
         for (int i = 1; i < glyphs.Length; i++)
         {
             Assert.True(glyphs[i].CodePointIndex < glyphs[i - 1].CodePointIndex);
+        }
+    }
+
+    [Fact]
+    public void Shape_MixedDirection_ReturnsVisualOrderForOneLine()
+    {
+        const string text = "abc אבג def";
+        Font font = new FontCollection().Add(TestFonts.Anchor2FontFile).CreateFont(72);
+        TextShapingBuffer buffer = new();
+        buffer.Add(text);
+        buffer.Direction = TextDirection.Auto;
+
+        TextShaper.Shape(font, buffer);
+
+        ReadOnlySpan<ShapedGlyph> glyphs = buffer.Glyphs;
+        int[] expectedCodePointIndices = [0, 1, 2, 3, 6, 5, 4, 7, 8, 9, 10];
+        Assert.Equal(expectedCodePointIndices.Length, glyphs.Length);
+        for (int i = 0; i < glyphs.Length; i++)
+        {
+            Assert.Equal(expectedCodePointIndices[i], glyphs[i].CodePointIndex);
+        }
+    }
+
+    [Theory]
+    [InlineData(TextDirection.Auto)]
+    [InlineData(TextDirection.RightToLeft)]
+    public void Shape_MixedDirection_MatchesUnwrappedLayoutOrder(TextDirection direction)
+    {
+        // Every codepoint is in the BMP and produces one glyph, so the shaper's
+        // codepoint indices can be compared directly with layout's UTF-16 indices.
+        const string text = "abc אבג def";
+        Font font = new FontCollection().Add(TestFonts.Anchor2FontFile).CreateFont(72);
+        TextShapingBuffer buffer = new();
+        buffer.Add(text);
+        buffer.Direction = direction;
+
+        TextShaper.Shape(font, buffer);
+
+        TextOptions options = new(font)
+        {
+            TextDirection = direction
+        };
+
+        ReadOnlySpan<GlyphMetrics> layoutGlyphs = TextMeasurer.Measure(text, options).GetGlyphMetrics().Span;
+        ReadOnlySpan<ShapedGlyph> shapedGlyphs = buffer.Glyphs;
+        Assert.Equal(layoutGlyphs.Length, shapedGlyphs.Length);
+        for (int i = 0; i < shapedGlyphs.Length; i++)
+        {
+            Assert.Equal(layoutGlyphs[i].StringIndex, shapedGlyphs[i].CodePointIndex);
+        }
+    }
+
+    [Fact]
+    public void ShapeRun_MixedDirection_UsesStatedDirectionForWholeRun()
+    {
+        const string text = "abc אבג def";
+        Font font = new FontCollection().Add(TestFonts.Anchor2FontFile).CreateFont(72);
+        TextShapingBuffer buffer = new();
+        buffer.Add(text);
+        buffer.Direction = TextDirection.LeftToRight;
+
+        TextShaper.ShapeRun(font, buffer);
+
+        ReadOnlySpan<ShapedGlyph> glyphs = buffer.Glyphs;
+        Assert.Equal(text.Length, glyphs.Length);
+        for (int i = 0; i < glyphs.Length; i++)
+        {
+            Assert.Equal(i, glyphs[i].CodePointIndex);
         }
     }
 

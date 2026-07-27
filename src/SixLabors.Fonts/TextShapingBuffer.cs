@@ -6,17 +6,16 @@ using System.Globalization;
 namespace SixLabors.Fonts;
 
 /// <summary>
-/// A reusable, caller-owned buffer holding one run of text, the properties it is
-/// shaped under, and the glyphs shaping produces. Text and properties are set on
-/// the buffer, the buffer is shaped, and the glyphs are read back from it. Each
-/// shaping call replaces the glyphs; storage grows to its high-water mark and is
-/// retained, so repeated shaping through one instance does not allocate.
+/// A reusable, caller-owned buffer holding text, the properties it is shaped
+/// under, and the glyphs shaping produces. Text and properties are set on the
+/// buffer, the buffer is shaped, and the glyphs are read back from it. Each shaping
+/// call replaces the glyphs.
 /// </summary>
 /// <remarks>
-/// A run reads one way throughout. Text of mixed direction is divided into runs by
-/// the caller, which shapes each of them and places them against one another once
-/// it knows where its lines break. An instance is not thread safe: use one buffer
-/// per shaping thread and reuse it across calls.
+/// <see cref="TextShaper.Shape(Font, TextShapingBuffer)"/> treats the text as one
+/// unwrapped logical line. <see cref="TextShaper.ShapeRun(Font,
+/// TextShapingBuffer)"/> treats it as one directional run. An instance is not
+/// thread safe.
 /// </remarks>
 public sealed class TextShapingBuffer
 {
@@ -42,8 +41,8 @@ public sealed class TextShapingBuffer
     public ReadOnlySpan<char> Text => this.text.AsSpan(0, this.textLength);
 
     /// <summary>
-    /// Gets or sets the direction the run reads in. Shaping takes the text as one
-    /// run reading this way, whichever way it would read on its own.
+    /// Gets or sets the base direction of a logical line, or the direction of a
+    /// directional run.
     /// </summary>
     public TextDirection Direction { get; set; } = TextDirection.LeftToRight;
 
@@ -59,8 +58,8 @@ public sealed class TextShapingBuffer
     public int Count { get; private set; }
 
     /// <summary>
-    /// Gets the shaped glyphs, in the order the run is read: a caller walks them
-    /// forward and adds the advances up.
+    /// Gets the shaped glyphs in visual order for a logical line, or reading order
+    /// for a directional run.
     /// </summary>
     public ReadOnlySpan<ShapedGlyph> Glyphs => this.glyphs.AsSpan(0, this.Count);
 

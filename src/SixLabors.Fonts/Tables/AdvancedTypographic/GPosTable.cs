@@ -3,7 +3,6 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
-using System.Globalization;
 using SixLabors.Fonts.Tables.AdvancedTypographic.GPos;
 using SixLabors.Fonts.Tables.AdvancedTypographic.Shapers;
 using SixLabors.Fonts.Unicode;
@@ -219,9 +218,7 @@ internal class GPosTable : Table
                 continue;
             }
 
-            ScriptClass current = ScriptItemizer.ResolveScript(buffer, i);
-            CultureInfo culture = ScriptItemizer.ResolveCulture(buffer, i);
-            int textRunIndex = buffer[i].TextRunIndex;
+            ScriptItemizer.ShapingRun run = new(buffer, i);
 
             int index = i;
             int count = 1;
@@ -231,36 +228,14 @@ internal class GPosTable : Table
                 // than the text as a whole to ensure that different language shapers do not interfere
                 // with each other when the text contains multiple languages.
                 int ni = i + 1;
-                ref GlyphShapingData nextData = ref buffer[ni];
                 if (!buffer.ShouldProcess(fontMetrics, ni))
                 {
                     break;
                 }
 
-                ScriptClass next = ScriptItemizer.ResolveScript(buffer, ni);
-                if (nextData.TextRunIndex != textRunIndex)
-                {
-                    // Positioning features use the same per-language boundary as
-                    // substitution when a fallback font created this segment.
-                    CultureInfo nextCulture = ScriptItemizer.ResolveCulture(buffer, ni);
-                    if (!ReferenceEquals(nextCulture, culture) && !string.Equals(nextCulture.Name, culture.Name, StringComparison.Ordinal))
-                    {
-                        break;
-                    }
-
-                    textRunIndex = nextData.TextRunIndex;
-                }
-
-                if (next != current &&
-                    current is not ScriptClass.Common and not ScriptClass.Unknown and not ScriptClass.Inherited &&
-                    next is not ScriptClass.Common and not ScriptClass.Unknown and not ScriptClass.Inherited)
+                if (!run.TryInclude(buffer, ni))
                 {
                     break;
-                }
-
-                if (current is ScriptClass.Common or ScriptClass.Unknown or ScriptClass.Inherited)
-                {
-                    current = next;
                 }
 
                 i++;
@@ -272,8 +247,8 @@ internal class GPosTable : Table
                 }
             }
 
-            Tag unicodeScriptTag = this.GetUnicodeScriptTag(current);
-            ShapePlan shapePlan = buffer.GetOrCreatePlan(current, unicodeScriptTag, fontMetrics, culture);
+            Tag unicodeScriptTag = this.GetUnicodeScriptTag(run.Script);
+            ShapePlan shapePlan = buffer.GetOrCreatePlan(run.Script, unicodeScriptTag, fontMetrics, run.Culture);
 
             // Plan positioning features for each glyph. Records seeded across buffers
             // had their feature registrations cleared, so this pass re-plans.

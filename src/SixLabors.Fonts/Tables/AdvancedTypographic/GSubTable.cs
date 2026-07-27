@@ -3,7 +3,6 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
-using System.Globalization;
 using SixLabors.Fonts.Tables.AdvancedTypographic.GSub;
 using SixLabors.Fonts.Tables.AdvancedTypographic.Shapers;
 using SixLabors.Fonts.Unicode;
@@ -164,11 +163,10 @@ internal class GSubTable : Table
             // Choose a shaper based on the script.
             // This determines which features to apply to which glyphs.
             int index = i;
-            ScriptClass current = ScriptItemizer.ReadRun(buffer, ref i, maxCount, out int count);
+            ScriptItemizer.ShapingRun run = ScriptItemizer.ReadRun(buffer, ref i, maxCount, out int count);
 
-            Tag unicodeScriptTag = this.GetUnicodeScriptTag(current);
-            CultureInfo culture = ScriptItemizer.ResolveCulture(buffer, index);
-            ShapePlan shapePlan = buffer.GetOrCreatePlan(current, unicodeScriptTag, fontMetrics, culture);
+            Tag unicodeScriptTag = this.GetUnicodeScriptTag(run.Script);
+            ShapePlan shapePlan = buffer.GetOrCreatePlan(run.Script, unicodeScriptTag, fontMetrics, run.Culture);
 
             BaseShaper shaper = shapePlan.Shaper;
 
@@ -227,7 +225,7 @@ internal class GSubTable : Table
 
             // Record the segment with its post-substitution range so the in-place
             // positioning pass can reuse the plan; one plan then drives both tables.
-            buffer.SegmentPlans.Add((index, count, current, shapePlan));
+            buffer.SegmentPlans.Add((index, count, run.Script, shapePlan));
         }
     }
 

@@ -33,43 +33,17 @@ internal static class ScriptItemizer
     /// <param name="index">The zero-based index of the run's first record, left on its last.</param>
     /// <param name="maxCount">The largest record count a run may reach.</param>
     /// <param name="count">When this method returns, contains the number of records in the run.</param>
-    /// <returns>The script of the run.</returns>
-    public static ScriptClass ReadRun(ShapingBuffer buffer, ref int index, int maxCount, out int count)
+    /// <returns>The script and culture shared by the run.</returns>
+    public static ShapingRun ReadRun(ShapingBuffer buffer, ref int index, int maxCount, out int count)
     {
-        ScriptClass current = ResolveScript(buffer, index);
-        CultureInfo culture = ResolveCulture(buffer, index);
-        int textRunIndex = buffer[index].TextRunIndex;
+        ShapingRun run = new(buffer, index);
         count = 1;
 
         while (index < buffer.Count - 1)
         {
-            CodePoint nextCodePoint = buffer[index + 1].CodePoint;
-            ScriptClass next = ResolveScript(buffer, index + 1);
-            int nextTextRunIndex = buffer[index + 1].TextRunIndex;
-            if (nextTextRunIndex != textRunIndex)
-            {
-                // Language-system features differ within the same script, so a
-                // culture change is a shaping boundary even when the script matches.
-                CultureInfo nextCulture = ResolveCulture(buffer, index + 1);
-                if (!ReferenceEquals(nextCulture, culture) && !string.Equals(nextCulture.Name, culture.Name, StringComparison.Ordinal))
-                {
-                    break;
-                }
-
-                textRunIndex = nextTextRunIndex;
-            }
-
-            if (next != current &&
-                current is not ScriptClass.Common and not ScriptClass.Unknown and not ScriptClass.Inherited &&
-                next is not ScriptClass.Common and not ScriptClass.Unknown and not ScriptClass.Inherited &&
-                !ScriptExtensionData.Contains(nextCodePoint, current))
+            if (!run.TryInclude(buffer, index + 1))
             {
                 break;
-            }
-
-            if (current is ScriptClass.Common or ScriptClass.Unknown or ScriptClass.Inherited)
-            {
-                current = next;
             }
 
             index++;
@@ -81,7 +55,7 @@ internal static class ScriptItemizer
             }
         }
 
-        return current;
+        return run;
     }
 
     /// <summary>
@@ -127,12 +101,11 @@ internal static class ScriptItemizer
         for (int i = 0; i < buffer.Count; i++)
         {
             int index = i;
-            ScriptClass script = ReadRun(buffer, ref i, maxCount, out int count);
+            ShapingRun run = ReadRun(buffer, ref i, maxCount, out int count);
 
             // With no substitution table the font offers no script of its own, so
             // the run is planned against the default design.
-            CultureInfo culture = ResolveCulture(buffer, index);
-            ShapePlan shapePlan = buffer.GetOrCreatePlan(script, default, fontMetrics, culture);
+            ShapePlan shapePlan = buffer.GetOrCreatePlan(run.Script, default, fontMetrics, run.Culture);
 
             // Preparing the text can insert records, so the run grows with it.
             int collectionCount = buffer.Count;
@@ -167,7 +140,76 @@ internal static class ScriptItemizer
                 count += delta;
             }
 
-            buffer.SegmentPlans.Add((index, count, script, shapePlan));
+            buffer.SegmentPlans.Add((index, count, run.Script, shapePlan));
+        }
+    }
+
+    /// <summary>
+    /// Tracks the script and language shared by one shaping run.
+    /// </summary>
+    public struct ShapingRun
+    {
+        private int textRunIndex;
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ShapingRun"/> struct from the first shaping record in a run.
+        /// </summary>
+        /// <param name="buffer">The glyph shaping buffer.</param>
+        /// <param name="index">The zero-based index of the first record.</param>
+        public ShapingRun(ShapingBuffer buffer, int index)
+        {
+            this.Script = ResolveScript(buffer, index);
+            this.Culture = ResolveCulture(buffer, index);
+            this.textRunIndex = buffer[index].TextRunIndex;
+        }
+
+        /// <summary>
+        /// Gets the script resolved for the run.
+        /// </summary>
+        public ScriptClass Script { get; private set; }
+
+        /// <summary>
+        /// Gets the culture resolved for the run.
+        /// </summary>
+        public CultureInfo Culture { get; }
+
+        /// <summary>
+        /// Attempts to extend the run through one adjacent shaping record.
+        /// </summary>
+        /// <param name="buffer">The glyph shaping buffer.</param>
+        /// <param name="index">The zero-based index of the adjacent record.</param>
+        /// <returns><see langword="true"/> when the record belongs to this run.</returns>
+        public bool TryInclude(ShapingBuffer buffer, int index)
+        {
+            CodePoint codePoint = buffer[index].CodePoint;
+            ScriptClass next = ResolveScript(buffer, index);
+            int nextTextRunIndex = buffer[index].TextRunIndex;
+            if (nextTextRunIndex != this.textRunIndex)
+            {
+                // Language-system features differ within the same script, so a
+                // culture change is a shaping boundary even when the script matches.
+                CultureInfo nextCulture = ResolveCulture(buffer, index);
+                if (!ReferenceEquals(nextCulture, this.Culture) && !string.Equals(nextCulture.Name, this.Culture.Name, StringComparison.Ordinal))
+                {
+                    return false;
+                }
+            }
+
+            if (next != this.Script &&
+                this.Script is not ScriptClass.Common and not ScriptClass.Unknown and not ScriptClass.Inherited &&
+                next is not ScriptClass.Common and not ScriptClass.Unknown and not ScriptClass.Inherited &&
+                !ScriptExtensionData.Contains(codePoint, this.Script))
+            {
+                return false;
+            }
+
+            if (this.Script is ScriptClass.Common or ScriptClass.Unknown or ScriptClass.Inherited)
+            {
+                this.Script = next;
+            }
+
+            this.textRunIndex = nextTextRunIndex;
+            return true;
         }
     }
 }

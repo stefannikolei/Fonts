@@ -9,6 +9,7 @@ using HBBuffer = HarfBuzzSharp.Buffer;
 using HBFace = HarfBuzzSharp.Face;
 using HBFont = HarfBuzzSharp.Font;
 using HBTag = HarfBuzzSharp.Tag;
+using HBVariation = HarfBuzzSharp.Variation;
 using ShapingTag = SixLabors.Fonts.Tables.AdvancedTypographic.Tag;
 
 namespace SixLabors.Fonts.Tests;
@@ -69,7 +70,6 @@ public class HarfBuzzCorpusTests
     /// </summary>
     private static readonly string[] UnsupportedOptions =
     [
-        "--variations",
         "--font-size",
         "--ned",
         "--remove-default-ignorables",
@@ -156,6 +156,9 @@ public class HarfBuzzCorpusTests
         using HBFont referenceFont = new(face);
         referenceFont.SetFunctionsOpenType();
 
+        Assert.True(TryReadVariations(options, out HBVariation[] referenceVariations, out FontVariation[] variations));
+        referenceFont.SetVariations(referenceVariations);
+
         using HBBuffer buffer = new();
         buffer.AddUtf16(text);
 
@@ -176,7 +179,7 @@ public class HarfBuzzCorpusTests
 
         string expected = Describe(buffer);
 
-        Font font = new FontCollection().Add(fontPath).CreateFont(16);
+        Font font = new FontCollection().Add(fontPath).CreateFont(16, variations);
         ShapingTag[] featureTags = features
             .Where(f => f.Value != 0)
             .Select(f => ShapingTag.Parse(f.Tag.ToString()))
@@ -411,6 +414,11 @@ public class HarfBuzzCorpusTests
             return true;
         }
 
+        if (!TryReadVariations(options, out HBVariation[] _, out FontVariation[] _))
+        {
+            return true;
+        }
+
         string features = ReadOptionValue(options, "--features");
         foreach (string entry in features.Split(',', StringSplitOptions.RemoveEmptyEntries))
         {
@@ -433,6 +441,46 @@ public class HarfBuzzCorpusTests
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Reads the design-space variation coordinates requested by a corpus case for
+    /// both shaping engines.
+    /// </summary>
+    /// <param name="options">The corpus command-line options.</param>
+    /// <param name="referenceVariations">When this method returns, contains the reference font coordinates.</param>
+    /// <param name="variations">When this method returns, contains this library's font coordinates.</param>
+    /// <returns><see langword="true"/> when every requested coordinate could be read.</returns>
+    private static bool TryReadVariations(string options, out HBVariation[] referenceVariations, out FontVariation[] variations)
+    {
+        string specification = ReadOptionValue(options, "--variations");
+        if (specification.Length == 0)
+        {
+            referenceVariations = [];
+            variations = [];
+            return true;
+        }
+
+        List<HBVariation> reference = [];
+        List<FontVariation> actual = [];
+        foreach (string entry in specification.Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            string[] parts = entry.Split('=', 2);
+            if (parts.Length != 2 || parts[0].Length != 4 || !float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out float value))
+            {
+                referenceVariations = [];
+                variations = [];
+                return false;
+            }
+
+            string tag = parts[0];
+            reference.Add(new HBVariation { Tag = new HBTag(tag[0], tag[1], tag[2], tag[3]), Value = value });
+            actual.Add(new FontVariation(tag, value));
+        }
+
+        referenceVariations = reference.ToArray();
+        variations = actual.ToArray();
+        return true;
     }
 
     /// <summary>

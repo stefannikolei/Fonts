@@ -639,8 +639,8 @@ internal partial class StreamFontMetrics : FontMetrics
             {
                 if (fvar.Axes[i].Tag == variation.Tag)
                 {
+                    // A malformed but usable font can repeat an axis tag. A tag-value setting applies to every matching axis.
                     userCoordinates[i] = variation.Value;
-                    break;
                 }
             }
         }

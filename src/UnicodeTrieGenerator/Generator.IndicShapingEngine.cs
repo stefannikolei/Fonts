@@ -126,8 +126,6 @@ public static partial class Generator
         // Characters that act like consonants.
         { 0x0A72, Categories.C },
         { 0x0A73, Categories.C },
-        { 0x1CF5, Categories.C },
-        { 0x1CF6, Categories.C },
 
         // TODO: These should only be allowed after a visarga.
         // For now, treat them like regular tone marks (A).

@@ -1,6 +1,7 @@
 // Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
+using System.Globalization;
 using SixLabors.Fonts.Tables.AdvancedTypographic.GPos;
 using SixLabors.Fonts.Unicode;
 
@@ -961,7 +962,7 @@ internal static class AdvancedTypographicUtils
     }
 
     /// <summary>
-    /// Determines whether the specified glyph is a mark glyph based on GDEF class or Unicode properties.
+    /// Determines whether the specified glyph is a mark glyph based on its font-defined class or the fallback Unicode classification.
     /// </summary>
     /// <param name="fontMetrics">The font metrics.</param>
     /// <param name="glyphId">The glyph identifier.</param>
@@ -974,7 +975,7 @@ internal static class AdvancedTypographicUtils
             return glyphClass == GlyphClassDef.MarkGlyph;
         }
 
-        return CodePoint.IsMark(shapingData.CodePoint);
+        return IsFallbackMark(ref shapingData);
     }
 
     /// <summary>
@@ -1024,7 +1025,7 @@ internal static class AdvancedTypographicUtils
         else
         {
             // TODO: We may have to store each codepoint. FontKit checks all.
-            isMark = CodePoint.IsMark(shapingData.CodePoint);
+            isMark = IsFallbackMark(ref shapingData);
             isBase = !isMark;
             isLigature = shapingData.CodePointCount > 1;
         }
@@ -1038,6 +1039,53 @@ internal static class AdvancedTypographicUtils
         shapingData.CachedShapingClass = result;
         shapingData.ShapingClassCacheKey = glyphId;
         return result;
+    }
+
+    /// <summary>
+    /// Determines whether a glyph without a font-defined class receives the fallback mark class.
+    /// </summary>
+    /// <param name="shapingData">The Unicode properties carried by the glyph.</param>
+    /// <returns><see langword="true"/> when the glyph receives the mark class; otherwise, <see langword="false"/>.</returns>
+    private static bool IsFallbackMark(ref GlyphShapingData shapingData)
+    {
+        // Spacing and enclosing marks retain their advances when a font supplies no
+        // glyph classes. Default-ignorables are also bases so they remain visible to
+        // lookup matching instead of being skipped by mark-specific lookup flags.
+        return CodePoint.GetGeneralCategory(shapingData.CodePoint) == UnicodeCategory.NonSpacingMark
+            && !shapingData.IsDefaultIgnorable;
+    }
+
+    /// <summary>
+    /// Zeros the advances of mark glyphs in a positioned segment.
+    /// </summary>
+    /// <param name="fontMetrics">The font metrics supplying glyph classes.</param>
+    /// <param name="buffer">The glyph shaping buffer.</param>
+    /// <param name="index">The zero-based index of the segment.</param>
+    /// <param name="count">The number of glyphs in the segment.</param>
+    /// <param name="adjustOffsets">Whether to move each mark back by its original advance before zeroing it.</param>
+    public static void ZeroMarkAdvances(FontMetrics fontMetrics, ShapingBuffer buffer, int index, int count, bool adjustOffsets)
+    {
+        int end = index + count;
+        for (int i = index; i < end; i++)
+        {
+            ref GlyphShapingData data = ref buffer[i];
+            if (!IsMarkGlyph(fontMetrics, data.GlyphId, ref data))
+            {
+                continue;
+            }
+
+            ref GlyphShapingPosition position = ref buffer.PositionAt(i);
+            if (adjustOffsets && data.Direction == TextDirection.LeftToRight)
+            {
+                // With no positioning table, a forward-flowing mark hangs over
+                // the preceding glyph after its advance is removed.
+                position.Bounds.X -= position.Bounds.Width;
+                position.Bounds.Y -= position.Bounds.Height;
+            }
+
+            position.Bounds.Width = 0;
+            position.Bounds.Height = 0;
+        }
     }
 
     /// <summary>

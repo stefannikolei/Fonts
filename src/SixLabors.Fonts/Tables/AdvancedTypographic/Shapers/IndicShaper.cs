@@ -540,6 +540,21 @@ internal sealed class IndicShaper : DefaultShaper
                 goto Increment;
             }
 
+            // Kannada preserves a legacy spelling in which Ra + Halant + ZWJ
+            // behaves as Ra + ZWJ + Halant. Move only the shaping records; source
+            // offsets remain attached to their logical text slots.
+            if (this.ScriptClass == ScriptClass.Kannada
+                && start + 3 <= end
+                && !buffer[start].IsLigated
+                && buffer[start].Syllable.IndicCategory == Categories.Ra
+                && !buffer[start + 1].IsLigated
+                && buffer[start + 1].Syllable.IndicCategory == Categories.H
+                && !buffer[start + 2].IsLigated
+                && buffer[start + 2].Syllable.IndicCategory == Categories.ZWJ)
+            {
+                buffer.MoveGlyph(start + 2, start + 1);
+            }
+
             // 1. Find base consonant:
             //
             // The shaping engine finds the base consonant of the syllable, using the
@@ -754,24 +769,12 @@ internal sealed class IndicShaper : DefaultShaper
             }
 
             // For old-style Indic script tags, move the first post-base Halant after
-            // last consonant.
-            //
-            // Reports suggest that in some scripts Uniscribe does this only if there
-            // is *not* a Halant after last consonant already (eg. Kannada), while it
-            // does it unconditionally in other scripts (eg. Malayalam).  We don't
-            // currently know about other scripts, so we single out Malayalam for now.
-            //
-            // Kannada test case:
-            // U+0C9A,U+0CCD,U+0C9A,U+0CCD
-            // With some versions of Lohit Kannada.
-            // https://bugs.freedesktop.org/show_bug.cgi?id=59118
-            //
-            // Malayalam test case:
-            // U+0D38,U+0D4D,U+0D31,U+0D4D,U+0D31,U+0D4D
-            // With lohit-ttf-20121122/Lohit-Malayalam.ttf
+            // the last consonant. Kannada alone blocks the move when another halant
+            // already terminates the sequence; the other old-style scripts move it
+            // unconditionally.
             if (this.isOldSpec)
             {
-                bool disallowDoubleHalants = this.ScriptClass != ScriptClass.Malayalam;
+                bool disallowDoubleHalants = this.ScriptClass == ScriptClass.Kannada;
                 for (int i = basePosition + 1; i < end; i++)
                 {
                     if (buffer[i].Syllable.IndicCategory == Categories.H)
@@ -881,13 +884,45 @@ internal sealed class IndicShaper : DefaultShaper
                 return pa - pb;
             });
 
-            // Find base again
+            // Stable position sorting groups every pre-base matra at the front but
+            // leaves adjacent split-matra pieces in logical order. Reverse the full
+            // pre-base range, then reverse each matra-led piece back independently;
+            // this reverses the pieces without reversing the marks within a piece.
+            int firstLeftMatra = end;
+            int lastLeftMatra = end;
+            basePosition = end;
             for (int i = start; i < end; i++)
             {
                 if (buffer[i].Syllable.IndicPosition == Positions.Base_C)
                 {
                     basePosition = i;
                     break;
+                }
+
+                if (buffer[i].Syllable.IndicPosition == Positions.Pre_M)
+                {
+                    if (firstLeftMatra == end)
+                    {
+                        firstLeftMatra = i;
+                    }
+
+                    lastLeftMatra = i;
+                }
+            }
+
+            if (firstLeftMatra < lastLeftMatra)
+            {
+                buffer.ReverseRange(firstLeftMatra, lastLeftMatra + 1);
+
+                uint matraFlags = Flag(Categories.M) | Flag(Categories.MPst);
+                int pieceStart = firstLeftMatra;
+                for (int i = pieceStart; i <= lastLeftMatra; i++)
+                {
+                    if ((FlagUnsafe(buffer[i].Syllable.IndicCategory) & matraFlags) != 0)
+                    {
+                        buffer.ReverseRange(pieceStart, i + 1);
+                        pieceStart = i + 1;
+                    }
                 }
             }
 
@@ -937,16 +972,14 @@ internal sealed class IndicShaper : DefaultShaper
                 // Test case: U+0924,U+094D,U+0930,U+094d,U+0915
                 // with Sanskrit 2003 font.
                 //
-                // However, note that Ra,Halant,ZWJ is the correct way to
-                // request eyelash form of Ra, so we wouldn't inhibit it
-                // in that sequence.
-                //
-                // Test case: U+0924,U+094D,U+0930,U+094d,U+200D,U+0915
+                // Ra + Halant immediately before the base receives the below-base
+                // feature. Earlier pairs also receive it unless ZWJ follows, because
+                // that explicit joiner requests the eyelash form instead.
                 for (int i = start; i + 1 < basePosition; i++)
                 {
-                    if (buffer[i].Syllable.IndicCategory == Categories.Ra &&
-                        buffer[i + 1].Syllable.IndicCategory == Categories.H &&
-                        (i + 1 == basePosition || buffer[i + 2].Syllable.IndicCategory == Categories.ZWJ))
+                    if (buffer[i].Syllable.IndicCategory == Categories.Ra
+                        && buffer[i + 1].Syllable.IndicCategory == Categories.H
+                        && (i + 2 == basePosition || buffer[i + 2].Syllable.IndicCategory != Categories.ZWJ))
                     {
                         buffer.EnableShapingFeature(i, this.Features.GetMask(BlwfTag));
                         buffer.EnableShapingFeature(i + 1, this.Features.GetMask(BlwfTag));
@@ -1184,10 +1217,11 @@ internal sealed class IndicShaper : DefaultShaper
                             ref GlyphShapingData current = ref buffer[i];
                             if ((current.FeatureMask & this.Features.GetMask(PrefTag)) != 0)
                             {
-                                if (!current.IsSubstituted && current.IsLigated && !current.IsDecomposed)
+                                // A pre-base candidate that did not finish as a
+                                // ligature did not form. Treat the following glyph as
+                                // the base so later matra movement respects the block.
+                                if (!(current.IsSubstituted && current.IsLigated && !current.IsDecomposed))
                                 {
-                                    // Ok, this was a 'pref' candidate but didn't form any.
-                                    // Base is around here...
                                     basePosition = i;
                                     while (basePosition < end && IsHalant(ref buffer[basePosition]))
                                     {
@@ -1272,8 +1306,10 @@ internal sealed class IndicShaper : DefaultShaper
             // features, the glyph can be moved closer to the main consonant based on
             // whether half-forms had been formed. Actual position for the matra is
             // defined as "after last standalone halant glyph, after initial matra
-            // position and before the main consonant". If ZWJ or ZWNJ follow this
-            // halant, position is moved after it.
+            // position and before the main consonant". A halant followed by ZWJ is
+            // not a valid destination, so the search continues toward the original
+            // matra position. Halant followed by ZWNJ terminates the syllable in the
+            // state machine and needs no special handling here.
             //
             // Otherwise there can't be any pre-base matra characters.
             if (start + 1 < end && start < basePosition)
@@ -1286,27 +1322,41 @@ internal sealed class IndicShaper : DefaultShaper
                 // We want to position matra after them.
                 if (this.ScriptClass is not ScriptClass.Malayalam and not ScriptClass.Tamil)
                 {
-                    while (newPos > start && (FlagUnsafe(buffer[newPos].Syllable.IndicCategory) & (Flag(Categories.M) | HalantFlags)) == 0)
+                    bool searchAgain;
+                    do
                     {
-                        newPos--;
-                    }
+                        searchAgain = false;
 
-                    // If we found no Halant we are done.
-                    // Otherwise only proceed if the Halant does
-                    // not belong to the Matra itself!
-                    ref GlyphShapingData current = ref buffer[newPos];
-                    if (IsHalant(ref current) && current.Syllable.IndicPosition != Positions.Pre_M)
-                    {
-                        // If ZWJ or ZWNJ follow this halant, position is moved after it.
-                        if (newPos + 1 < end && IsJoiner(ref buffer[newPos + 1]))
+                        // Post-base matras also delimit the search even though their
+                        // category is distinct from ordinary matras.
+                        uint destinationFlags = Flag(Categories.M) | Flag(Categories.MPst) | HalantFlags;
+                        while (newPos > start && (FlagUnsafe(buffer[newPos].Syllable.IndicCategory) & destinationFlags) == 0)
                         {
-                            newPos++;
+                            newPos--;
+                        }
+
+                        ref GlyphShapingData current = ref buffer[newPos];
+                        if (IsHalant(ref current) && current.Syllable.IndicPosition != Positions.Pre_M)
+                        {
+                            // A ZWJ preserves the half-form request and prevents this
+                            // halant from pulling the matra inward. Continue searching
+                            // before the halant instead of moving past the joiner.
+                            if (newPos + 1 < end
+                                && buffer[newPos + 1].Syllable.IndicCategory == Categories.ZWJ
+                                && newPos > start)
+                            {
+                                newPos--;
+                                searchAgain = true;
+                            }
+                        }
+                        else
+                        {
+                            // No standalone halant was found, or this halant belongs
+                            // to the pre-base matra itself, so retain the initial order.
+                            newPos = start;
                         }
                     }
-                    else
-                    {
-                        newPos = start; // No move.
-                    }
+                    while (searchAgain);
                 }
 
                 if (start < newPos && buffer[newPos].Syllable.IndicPosition != Positions.Pre_M)
@@ -1560,9 +1610,30 @@ internal sealed class IndicShaper : DefaultShaper
                 }
             }
 
-            // Apply 'init' to the Left Matra if it's a word start.
-            if (buffer[start].Syllable.IndicPosition == Positions.Pre_M &&
-                (start == 0 || CodePoint.GetGeneralCategory(buffer[start - 1].CodePoint) is not UnicodeCategory.NonSpacingMark and not UnicodeCategory.Format))
+            // Apply 'init' to a left matra only at the start of a word. Letters,
+            // marks, format controls, and the non-public character categories all
+            // continue the preceding word for this feature.
+            bool isInitialMatra = buffer[start].Syllable.IndicPosition == Positions.Pre_M;
+            bool isWordStart = start == 0;
+            if (isInitialMatra && !isWordStart)
+            {
+                UnicodeCategory previousCategory = CodePoint.GetGeneralCategory(buffer[start - 1].CodePoint);
+                isWordStart = previousCategory is not (
+                    UnicodeCategory.Format
+                    or UnicodeCategory.OtherNotAssigned
+                    or UnicodeCategory.PrivateUse
+                    or UnicodeCategory.Surrogate
+                    or UnicodeCategory.LowercaseLetter
+                    or UnicodeCategory.ModifierLetter
+                    or UnicodeCategory.OtherLetter
+                    or UnicodeCategory.TitlecaseLetter
+                    or UnicodeCategory.UppercaseLetter
+                    or UnicodeCategory.SpacingCombiningMark
+                    or UnicodeCategory.EnclosingMark
+                    or UnicodeCategory.NonSpacingMark);
+            }
+
+            if (isInitialMatra && isWordStart)
             {
                 buffer.EnableShapingFeature(start, this.Features.GetMask(InitTag));
             }

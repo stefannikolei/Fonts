@@ -314,7 +314,7 @@ internal class GPosTable : Table
 
         if (shapePlan.Shaper.MarkZeroingMode == MarkZeroingMode.PreGPos)
         {
-            ZeroMarkAdvances(fontMetrics, buffer, index, count);
+            AdvancedTypographicUtils.ZeroMarkAdvances(fontMetrics, buffer, index, count, false);
         }
 
         // Stages are applied in pause-delimited groups: a stage action is a
@@ -382,9 +382,10 @@ internal class GPosTable : Table
         EndLookups:
         if (shapePlan.Shaper.MarkZeroingMode == MarkZeroingMode.PostGpos)
         {
-            ZeroMarkAdvances(fontMetrics, buffer, index, count);
+            AdvancedTypographicUtils.ZeroMarkAdvances(fontMetrics, buffer, index, count, false);
         }
 
+        ZeroDefaultIgnorableAdvances(buffer, index, count);
         FixCursiveAttachment(buffer, index, count);
         FixMarkAttachment(buffer, index, count);
         UpdatePositions(buffer, index, count);
@@ -613,6 +614,46 @@ internal class GPosTable : Table
     }
 
     /// <summary>
+    /// Zeros the movement-axis geometry of default ignorables before attachment offsets are resolved.
+    /// </summary>
+    /// <param name="buffer">The glyph positioning buffer.</param>
+    /// <param name="index">The starting index.</param>
+    /// <param name="count">The number of glyphs to process.</param>
+    private static void ZeroDefaultIgnorableAdvances(ShapingBuffer buffer, int index, int count)
+    {
+        if (!buffer.HasDefaultIgnorables)
+        {
+            return;
+        }
+
+        bool isVertical = buffer.TextOptions.LayoutMode.IsVertical();
+        int end = index + count;
+        for (int i = index; i < end; i++)
+        {
+            ref GlyphShapingData data = ref buffer[i];
+            if (!data.IsDefaultIgnorable || data.IsSubstituted)
+            {
+                continue;
+            }
+
+            // Attachment propagation sums every intervening advance. The invisible
+            // record therefore has to become zero-width before that sum is evaluated,
+            // while retaining its cross-axis adjustment until final hiding.
+            ref GlyphShapingPosition position = ref buffer.PositionAt(i);
+            position.Bounds.Width = 0;
+            position.Bounds.Height = 0;
+            if (isVertical)
+            {
+                position.Bounds.Y = 0;
+            }
+            else
+            {
+                position.Bounds.X = 0;
+            }
+        }
+    }
+
+    /// <summary>
     /// Fixes cursive attachment positioning by propagating Y (or X for vertical) offsets.
     /// </summary>
     /// <remarks>
@@ -717,28 +758,6 @@ internal class GPosTable : Table
                         position.Bounds.Y += buffer.PositionAt(k).Bounds.Height;
                     }
                 }
-            }
-        }
-    }
-
-    /// <summary>
-    /// Zeros the advance widths and heights for mark glyphs within the specified range.
-    /// </summary>
-    /// <param name="fontMetrics">The font metrics.</param>
-    /// <param name="buffer">The glyph positioning buffer.</param>
-    /// <param name="index">The starting index.</param>
-    /// <param name="count">The number of glyphs to process.</param>
-    private static void ZeroMarkAdvances(FontMetrics fontMetrics, ShapingBuffer buffer, int index, int count)
-    {
-        for (int i = 0; i < count; i++)
-        {
-            int currentIndex = i + index;
-            ref GlyphShapingData data = ref buffer[currentIndex];
-            if (AdvancedTypographicUtils.IsMarkGlyph(fontMetrics, data.GlyphId, ref data))
-            {
-                ref GlyphShapingPosition position = ref buffer.PositionAt(currentIndex);
-                position.Bounds.Width = 0;
-                position.Bounds.Height = 0;
             }
         }
     }

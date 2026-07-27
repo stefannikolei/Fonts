@@ -149,7 +149,7 @@ internal sealed class ShapePlan
         TextOptions textOptions,
         Tag[] languageTags)
     {
-        BaseShaper shaper = ShaperFactory.Create(script, scriptTag, fontMetrics, textOptions);
+        BaseShaper shaper = ShaperFactory.Create(script, scriptTag, fontMetrics, textOptions, languageTags);
         List<ShapingStage> stages = shaper.GetShapingStages();
 
         _ = fontMetrics.TryGetGSubTable(out GSubTable? gsubTable);

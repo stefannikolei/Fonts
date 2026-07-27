@@ -97,6 +97,14 @@ internal static class UnicodeData
         return MarkOrderingData.Classes[GetCanonicalCombiningClass(codePoint)];
     }
 
+    /// <summary>
+    /// Determines whether an Arabic mark modifies the combining mark that follows it.
+    /// </summary>
+    /// <param name="codePoint">The code point to evaluate.</param>
+    /// <returns><see langword="true"/> when the character is a modifier combining mark; otherwise, <see langword="false"/>.</returns>
+    public static bool IsArabicModifierCombiningMark(uint codePoint)
+        => MarkOrderingData.IsArabicModifierCombiningMark(codePoint);
+
     private static UnicodeTrie GetBidiTrie() => new(BidiTrie.Data);
 
     private static UnicodeTrie GetBidiMirrorTrie() => new(BidiMirrorTrie.Data);

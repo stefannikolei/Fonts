@@ -106,7 +106,9 @@ internal static class LookupType3SubTable
 
         /// <inheritdoc/>
         /// <remarks>
-        /// HarfBuzz 14.2.1, <c>tests/harfbuzz/src/OT/Layout/GPOS/CursivePosFormat1.hh</c>, <c>OT::Layout::GPOS_impl::CursivePosFormat1_2::apply</c>, reads the entry anchor from the current glyph and uses <c>skipping_iterator_t::prev</c> to find the preceding lookup-visible glyph whose exit anchor connects to it. The iterator's filtering behavior is defined by <c>matcher_t::may_skip</c> and <c>skipping_iterator_t::match</c> in <c>tests/harfbuzz/src/hb-ot-layout-gsubgpos.hh</c>. This OpenType lookup traversal rule is not derivable from the Unicode Character Database.
+        /// The entry anchor connects to the closest preceding glyph visible under
+        /// the lookup flags. Default-ignorables remain in the buffer but are
+        /// transparent to positioning lookups.
         /// </remarks>
         public override bool TryUpdatePosition(
             FontMetrics fontMetrics,
@@ -137,8 +139,9 @@ internal static class LookupType3SubTable
 
             // Cursive attachment joins the current glyph to the closest preceding
             // glyph that the lookup can see. In particular, marks excluded by the
-            // lookup's filtering set are transparent to this search.
+            // lookup's filtering set and default-ignorables are transparent.
             SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
+            iterator.SetMatchContext(uint.MaxValue, false);
             int previousIndex = iterator.Prev();
             if (previousIndex < 0)
             {

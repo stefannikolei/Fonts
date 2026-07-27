@@ -71,6 +71,31 @@ internal struct GlyphShapingData
     private const ushort HiddenIgnorableFlag = 1 << 9;
 
     /// <summary>
+    /// The <see cref="flags"/> bit recording a mark-order override of 22.
+    /// </summary>
+    private const ushort MarkOrder22Flag = 1 << 10;
+
+    /// <summary>
+    /// The <see cref="flags"/> bit recording a mark-order override of 26.
+    /// </summary>
+    private const ushort MarkOrder26Flag = 1 << 11;
+
+    /// <summary>
+    /// The <see cref="flags"/> bit recording that this is a fixed stretch tile.
+    /// </summary>
+    private const ushort FixedStretchFlag = 1 << 12;
+
+    /// <summary>
+    /// The <see cref="flags"/> bit recording that this is a repeating stretch tile.
+    /// </summary>
+    private const ushort RepeatingStretchFlag = 1 << 13;
+
+    /// <summary>
+    /// The <see cref="flags"/> bits reserved for the script-specific mark-order override.
+    /// </summary>
+    private const ushort MarkOrderFlags = MarkOrder22Flag | MarkOrder26Flag;
+
+    /// <summary>
     /// The <see cref="flags"/> bit recording that <see cref="shapingClassCacheId"/>
     /// holds the glyph id <see cref="CachedShapingClass"/> was computed for. A default
     /// record therefore reports an invalid cache.
@@ -78,18 +103,15 @@ internal struct GlyphShapingData
     private const ushort ShapingClassCacheValidFlag = 1 << 6;
 
     /// <summary>
-    /// The modulus folding ligature ids into the stored byte range 1..255, keeping a
-    /// live id distinct from the zero not-a-ligature value. Id equality is only ever
-    /// compared between a mark and its neighbouring ligature, where folded ids stay
-    /// unique.
+    /// The modulus folding ligature ids into the three-bit range 1..7. Zero remains
+    /// the not-a-ligature value, so allocation skips it when the serial wraps.
     /// </summary>
-    private const int LigatureIdModulus = byte.MaxValue;
+    private const int LigatureIdModulus = 7;
 
     private ushort glyphId;
 
     /// <summary>
-    /// The ligature id folded into byte range, or zero when the glyph is not a
-    /// ligature.
+    /// The three-bit ligature id, or zero when the glyph is not a ligature.
     /// </summary>
     private byte ligatureId;
 
@@ -163,6 +185,9 @@ internal struct GlyphShapingData
         this.IsZwnj = data.IsZwnj;
         this.IsZwj = data.IsZwj;
         this.IsHiddenIgnorable = data.IsHiddenIgnorable;
+        this.MarkOrderOverride = data.MarkOrderOverride;
+        this.IsFixedStretch = data.IsFixedStretch;
+        this.IsRepeatingStretch = data.IsRepeatingStretch;
 
         this.Syllable = data.Syllable;
 
@@ -266,7 +291,7 @@ internal struct GlyphShapingData
 
     /// <summary>
     /// Gets or sets the id of any ligature this glyph is a member of. Zero means the
-    /// glyph is not a ligature member; assigned ids fold into the stored byte range
+    /// glyph is not a ligature member; assigned ids fold into the three-bit range
     /// while remaining distinct from zero.
     /// </summary>
     public int LigatureId
@@ -351,6 +376,26 @@ internal struct GlyphShapingData
     }
 
     /// <summary>
+    /// Gets or sets a value indicating whether this glyph is a fixed tile in a
+    /// stretch decomposition.
+    /// </summary>
+    public bool IsFixedStretch
+    {
+        readonly get => (this.flags & FixedStretchFlag) != 0;
+        set => this.flags = value ? (ushort)(this.flags | FixedStretchFlag) : (ushort)(this.flags & ~FixedStretchFlag);
+    }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether this glyph is a repeating tile in a
+    /// stretch decomposition.
+    /// </summary>
+    public bool IsRepeatingStretch
+    {
+        readonly get => (this.flags & RepeatingStretchFlag) != 0;
+        set => this.flags = value ? (ushort)(this.flags | RepeatingStretchFlag) : (ushort)(this.flags & ~RepeatingStretchFlag);
+    }
+
+    /// <summary>
     /// Gets or sets a value indicating whether this glyph represents an inline placeholder.
     /// A placeholder's bidi run lives on the buffer, keyed by codepoint offset.
     /// </summary>
@@ -416,6 +461,29 @@ internal struct GlyphShapingData
         readonly get => (this.flags & HiddenIgnorableFlag) != 0;
         set => this.flags = value ? (ushort)(this.flags | HiddenIgnorableFlag) : (ushort)(this.flags & ~HiddenIgnorableFlag);
     }
+
+    /// <summary>
+    /// Gets or sets the script-specific mark-order override, or zero when the character's generated order applies.
+    /// </summary>
+    public int MarkOrderOverride
+    {
+        readonly get => (this.flags & MarkOrder22Flag) != 0 ? 22 : (this.flags & MarkOrder26Flag) != 0 ? 26 : 0;
+        set
+        {
+            this.flags = (ushort)(this.flags & ~MarkOrderFlags);
+            this.flags = value == 22
+                ? (ushort)(this.flags | MarkOrder22Flag)
+                : value == 26
+                    ? (ushort)(this.flags | MarkOrder26Flag)
+                    : this.flags;
+        }
+    }
+
+    /// <summary>
+    /// Gets the order used to compare this record with adjacent combining marks.
+    /// </summary>
+    public readonly int MarkOrderingClass
+        => this.MarkOrderOverride is int order and not 0 ? order : CodePoint.GetMarkOrderingClass(this.CodePoint);
 
     private string DebuggerDisplay
         => FormattableString

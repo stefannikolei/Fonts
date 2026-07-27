@@ -46,12 +46,14 @@ internal static class ShaperFactory
     /// <param name="unicodeScriptTag">The unicode script tag found in the font matching the script.</param>
     /// <param name="fontMetrics">The current font metrics.</param>
     /// <param name="textOptions">The global text options.</param>
+    /// <param name="languageTags">The language system candidates used to resolve feature availability.</param>
     /// <returns>A shaper for the given script.</returns>
     public static BaseShaper Create(
         ScriptClass script,
         Tag unicodeScriptTag,
         FontMetrics fontMetrics,
-        TextOptions textOptions)
+        TextOptions textOptions,
+        Tag[] languageTags)
         => script switch
         {
             // Arabic and Syriac
@@ -69,7 +71,7 @@ internal static class ShaperFactory
             // their horizontal RTL inline direction and script-specific joining.
             => (unicodeScriptTag != default || script == ScriptClass.Arabic)
             && !textOptions.LayoutMode.IsVertical()
-            ? new ArabicShaper(script, textOptions)
+            ? new ArabicShaper(script, textOptions, fontMetrics, languageTags)
             : new DefaultShaper(script, textOptions),
 
             // Hebrew
@@ -210,12 +212,10 @@ internal static class ShaperFactory
             or ScriptClass.Manichaean
             or ScriptClass.PsalterPahlavi
 
-            // A font whose only script is the default one, or the Latin one we
-            // would otherwise pick arbitrarily, was not designed for the script,
-            // so it is shaped plainly.
-            => IsDefaultDesign(unicodeScriptTag)
-            ? new DefaultShaper(script, textOptions)
-            : new UniversalShaper(script, textOptions, fontMetrics),
+            // Universal syllable analysis is selected from the Unicode script,
+            // independently of which layout tables the font provides. A font with
+            // no script system still needs broken-syllable repair and reordering.
+            => new UniversalShaper(script, textOptions, fontMetrics),
             _ => new DefaultShaper(script, textOptions),
         };
 }

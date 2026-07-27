@@ -1010,10 +1010,13 @@ internal sealed class ShapingBuffer
             int match = removalIndices[i];
             codePointCount += this.data[match].CodePointCount;
             CodePoint currentCodePoint = this.data[match].CodePoint;
-            if (!UnicodeUtility.IsDefaultIgnorableCodePoint((uint)codePoint.Value) || UnicodeUtility.ShouldRenderWhiteSpaceOnly(codePoint))
+            if (!UnicodeUtility.IsDefaultIgnorableCodePoint((uint)currentCodePoint.Value) || UnicodeUtility.ShouldRenderWhiteSpaceOnly(currentCodePoint))
             {
                 if (!CodePoint.IsZeroWidthJoiner(currentCodePoint) && !CodePoint.IsZeroWidthNonJoiner(currentCodePoint))
                 {
+                    // A visible matched component may identify the ligature for
+                    // later Unicode-property fallbacks. Formatting controls must
+                    // not replace that identity merely because the font consumed them.
                     codePoint = currentCodePoint;
                 }
             }
@@ -1035,6 +1038,10 @@ internal sealed class ShapingBuffer
             produced.GlyphId = glyphId;
             produced.LigatureId = ligatureId;
             produced.IsLigated = true;
+
+            // Only the most recent ligature/multiple transformation controls
+            // reordering decisions. Religation forgives an earlier expansion.
+            produced.IsDecomposed = false;
             produced.LigatureComponent = ligatureComponent;
             produced.IsSubstituted = true;
             produced.AppliedFeatureMask |= ShapePlanFeatures.GetVerticalMask(feature);
@@ -1077,6 +1084,10 @@ internal sealed class ShapingBuffer
         current.GlyphId = glyphId;
         current.LigatureId = ligatureId;
         current.IsLigated = true;
+
+        // Only the most recent ligature/multiple transformation controls
+        // reordering decisions. Religation forgives an earlier expansion.
+        current.IsDecomposed = false;
         current.LigatureComponent = ligatureComponent;
         current.IsSubstituted = true;
         current.AppliedFeatureMask |= ShapePlanFeatures.GetVerticalMask(feature);
@@ -1101,10 +1112,13 @@ internal sealed class ShapingBuffer
             int match = index + i;
             codePointCount += this.data[match].CodePointCount;
             CodePoint currentCodePoint = this.data[match].CodePoint;
-            if (!UnicodeUtility.IsDefaultIgnorableCodePoint((uint)codePoint.Value) || UnicodeUtility.ShouldRenderWhiteSpaceOnly(codePoint))
+            if (!UnicodeUtility.IsDefaultIgnorableCodePoint((uint)currentCodePoint.Value) || UnicodeUtility.ShouldRenderWhiteSpaceOnly(currentCodePoint))
             {
                 if (!CodePoint.IsZeroWidthJoiner(currentCodePoint) && !CodePoint.IsZeroWidthNonJoiner(currentCodePoint))
                 {
+                    // Keep the last visible component as the replacement's
+                    // Unicode identity; consumed formatting controls contribute
+                    // to its text span but not to its shaping properties.
                     codePoint = currentCodePoint;
                 }
             }
@@ -1285,6 +1299,32 @@ internal sealed class ShapingBuffer
     {
         data.CodePointIndex = this.data[index].CodePointIndex;
         this.InsertAt(index, data);
+    }
+
+    /// <summary>
+    /// Inserts a fully positioned glyph record while preserving its resolved
+    /// metrics and placement. This is used by post-position expansion, after the
+    /// three parallel streams have all become meaningful.
+    /// </summary>
+    /// <param name="index">The zero-based index at which to insert.</param>
+    /// <param name="data">The shaping record to insert.</param>
+    /// <param name="metricsEntry">The resolved metrics to insert.</param>
+    /// <param name="position">The positioned geometry to insert.</param>
+    public void InsertPositioned(int index, in GlyphShapingData data, in GlyphMetricsEntry metricsEntry, in GlyphShapingPosition position)
+    {
+        this.EnsureCapacity(this.Count + 1);
+
+        // Post-position insertion must shift and fill all three streams together;
+        // leaving even one at its old index would pair a glyph with another glyph's
+        // metrics or placement.
+        Array.Copy(this.data, index, this.data, index + 1, this.Count - index);
+        Array.Copy(this.metrics, index, this.metrics, index + 1, this.Count - index);
+        Array.Copy(this.positions, index, this.positions, index + 1, this.Count - index);
+
+        this.data[index] = data;
+        this.metrics[index] = metricsEntry;
+        this.positions[index] = position;
+        this.Count++;
     }
 
     /// <summary>

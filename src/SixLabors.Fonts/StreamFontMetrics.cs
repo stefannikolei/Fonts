@@ -448,6 +448,16 @@ internal partial class StreamFontMetrics : FontMetrics
     }
 
     /// <inheritdoc/>
+    internal override bool TryGetGPosTable([NotNullWhen(true)] out GPosTable? gPosTable)
+    {
+        gPosTable = this.outlineType == OutlineType.TrueType
+            ? this.trueTypeFontTables!.GPos
+            : this.compactFontTables!.GPos;
+
+        return gPosTable is not null;
+    }
+
+    /// <inheritdoc/>
     internal override bool TryGetBaselineCoordinate(Tag baselineTag, bool isVerticalLayout, out short coordinate)
     {
         BaseTable? baseTable = this.outlineType == OutlineType.TrueType
@@ -508,6 +518,10 @@ internal partial class StreamFontMetrics : FontMetrics
         KerningMode kerningMode = buffer.TextOptions.KerningMode;
 
         gpos?.TryUpdatePositions(this, buffer, out kerned);
+        if (gpos is null)
+        {
+            ZeroMarkAdvances(buffer, this, MarkZeroingMode.PreGPos);
+        }
 
         // TODO: I don't think we should disable kerning here.
         if (!kerned && kerningMode != KerningMode.None)
@@ -534,7 +548,29 @@ internal partial class StreamFontMetrics : FontMetrics
 
         if (gpos is null)
         {
+            ZeroMarkAdvances(buffer, this, MarkZeroingMode.PostGpos);
             FallbackMarkPositioner.Apply(this, buffer);
+        }
+    }
+
+    /// <summary>
+    /// Applies a script's mark-zeroing stage when the font has no positioning table to host that stage.
+    /// </summary>
+    /// <param name="buffer">The positioned glyph buffer.</param>
+    /// <param name="fontMetrics">The font metrics supplying glyph classes.</param>
+    /// <param name="mode">The mark-zeroing stage to apply.</param>
+    private static void ZeroMarkAdvances(ShapingBuffer buffer, FontMetrics fontMetrics, MarkZeroingMode mode)
+    {
+        List<(int Index, int Count, ScriptClass Script, ShapePlan Plan)> segments = buffer.SegmentPlans;
+        for (int i = 0; i < segments.Count; i++)
+        {
+            (int index, int count, ScriptClass _, ShapePlan plan) = segments[i];
+            if (plan.FontMetrics == fontMetrics && plan.Shaper.MarkZeroingMode == mode)
+            {
+                // Without a positioning table, forward text needs the removed
+                // advance folded into the mark offset so it stays over its base.
+                AdvancedTypographicUtils.ZeroMarkAdvances(fontMetrics, buffer, index, count, true);
+            }
         }
     }
 

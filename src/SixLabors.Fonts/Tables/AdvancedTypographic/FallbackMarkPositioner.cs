@@ -301,7 +301,7 @@ internal static class FallbackMarkPositioner
         for (int i = baseIndex + 1; i < end; i++)
         {
             ref GlyphShapingData data = ref buffer[i];
-            int combiningClass = RecategorizeCombiningClass(data.CodePoint, UnicodeData.GetMarkOrderingClass((uint)data.CodePoint.Value));
+            int combiningClass = RecategorizeCombiningClass(data.CodePoint, data.MarkOrderingClass);
             if (combiningClass == 0)
             {
                 ref GlyphShapingPosition ordinaryPosition = ref buffer.PositionAt(i);

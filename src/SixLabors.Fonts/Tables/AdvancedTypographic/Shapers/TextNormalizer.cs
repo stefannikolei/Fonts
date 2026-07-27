@@ -39,10 +39,15 @@ internal static class TextNormalizer
     private const int MaxDecompositionParts = 8;
 
     /// <summary>
+    /// The combining grapheme joiner, whose match transparency depends on whether it prevented mark reordering.
+    /// </summary>
+    private const int CombiningGraphemeJoinerCodePoint = 0x034F;
+
+    /// <summary>
     /// Orders two records by the class that places their marks.
     /// </summary>
     private static readonly Comparison<GlyphShapingData> MarkOrder =
-        static (a, b) => CodePoint.GetMarkOrderingClass(a.CodePoint) - CodePoint.GetMarkOrderingClass(b.CodePoint);
+        static (a, b) => a.MarkOrderingClass - b.MarkOrderingClass;
 
     /// <summary>
     /// Normalizes the given run of the buffer.
@@ -70,11 +75,31 @@ internal static class TextNormalizer
 
         if (!allMarksSeenAlone)
         {
-            OrderMarks(buffer, index, count);
+            OrderMarks(shaper, buffer, index, count);
 
             if (mode is NormalizationMode.ComposedDiacritics or NormalizationMode.ComposedDiacriticsNoShortCircuit)
             {
                 Compose(shaper, fontMetrics, buffer, index, ref count);
+            }
+        }
+
+        int end = index + count;
+        for (int i = index + 1; i + 1 < end; i++)
+        {
+            ref GlyphShapingData data = ref buffer[i];
+            if (data.CodePoint.Value != CombiningGraphemeJoinerCodePoint)
+            {
+                continue;
+            }
+
+            int previousOrder = buffer[i - 1].MarkOrderingClass;
+            int nextOrder = buffer[i + 1].MarkOrderingClass;
+            if (nextOrder == 0 || previousOrder <= nextOrder)
+            {
+                // A joiner that did not block an otherwise-required mark swap may
+                // be skipped by substitution matching. One that did block a swap
+                // remains matchable so the text's explicit ordering barrier survives.
+                data.IsHiddenIgnorable = false;
             }
         }
 
@@ -327,21 +352,22 @@ internal static class TextNormalizer
     /// Orders each run of marks by the class that places them, leaving the marks of
     /// every script in the order they are drawn.
     /// </summary>
+    /// <param name="shaper">The shaper whose script-specific mark ordering applies.</param>
     /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based index of the run's first record.</param>
     /// <param name="count">The number of records in the run.</param>
-    private static void OrderMarks(ShapingBuffer buffer, int index, int count)
+    private static void OrderMarks(BaseShaper shaper, ShapingBuffer buffer, int index, int count)
     {
         int end = index + count;
         for (int i = index; i < end; i++)
         {
-            if (CodePoint.GetMarkOrderingClass(buffer[i].CodePoint) == 0)
+            if (buffer[i].MarkOrderingClass == 0)
             {
                 continue;
             }
 
             int runEnd = i + 1;
-            while (runEnd < end && CodePoint.GetMarkOrderingClass(buffer[runEnd].CodePoint) != 0)
+            while (runEnd < end && buffer[runEnd].MarkOrderingClass != 0)
             {
                 runEnd++;
             }
@@ -349,6 +375,7 @@ internal static class TextNormalizer
             if (runEnd - i <= MaxOrderedMarkRun)
             {
                 buffer.Sort(i, runEnd, MarkOrder);
+                shaper.ReorderNormalizedMarks(buffer, i, runEnd);
             }
 
             i = runEnd;
@@ -380,7 +407,7 @@ internal static class TextNormalizer
             // font's own syllables and the letters they are built from apart.
             if (!CodePoint.IsMark(codePoint))
             {
-                if (CodePoint.GetMarkOrderingClass(codePoint) == 0)
+                if (buffer[i].MarkOrderingClass == 0)
                 {
                     starter = i;
                 }
@@ -388,9 +415,9 @@ internal static class TextNormalizer
                 continue;
             }
 
-            int order = CodePoint.GetMarkOrderingClass(codePoint);
+            int order = buffer[i].MarkOrderingClass;
             bool reachesStarter = starter == i - 1
-                || CodePoint.GetMarkOrderingClass(buffer[i - 1].CodePoint) < order;
+                || buffer[i - 1].MarkOrderingClass < order;
 
             if (reachesStarter
                 && shaper.TryCompose(buffer[starter].CodePoint, codePoint, out CodePoint composed)

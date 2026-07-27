@@ -307,6 +307,13 @@ public abstract class FontMetrics
     internal abstract bool TryGetGSubTable([NotNullWhen(true)] out GSubTable? gSubTable);
 
     /// <summary>
+    /// Tries to get the glyph positioning table.
+    /// </summary>
+    /// <param name="gPosTable">The glyph positioning table.</param>
+    /// <returns><see langword="true"/> when the font contains the table; otherwise, <see langword="false"/>.</returns>
+    internal abstract bool TryGetGPosTable([NotNullWhen(true)] out GPosTable? gPosTable);
+
+    /// <summary>
     /// Tries to get the coordinate of the named baseline from the font's baseline table for
     /// the given layout direction, read from the default script record of the matching axis.
     /// </summary>

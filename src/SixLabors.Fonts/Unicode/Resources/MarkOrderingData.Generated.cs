@@ -161,5 +161,27 @@ namespace SixLabors.Fonts.Unicode.Resources
                     return false;
             }
         }
+
+        /// <summary>
+        /// Determines whether an Arabic mark modifies the combining mark that follows it.
+        /// </summary>
+        /// <param name="codePoint">The code point to test.</param>
+        /// <returns><see langword="true"/> when the code point is a modifier combining mark; otherwise, <see langword="false"/>.</returns>
+        public static bool IsArabicModifierCombiningMark(uint codePoint)
+            => codePoint is
+                0x0654 or // ARABIC HAMZA ABOVE
+                0x0655 or // ARABIC HAMZA BELOW
+                0x0658 or // ARABIC MARK NOON GHUNNA
+                0x06DC or // ARABIC SMALL HIGH SEEN
+                0x06E3 or // ARABIC SMALL LOW SEEN
+                0x06E7 or // ARABIC SMALL HIGH YEH
+                0x06E8 or // ARABIC SMALL HIGH NOON
+                0x08CA or // ARABIC SMALL HIGH FARSI YEH
+                0x08CB or // ARABIC SMALL HIGH YEH BARREE WITH TWO DOTS BELOW
+                0x08CD or // ARABIC SMALL HIGH ZAH
+                0x08CE or // ARABIC LARGE ROUND DOT ABOVE
+                0x08CF or // ARABIC LARGE ROUND DOT BELOW
+                0x08D3 or // ARABIC SMALL LOW WAW
+                0x08F3; // ARABIC SMALL HIGH WAW
     }
 }

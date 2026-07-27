@@ -423,6 +423,16 @@ public static partial class TextShaper
             font.FontMetrics.UpdatePositions(shaped);
         }
 
+        // Script-specific expansion runs only after every font has finished
+        // positioning. Process segments from the end so an expansion cannot move
+        // the not-yet-processed range of an earlier segment.
+        List<(int Index, int Count, ScriptClass Script, ShapePlan Plan)> segments = shaped.SegmentPlans;
+        for (int i = segments.Count - 1; i >= 0; i--)
+        {
+            (int index, int count, ScriptClass _, ShapePlan plan) = segments[i];
+            plan.Shaper.PostprocessGlyphs(shaped, index, count);
+        }
+
         HideDefaultIgnorables(shaped);
 
         return shaped;

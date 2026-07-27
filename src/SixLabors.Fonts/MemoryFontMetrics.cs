@@ -200,6 +200,10 @@ internal sealed class MemoryFontMetrics : FontMetrics
         => this.fontMetrics.Value.TryGetGSubTable(out gSubTable);
 
     /// <inheritdoc/>
+    internal override bool TryGetGPosTable([NotNullWhen(true)] out GPosTable? gPosTable)
+        => this.fontMetrics.Value.TryGetGPosTable(out gPosTable);
+
+    /// <inheritdoc/>
     internal override bool TryGetBaselineCoordinate(Tag baselineTag, bool isVerticalLayout, out short coordinate)
         => this.fontMetrics.Value.TryGetBaselineCoordinate(baselineTag, isVerticalLayout, out coordinate);
 

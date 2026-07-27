@@ -74,6 +74,18 @@ public static partial class Generator
     private static partial Regex MarkOrderingFunctionRegex();
 
     /// <summary>
+    /// Matches the list of Arabic modifier combining marks.
+    /// </summary>
+    [GeneratedRegex(@"modifier_combining_marks\s*\[\s*\]\s*=\s*\{(?<body>.*?)\};", RegexOptions.Singleline)]
+    private static partial Regex ArabicModifierMarkListRegex();
+
+    /// <summary>
+    /// Matches one hexadecimal code point in a source list.
+    /// </summary>
+    [GeneratedRegex(@"0x(?<codePoint>[0-9A-Fa-f]+)u")]
+    private static partial Regex SourceCodePointRegex();
+
+    /// <summary>
     /// Matches a block comment, which the table uses to name its entries.
     /// </summary>
     [GeneratedRegex(@"/\*.*?\*/", RegexOptions.Singleline)]
@@ -119,6 +131,7 @@ public static partial class Generator
 
         string header = File.ReadAllText(GetReferenceSourcePath("hb-unicode.hh"));
         string source = File.ReadAllText(GetReferenceSourcePath("hb-unicode.cc"));
+        string arabicShaper = File.ReadAllText(GetReferenceSourcePath("hb-ot-shaper-arabic.cc"));
 
         // The table's entries name these macros where a class is renumbered, and each
         // definition carries the label naming the mark it stands for.
@@ -166,11 +179,28 @@ public static partial class Generator
 
         overrides.Sort(static (a, b) => a.CodePoint.CompareTo(b.CodePoint));
 
+        Match modifierMarkList = ArabicModifierMarkListRegex().Match(arabicShaper);
+        if (!modifierMarkList.Success)
+        {
+            throw new InvalidDataException("Found no Arabic modifier combining mark list in the reference implementation.");
+        }
+
+        List<int> modifierMarks = [];
+        foreach (Match match in SourceCodePointRegex().Matches(modifierMarkList.Groups["body"].Value))
+        {
+            modifierMarks.Add(int.Parse(match.Groups["codePoint"].Value, NumberStyles.HexNumber, CultureInfo.InvariantCulture));
+        }
+
+        if (modifierMarks.Count == 0)
+        {
+            throw new InvalidDataException("Found no Arabic modifier combining marks in the reference implementation.");
+        }
+
         // The characters are named from the standard rather than by hand, so a
         // mistaken name cannot creep in.
-        Dictionary<int, string> names = ReadCharacterNames(overrides.Select(static o => o.CodePoint));
+        Dictionary<int, string> names = ReadCharacterNames(overrides.Select(static o => o.CodePoint).Concat(modifierMarks));
 
-        WriteMarkOrderingData(entries, overrides, names);
+        WriteMarkOrderingData(entries, overrides, modifierMarks, names);
     }
 
     /// <summary>
@@ -291,8 +321,9 @@ public static partial class Generator
     /// </summary>
     /// <param name="entries">The order of each canonical combining class, annotated.</param>
     /// <param name="overrides">The characters resolved ahead of the table.</param>
-    /// <param name="names">The standard's name for each of those characters.</param>
-    private static void WriteMarkOrderingData(MarkOrderingEntry[] entries, List<(int CodePoint, int Order)> overrides, Dictionary<int, string> names)
+    /// <param name="modifierMarks">The Arabic modifier combining marks.</param>
+    /// <param name="names">The standard's name for each emitted character.</param>
+    private static void WriteMarkOrderingData(MarkOrderingEntry[] entries, List<(int CodePoint, int Order)> overrides, List<int> modifierMarks, Dictionary<int, string> names)
     {
         using FileStream fileStream = GetStreamWriter("MarkOrderingData.Generated.cs");
         using StreamWriter writer = new(fileStream);
@@ -384,6 +415,21 @@ public static partial class Generator
         writer.WriteLine("                    return false;");
         writer.WriteLine("            }");
         writer.WriteLine("        }");
+        writer.WriteLine();
+
+        writer.WriteLine("        /// <summary>");
+        writer.WriteLine("        /// Determines whether an Arabic mark modifies the combining mark that follows it.");
+        writer.WriteLine("        /// </summary>");
+        writer.WriteLine("        /// <param name=\"codePoint\">The code point to test.</param>");
+        writer.WriteLine("        /// <returns><see langword=\"true\"/> when the code point is a modifier combining mark; otherwise, <see langword=\"false\"/>.</returns>");
+        writer.WriteLine("        public static bool IsArabicModifierCombiningMark(uint codePoint)");
+        writer.WriteLine("            => codePoint is");
+        for (int i = 0; i < modifierMarks.Count; i++)
+        {
+            int codePoint = modifierMarks[i];
+            string suffix = i == modifierMarks.Count - 1 ? ";" : " or";
+            writer.WriteLine($"                0x{codePoint:X4}{suffix} // {names[codePoint]}");
+        }
 
         writer.WriteLine("    }");
         writer.WriteLine("}");

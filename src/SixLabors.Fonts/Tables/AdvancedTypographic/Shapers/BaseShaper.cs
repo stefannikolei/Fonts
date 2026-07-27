@@ -109,6 +109,27 @@ internal abstract class BaseShaper
         => CodePoint.TryCompose(first, second, out composed);
 
     /// <summary>
+    /// Applies script-specific ordering within a canonically ordered mark run.
+    /// </summary>
+    /// <param name="buffer">The glyph shaping buffer.</param>
+    /// <param name="start">The zero-based index of the first mark.</param>
+    /// <param name="end">The exclusive end index of the mark run.</param>
+    public virtual void ReorderNormalizedMarks(ShapingBuffer buffer, int start, int end)
+    {
+    }
+
+    /// <summary>
+    /// Applies script-specific expansion after positioning has completed. The
+    /// default shaper leaves the positioned records unchanged.
+    /// </summary>
+    /// <param name="buffer">The positioned shaping buffer.</param>
+    /// <param name="index">The zero-based index of the first record.</param>
+    /// <param name="count">The number of records in the segment.</param>
+    public virtual void PostprocessGlyphs(ShapingBuffer buffer, int index, int count)
+    {
+    }
+
+    /// <summary>
     /// Assigns the features to each glyph within the buffer.
     /// </summary>
     /// <param name="fontMetrics">The font metrics, which decide what the font can draw.</param>

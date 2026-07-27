@@ -28,10 +28,19 @@ internal abstract class KerningSubTable
     /// Loads a <see cref="KerningSubTable"/> from the specified binary reader.
     /// Returns <see langword="null"/> if the subtable format is not supported.
     /// </summary>
+    /// <remarks>
+    /// The version 0 subtable header is defined by the
+    /// <see href="https://learn.microsoft.com/en-us/typography/opentype/spec/kern">OpenType 'kern' specification</see>.
+    /// The version 1.0 subtable header is defined by the
+    /// <see href="https://developer.apple.com/fonts/TrueType-Reference-Manual/RM06/Chap6kern.html">Apple TrueType Reference Manual</see>.
+    /// </remarks>
     /// <param name="reader">The binary reader positioned at the start of the subtable header.</param>
+    /// <param name="useAppleHeader">Whether the subtable uses the Apple 1.0 header.</param>
     /// <returns>The loaded <see cref="KerningSubTable"/>, or <see langword="null"/> for unsupported formats.</returns>
-    public static KerningSubTable? Load(BigEndianBinaryReader reader)
+    public static KerningSubTable? Load(BigEndianBinaryReader reader, bool useAppleHeader)
     {
+        long subtableOffset = reader.BaseStream.Position - reader.StartOfStream;
+
         // Kerning subtables will share the same header format.
         // This header is used to identify the format of the subtable and the kind of information it contains:
         // +--------+----------+----------------------------------------------------------+
@@ -43,18 +52,31 @@ internal abstract class KerningSubTable
         // +--------+----------+----------------------------------------------------------+
         // | uint16 | coverage | What type of information is contained in this table.     |
         // +--------+----------+----------------------------------------------------------+
-        ushort subVersion = reader.ReadUInt16();
-        ushort length = reader.ReadUInt16();
-        KerningCoverage coverage = KerningCoverage.Read(reader);
-        if (coverage.Format == 0)
+        uint length;
+        KerningCoverage coverage;
+        if (useAppleHeader)
         {
-            return Format0SubTable.Load(reader, coverage);
+            length = reader.ReadUInt32();
+            coverage = KerningCoverage.ReadApple(reader);
+            _ = reader.ReadUInt16();
         }
         else
         {
-            // we don't support versions other than 'Format 0' same as Windows
-            return null;
+            _ = reader.ReadUInt16();
+            length = reader.ReadUInt16();
+            coverage = KerningCoverage.Read(reader);
         }
+
+        KerningSubTable? subtable = coverage.Variation ? null : coverage.Format switch
+        {
+            0 => Format0SubTable.Load(reader, coverage),
+            2 => Format2SubTable.Load(reader, subtableOffset, length, coverage),
+            _ => null
+        };
+
+        // Each header length covers its complete subtable, so unsupported formats cannot desynchronize the next header.
+        reader.Seek(subtableOffset + length, SeekOrigin.Begin);
+        return subtable;
     }
 
     /// <summary>

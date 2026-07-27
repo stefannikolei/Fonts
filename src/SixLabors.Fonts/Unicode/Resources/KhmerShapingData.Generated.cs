@@ -7,7 +7,7 @@ using System.Collections.Generic;
 
 namespace SixLabors.Fonts.Unicode.Resources
 {
-    internal static class KhmerShapingData
+    internal static partial class KhmerShapingData
     {
         public static int[][] StateTable => new int[44][]
         {

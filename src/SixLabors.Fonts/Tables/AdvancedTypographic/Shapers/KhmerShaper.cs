@@ -66,11 +66,6 @@ internal sealed class KhmerShaper : DefaultShaper
     private static readonly SyllableType[] StateSyllableTypes = SyllableTypeMap.FromMachineTags(Unicode.Resources.KhmerShapingData.Tags);
 
     /// <summary>
-    /// Maps sparse shaping categories to the state machine's compact alphabet.
-    /// </summary>
-    private static readonly int[] CategoryToSymbolId = BuildCategoryToSymbolId();
-
-    /// <summary>
     /// The pre-base forms feature.
     /// </summary>
     private static readonly Tag PrefTag = Tag.Parse("pref");
@@ -254,11 +249,12 @@ internal sealed class KhmerShaper : DefaultShaper
 
         Span<int> values = count <= 64 ? stackalloc int[count] : new int[count];
         Span<byte> categories = count <= 64 ? stackalloc byte[count] : new byte[count];
+        ReadOnlySpan<byte> categoryToSymbolIds = Unicode.Resources.KhmerShapingData.CategoryToSymbolIds;
         for (int i = 0; i < count; i++)
         {
             int category = UnicodeData.GetIndicShapingProperties((uint)buffer[index + i].CodePoint.Value) >> CategoryShift;
             categories[i] = (byte)category;
-            values[i] = CategoryToSymbolId[category];
+            values[i] = categoryToSymbolIds[category];
         }
 
         int syllable = 0;
@@ -448,29 +444,5 @@ internal sealed class KhmerShaper : DefaultShaper
         }
 
         return index;
-    }
-
-    /// <summary>
-    /// Builds the sparse-category to compact-symbol mapping consumed by the state machine.
-    /// </summary>
-    /// <returns>The category mapping.</returns>
-    private static int[] BuildCategoryToSymbolId()
-    {
-        Categories[] allCategories = Enum.GetValues<Categories>();
-        int maxCategory = 0;
-        foreach (Categories category in allCategories)
-        {
-            maxCategory = Math.Max(maxCategory, (int)category);
-        }
-
-        // The default symbol is X, which is deliberately the first category and catches every category outside the Khmer alphabet.
-        int[] map = new int[maxCategory + 1];
-        KhmerCategories[] categories = Enum.GetValues<KhmerCategories>();
-        for (int symbolId = 0; symbolId < categories.Length; symbolId++)
-        {
-            map[(int)categories[symbolId]] = symbolId;
-        }
-
-        return map;
     }
 }

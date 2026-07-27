@@ -16,154 +16,110 @@ namespace UnicodeTrieGenerator;
 /// </content>
 public static partial class Generator
 {
-    private static readonly Dictionary<string, List<object>> UniversalCategories = new()
+    /// <summary>
+    /// The Sinhala sign Al-Lakuna code point.
+    /// </summary>
+    private const int SinhalaSignAlLakuna = 0x0DCA;
+
+    /// <summary>
+    /// The Tai Tham sign Sakot code point.
+    /// </summary>
+    private const int TaiThamSignSakot = 0x1A60;
+
+    /// <summary>
+    /// Generator-only value for the USE Symbol_Modifier extension.
+    /// </summary>
+    private const ISC SymbolModifierCategory = (ISC)0x100;
+
+    /// <summary>
+    /// Generator-only value for the USE Hieroglyph extension.
+    /// </summary>
+    private const ISC HieroglyphCategory = (ISC)0x101;
+
+    /// <summary>
+    /// Generator-only value for the USE Hieroglyph_Joiner extension.
+    /// </summary>
+    private const ISC HieroglyphJoinerCategory = (ISC)0x102;
+
+    /// <summary>
+    /// Generator-only value for the USE Hieroglyph_Mark_Begin extension.
+    /// </summary>
+    private const ISC HieroglyphMarkBeginCategory = (ISC)0x103;
+
+    /// <summary>
+    /// Generator-only value for the USE Hieroglyph_Mark_End extension.
+    /// </summary>
+    private const ISC HieroglyphMarkEndCategory = (ISC)0x104;
+
+    /// <summary>
+    /// Generator-only value for the USE Hieroglyph_Mirror extension.
+    /// </summary>
+    private const ISC HieroglyphMirrorCategory = (ISC)0x105;
+
+    /// <summary>
+    /// Generator-only value for the USE Hieroglyph_Modifier extension.
+    /// </summary>
+    private const ISC HieroglyphModifierCategory = (ISC)0x106;
+
+    /// <summary>
+    /// Generator-only value for the USE Hieroglyph_Segment_Begin extension.
+    /// </summary>
+    private const ISC HieroglyphSegmentBeginCategory = (ISC)0x107;
+
+    /// <summary>
+    /// Generator-only value for the USE Hieroglyph_Segment_End extension.
+    /// </summary>
+    private const ISC HieroglyphSegmentEndCategory = (ISC)0x108;
+
+    /// <summary>
+    /// Characters explicitly treated as generic bases by the USE category table.
+    /// </summary>
+    private static readonly int[] GenericBaseCodePoints = [0x2015, 0x2022, 0x25FB, 0x25FC, 0x25FD, 0x25FE];
+
+    /// <summary>
+    /// Default-ignorable characters excluded from the word-joiner category.
+    /// </summary>
+    private static readonly int[] VisibleDefaultIgnorables = [0x115F, 0x1160, 0x3164, 0xFFA0, 0x1BCA0, 0x1BCA1, 0x1BCA2, 0x1BCA3];
+
+    /// <summary>
+    /// Syllabic category names defined by the USE override file rather than the Unicode property.
+    /// </summary>
+    private static readonly Dictionary<string, ISC> UniversalSyllabicCategoryOverrides = new()
     {
-        {
-            "B", new List<object>
-            {
-                new Dictionary<string, object> { { "UISC", ISC.Number } },
-                new Dictionary<string, object> { { "UISC", ISC.Avagraha }, { "UGC", GC.OtherLetter } },
-                new Dictionary<string, object> { { "UISC", ISC.Bindu }, { "UGC", GC.OtherLetter } },
-                new Dictionary<string, object> { { "UISC", ISC.Consonant } },
-                new Dictionary<string, object> { { "UISC", ISC.ConsonantFinal }, { "UGC", GC.OtherLetter } },
-                new Dictionary<string, object> { { "UISC", ISC.ConsonantHeadLetter } },
-                new Dictionary<string, object> { { "UISC", ISC.ConsonantMedial }, { "UGC", GC.OtherLetter } },
-                new Dictionary<string, object> { { "UISC", ISC.ConsonantSubjoined }, { "UGC", GC.OtherLetter } },
-                new Dictionary<string, object> { { "UISC", ISC.ToneLetter } },
-                new Dictionary<string, object> { { "UISC", ISC.Vowel }, { "UGC", GC.OtherLetter } },
-                new Dictionary<string, object> { { "UISC", ISC.VowelIndependent } },
-                new Dictionary<string, object> { { "UISC", ISC.VowelDependent }, { "UGC", GC.OtherLetter } }
-            }
-        },
-        {
-            "CGJ", new List<object> { 0x034f }
-        },
-        {
-            "CM", new List<object>
-            {
-                ISC.Nukta,
-                ISC.GeminationMark,
-                ISC.ConsonantKiller
-            }
-        },
-        { "CS", new List<object> { ISC.ConsonantWithStacker } },
-        {
-            "F", new List<object>
-            {
-                new Dictionary<string, object> { { "UISC", ISC.ConsonantFinal }, { "UGC", new Dictionary<string, object> { { "not", GC.OtherLetter } } } },
-                new Dictionary<string, object> { { "UISC", ISC.ConsonantSucceedingRepha } }
-            }
-        },
-        { "FM", new List<object> { ISC.SyllableModifier } },
-        {
-            "GB", new List<object>
-            {
-                ISC.ConsonantPlaceholder,
-                0x2015,
-                0x2022,
-                0x25fb,
-                0x25fc,
-                0x25fd,
-                0x25fe
-            }
-        },
-        {
-            "HVM", new List<object>
-            {
-                0x0DCA // Split off of HALANT
-            }
-        },
-        {
-            "H", new List<object>
-            {
-                ISC.Virama,
-                ISC.InvisibleStacker
-            }
-        },
-        { "HN", new List<object> { ISC.NumberJoiner } },
-        {
-            "IND", new List<object>
-            {
-                ISC.ConsonantDead,
-                ISC.ModifyingLetter,
-                new Dictionary<string, object> { { "UGC", GC.OtherPunctuation }, { "U", new Dictionary<string, object> { { "not", new List<object> { 0x104e, 0x2022 } } } } }
-            }
-        },
-        {
-            "M", new List<object>
-            {
-                new Dictionary<string, object> { { "UISC", ISC.ConsonantMedial }, { "UGC", new Dictionary<string, object> { { "not", GC.OtherLetter } } } },
-                ISC.ConsonantInitialPostfixed
-            }
-        },
-        { "N", new List<object> { ISC.BrahmiJoiningNumber } },
-        {
-            "R", new List<object>
-            {
-                ISC.ConsonantPrecedingRepha,
-                ISC.ConsonantPrefixed
-            }
-        },
-        { "RK", new List<object> { ISC.ReorderingKiller } },
-        { "Rsv", new List<object> { new Dictionary<string, object> { { "UGC", GC.OtherNotAssigned } } } },
-        {
-            "S", new List<object>
-            {
-                new Dictionary<string, object> { { "UGC", GC.OtherSymbol }, { "U", new Dictionary<string, object> { { "not", 0x25cc } } } },
-                new Dictionary<string, object> { { "UGC", GC.CurrencySymbol } }
-            }
-        },
-        {
-            "SM", new List<object>
-            {
-                0x1b6b,
-                0x1b6c,
-                0x1b6d,
-                0x1b6e,
-                0x1b6f,
-                0x1b70,
-                0x1b71,
-                0x1b72,
-                0x1b73
-            }
-        },
-        {
-            "SUB", new List<object>
-            {
-                new Dictionary<string, object> { { "UISC", ISC.ConsonantSubjoined }, { "UGC", new Dictionary<string, object> { { "not", GC.OtherLetter } } } }
-            }
-        },
-        {
-            "V", new List<object>
-            {
-                new Dictionary<string, object> { { "UISC", ISC.Vowel }, { "UGC", new Dictionary<string, object> { { "not", GC.OtherLetter } } } },
-                new Dictionary<string, object> { { "UISC", ISC.VowelDependent }, { "UGC", new Dictionary<string, object> { { "not", GC.OtherLetter } } } },
-                new Dictionary<string, object> { { "UISC", ISC.PureKiller } }
-            }
-        },
-        {
-            "VM", new List<object>
-            {
-                new Dictionary<string, object> { { "UISC", ISC.Bindu }, { "UGC", new Dictionary<string, object> { { "not", GC.OtherLetter } } } },
-                ISC.ToneMark,
-                ISC.CantillationMark,
-                ISC.RegisterShifter,
-                ISC.Visarga
-            }
-        },
-        {
-            "VS", new List<object>
-            {
-                0xfe00, 0xfe01, 0xfe02, 0xfe03, 0xfe04, 0xfe05, 0xfe06, 0xfe07,
-                0xfe08, 0xfe09, 0xfe0a, 0xfe0b, 0xfe0c, 0xfe0d, 0xfe0e, 0xfe0f
-            }
-        },
-        { "WJ", new List<object> { 0x2060 } },
-        { "ZWJ", new List<object> { ISC.Joiner } },
-        { "ZWNJ", new List<object> { ISC.NonJoiner } },
-        { "O", new List<object> { ISC.Other } }
+        { "Consonant_Final_Modifier", ISC.SyllableModifier },
+        { "Symbol_Modifier", SymbolModifierCategory },
+        { "Hieroglyph", HieroglyphCategory },
+        { "Hieroglyph_Joiner", HieroglyphJoinerCategory },
+        { "Hieroglyph_Mark_Begin", HieroglyphMarkBeginCategory },
+        { "Hieroglyph_Mark_End", HieroglyphMarkEndCategory },
+        { "Hieroglyph_Mirror", HieroglyphMirrorCategory },
+        { "Hieroglyph_Modifier", HieroglyphModifierCategory },
+        { "Hieroglyph_Segment_Begin", HieroglyphSegmentBeginCategory },
+        { "Hieroglyph_Segment_End", HieroglyphSegmentEndCategory }
     };
 
+    /// <summary>
+    /// The complete alphabet consumed by the generated USE state machine.
+    /// </summary>
+    private static readonly string[] UniversalCategoryNames =
+    [
+        "O", "B", "N", "GB", "CGJ", "SUB", "H", "HN", "ZWNJ", "WJ", "R", "CS", "IS", "Sk", "G", "J", "SB", "SE", "HVM", "HM", "HR", "RK",
+        "FAbv", "FBlw", "FPst", "MAbv", "MBlw", "MPst", "MPre", "CMAbv", "CMBlw", "VAbv", "VBlw", "VPst", "VPre", "VMAbv", "VMBlw", "VMPst",
+        "VMPre", "SMAbv", "SMBlw", "FMAbv", "FMBlw", "FMPst"
+    ];
+
+    /// <summary>
+    /// Categories before which a leading repha stops during reordering.
+    /// </summary>
+    private static readonly string[] UniversalPostBaseCategoryNames =
+    [
+        "FAbv", "FBlw", "FPst", "FMAbv", "FMBlw", "FMPst", "MAbv", "MBlw", "MPst", "MPre", "VAbv", "VBlw", "VPst", "VPre", "VMAbv", "VMBlw",
+        "VMPst", "VMPre"
+    ];
+
+    /// <summary>
+    /// Positional suffixes applied to categories using the Indic positional property.
+    /// </summary>
     private static readonly Dictionary<string, Dictionary<string, List<IPC>>> UniversalPositions = new()
     {
         {
@@ -282,112 +238,13 @@ public static partial class Generator
         }
     };
 
-    private static readonly Dictionary<int, ISC> SyllabicOverrides = new()
-    {
-        { 0x17dd, ISC.VowelDependent },
-        { 0x1ce2, ISC.CantillationMark },
-        { 0x1ce3, ISC.CantillationMark },
-        { 0x1ce4, ISC.CantillationMark },
-        { 0x1ce5, ISC.CantillationMark },
-        { 0x1ce6, ISC.CantillationMark },
-        { 0x1ce7, ISC.CantillationMark },
-        { 0x1ce8, ISC.CantillationMark },
-        { 0x1ced, ISC.ToneMark }
-    };
-
-    private static readonly Dictionary<int, IPC> PositionalOverrides = new()
-    {
-        { 0x1b6c, IPC.Bottom },
-        { 0x953, IPC.NA },
-        { 0x954, IPC.NA },
-        { 0x103c, IPC.Left },
-        { 0xa926, IPC.Top },
-        { 0xa927, IPC.Top },
-        { 0xa928, IPC.Top },
-        { 0xa929, IPC.Top },
-        { 0xa92a, IPC.Top },
-        { 0x111ca, IPC.Bottom },
-        { 0x11300, IPC.Top },
-        { 0x1133c, IPC.Bottom },
-        { 0x1171e, IPC.Left },
-        { 0x1cf2, IPC.Right },
-        { 0x1cf3, IPC.Right },
-        { 0x1cf8, IPC.Top },
-        { 0x1cf9, IPC.Top }
-    };
-
-    private static bool Check(object pattern, object? value)
-    {
-        // TODO:This is nasty. Port to use the harfbuzz approach using Function<CodePoint, bool>
-        if (pattern is Dictionary<string, object> dictionary && dictionary.TryGetValue("not", out object? not))
-        {
-            if (not is List<object> list)
-            {
-                foreach (object item in list)
-                {
-                    if (object.Equals(value, item))
-                    {
-                        return false;
-                    }
-                }
-
-                return true;
-            }
-            else
-            {
-                return !object.Equals(value, not);
-            }
-        }
-
-        return object.Equals(value, pattern);
-    }
-
-    private static bool Matches(object pattern, Codepoint code)
-    {
-        if (pattern is int i)
-        {
-            pattern = new Dictionary<string, object> { { "U", i } };
-        }
-        else if (pattern is ISC isc)
-        {
-            pattern = new Dictionary<string, object> { { "UISC", isc } };
-        }
-
-        Dictionary<string, object> dictionary = (Dictionary<string, object>)pattern;
-        foreach (string key in dictionary.Keys)
-        {
-            if (!Check(dictionary[key], GetCodeValue(code, key)))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private static ISC GetUISC(Codepoint code)
-    {
-        if (SyllabicOverrides.TryGetValue(code.Code, out ISC isc))
-        {
-            return isc;
-        }
-
-        return code.IndicSyllabicCategory;
-    }
-
-    private static IPC GetUIPC(Codepoint code)
-    {
-        if (PositionalOverrides.TryGetValue(code.Code, out IPC ipc))
-        {
-            return ipc;
-        }
-
-        return code.IndicPositionalCategory;
-    }
-
+    /// <summary>
+    /// Adds the positional suffix used by the shaping machine when a category has
+    /// position-specific symbols.
+    /// </summary>
     private static string GetPositionalCategory(Codepoint code, string uSE)
     {
-        IPC uIPC = GetUIPC(code);
+        IPC uIPC = code.IndicPositionalCategory;
         if (UniversalPositions.TryGetValue(uSE, out Dictionary<string, List<IPC>>? pos))
         {
             foreach (string key in pos.Keys)
@@ -402,47 +259,118 @@ public static partial class Generator
         return uSE;
     }
 
-    private static object? GetCodeValue(Codepoint code, string? key)
-        => key switch
+    /// <summary>
+    /// Maps a code point to the category consumed by the Universal Shaping Engine
+    /// state machine.
+    /// </summary>
+    private static string? GetCategory(Codepoint code)
+    {
+        string? category = code switch
         {
-            "UISC" => GetUISC(code),
-            "UGC" => code.Category,
-            "U" => code.Code,
+            _ when IsBase(code) => "B",
+            _ when code.IndicSyllabicCategory == ISC.BrahmiJoiningNumber => "N",
+            _ when IsGenericBase(code) => "GB",
+            _ when IsCombiningGraphemeJoiner(code) => "CGJ",
+            _ when IsFinalConsonant(code) => "F",
+            _ when code.IndicSyllabicCategory == ISC.SyllableModifier => "FM",
+            _ when IsMedialConsonant(code) => "M",
+            _ when code.IndicSyllabicCategory is ISC.Nukta or ISC.GeminationMark or ISC.ConsonantKiller => "CM",
+            _ when code.IndicSyllabicCategory == ISC.ConsonantSubjoined && code.Category != GC.OtherLetter => "SUB",
+            _ when code.IndicSyllabicCategory == ISC.ConsonantWithStacker => "CS",
+            _ when code.IndicSyllabicCategory == ISC.Virama && code.Code != SinhalaSignAlLakuna => "H",
+            _ when code.Code == SinhalaSignAlLakuna => "HVM",
+            _ when code.IndicSyllabicCategory == ISC.NumberJoiner => "HN",
+            _ when code.IndicSyllabicCategory == ISC.InvisibleStacker && code.Code != TaiThamSignSakot => "IS",
+            _ when code.IndicSyllabicCategory == HieroglyphCategory => "G",
+            _ when code.IndicSyllabicCategory == HieroglyphModifierCategory => "HM",
+            _ when code.IndicSyllabicCategory == HieroglyphMirrorCategory => "HR",
+            _ when code.IndicSyllabicCategory == HieroglyphJoinerCategory => "J",
+            _ when code.IndicSyllabicCategory is HieroglyphMarkBeginCategory or HieroglyphSegmentBeginCategory => "SB",
+            _ when code.IndicSyllabicCategory is HieroglyphMarkEndCategory or HieroglyphSegmentEndCategory => "SE",
+            _ when code.IndicSyllabicCategory == ISC.NonJoiner => "ZWNJ",
+            _ when IsOther(code) => "O",
+            _ when code.IndicSyllabicCategory == ISC.ReorderingKiller => "RK",
+            _ when code.IndicSyllabicCategory is ISC.ConsonantPrecedingRepha or ISC.ConsonantPrefixed => "R",
+            _ when code.Code == TaiThamSignSakot => "Sk",
+            _ when code.IndicSyllabicCategory == SymbolModifierCategory => "SM",
+            _ when IsVowel(code) => "V",
+            _ when IsVowelModifier(code) => "VM",
+            _ when IsWordJoiner(code) => "WJ",
             _ => null,
         };
 
-    private static string? GetCategory(Codepoint code)
-    {
-        foreach (string category in UniversalCategories.Keys)
-        {
-            foreach (object pattern in UniversalCategories[category])
-            {
-                if (Matches(pattern, code))
-                {
-                    return GetPositionalCategory(code, category);
-                }
-            }
-        }
-
-        return null;
+        return category is null ? null : GetPositionalCategory(code, category);
     }
 
-    private static List<Codepoint> GenerateUniversalShapingDataTrie(
-                UnicodeTrie unicodeGeneralCategory,
-                UnicodeTrie indicSyllabicCategoryTrie,
-                UnicodeTrie indicPositionalCategoryTrie,
-                UnicodeTrie arabicJoiningTrie)
+    /// <summary>
+    /// Determines whether a code point is a generic base.
+    /// </summary>
+    private static bool IsGenericBase(Codepoint code)
+        => code.IndicSyllabicCategory == ISC.ConsonantPlaceholder || GenericBaseCodePoints.Contains(code.Code);
+
+    /// <summary>
+    /// Determines whether a code point is omitted from the syllable-machine input.
+    /// </summary>
+    private static bool IsCombiningGraphemeJoiner(Codepoint code)
+        => code.IndicSyllabicCategory == ISC.Joiner
+        || (code.DefaultIgnorable && code.Category is GC.SpacingCombiningMark or GC.EnclosingMark or GC.NonSpacingMark);
+
+    /// <summary>
+    /// Determines whether a code point is a final consonant.
+    /// </summary>
+    private static bool IsFinalConsonant(Codepoint code)
+        => (code.IndicSyllabicCategory == ISC.ConsonantFinal && code.Category != GC.OtherLetter)
+        || code.IndicSyllabicCategory == ISC.ConsonantSucceedingRepha;
+
+    /// <summary>
+    /// Determines whether a code point is a medial consonant.
+    /// </summary>
+    private static bool IsMedialConsonant(Codepoint code)
+        => (code.IndicSyllabicCategory == ISC.ConsonantMedial && code.Category != GC.OtherLetter)
+        || code.IndicSyllabicCategory == ISC.ConsonantInitialPostfixed;
+
+    /// <summary>
+    /// Determines whether a code point belongs to the machine's general other
+    /// category.
+    /// </summary>
+    private static bool IsOther(Codepoint code)
+        => (code.Category == GC.OtherPunctuation
+        || code.IndicSyllabicCategory is ISC.ConsonantDead or ISC.Joiner or ISC.ModifyingLetter or ISC.Other)
+        && !IsBase(code)
+        && !IsGenericBase(code)
+        && !IsCombiningGraphemeJoiner(code)
+        && code.IndicSyllabicCategory != SymbolModifierCategory
+        && !IsWordJoiner(code);
+
+    /// <summary>
+    /// Determines whether a code point is a dependent vowel or pure killer.
+    /// </summary>
+    private static bool IsVowel(Codepoint code)
+        => code.IndicSyllabicCategory == ISC.PureKiller
+        || (code.Category != GC.OtherLetter && code.IndicSyllabicCategory is ISC.Vowel or ISC.VowelDependent);
+
+    /// <summary>
+    /// Determines whether a code point is a vowel modifier.
+    /// </summary>
+    private static bool IsVowelModifier(Codepoint code)
+        => code.IndicSyllabicCategory is ISC.ToneMark or ISC.CantillationMark or ISC.RegisterShifter or ISC.Visarga
+        || (code.Category != GC.OtherLetter && code.IndicSyllabicCategory == ISC.Bindu);
+
+    /// <summary>
+    /// Determines whether a code point is a word joiner or reserved character.
+    /// </summary>
+    private static bool IsWordJoiner(Codepoint code)
+        => (code.DefaultIgnorable
+        && !VisibleDefaultIgnorables.Contains(code.Code)
+        && code.IndicSyllabicCategory == ISC.Other
+        && !IsCombiningGraphemeJoiner(code))
+        || code.Category == GC.OtherNotAssigned;
+
+    /// <summary>
+    /// Generates the character categories and state machine used by the Universal Shaping Engine.
+    /// </summary>
+    private static List<Codepoint> GenerateUniversalShapingDataTrie(UnicodeTrie unicodeGeneralCategory, UnicodeTrie indicSyllabicCategoryTrie, UnicodeTrie indicPositionalCategoryTrie, UnicodeTrie arabicJoiningTrie, UnicodeTrie scriptTrie)
     {
-        static IEnumerable<int>? ParseCodes(string code)
-        {
-            if (string.IsNullOrEmpty(code) || code.StartsWith('<'))
-            {
-                return null;
-            }
-
-            return Array.ConvertAll(code.Split(' '), ParseHexInt);
-        }
-
         static ArabicJoiningType GetJoiningType(int codePoint, uint value, GC category)
         {
             ArabicJoiningType type = (ArabicJoiningType)(value & 0xFF);
@@ -478,6 +406,44 @@ public static partial class Generator
             return type;
         }
 
+        HashSet<int> universalCodePointValues = [];
+        Regex propertyRegex = UnicodePropertyRowRegex();
+        AddCodePointRanges(universalCodePointValues, "IndicSyllabicCategory.txt", propertyRegex);
+        AddCodePointRanges(universalCodePointValues, "IndicSyllabicCategory-Additional.txt", propertyRegex);
+        AddCodePointRanges(universalCodePointValues, "IndicPositionalCategory.txt", propertyRegex);
+        AddCodePointRanges(universalCodePointValues, "IndicPositionalCategory-Additional.txt", propertyRegex);
+        AddCodePointRanges(universalCodePointValues, "ArabicShaping.txt", ArabicShapingRowRegex());
+
+        UnicodeTrieBuilder defaultIgnorableBuilder = new();
+        using (StreamReader propertyReader = GetStreamReader("DerivedCoreProperties.txt"))
+        {
+            string? propertyLine;
+            while ((propertyLine = propertyReader.ReadLine()) != null)
+            {
+                Match match = propertyRegex.Match(propertyLine);
+                if (!match.Success || match.Groups[3].Value != "Default_Ignorable_Code_Point")
+                {
+                    continue;
+                }
+
+                string end = match.Groups[2].Value;
+                if (string.IsNullOrEmpty(end))
+                {
+                    end = match.Groups[1].Value;
+                }
+
+                int min = ParseHexInt(match.Groups[1].Value);
+                int max = ParseHexInt(end);
+                defaultIgnorableBuilder.SetRange(min, max, 1, true);
+
+                for (int codePoint = min; codePoint <= max; codePoint++)
+                {
+                    universalCodePointValues.Add(codePoint);
+                }
+            }
+        }
+
+        UnicodeTrie defaultIgnorableTrie = defaultIgnorableBuilder.Freeze();
         List<Codepoint> codePoints = [];
         using StreamReader sr = GetStreamReader("UnicodeData.txt");
         string? line;
@@ -490,13 +456,8 @@ public static partial class Generator
                 Code = ParseHexInt(parts[0])
             };
 
-            // See https://www.unicode.org/reports/tr44 for mapping of fields
-            if (parts.Length > 4)
-            {
-                codepoint.Decomposition = ParseCodes(parts[5]) ?? Array.Empty<int>();
-            }
-
             codepoint.Category = (GC)unicodeGeneralCategory.Get((uint)codepoint.Code);
+            codepoint.DefaultIgnorable = defaultIgnorableTrie.Get((uint)codepoint.Code) != 0;
 
             codepoint.IndicSyllabicCategory = (ISC)indicSyllabicCategoryTrie.Get((uint)codepoint.Code);
             codepoint.IndicPositionalCategory = (IPC)indicPositionalCategoryTrie.Get((uint)codepoint.Code);
@@ -508,33 +469,69 @@ public static partial class Generator
             codePoints.Add(codepoint);
         }
 
-        // TODO: Override these properties using MS shaping. It's likely we just need to implement the harfbuzz
-        // category matching using Func<string, bool>
-        // OverrideIndicSyllabicCategory(codePoints);
-        // OverrideIndicPositionalCategory(codePoints);
-        UnicodeTrieBuilder builder = new();
-        Dictionary<string, int> symbols = [];
-        int numSymbols = 0;
-        Dictionary<int, List<int>> decompositions = [];
-        for (int i = 0; i < codePoints.Count; i++)
+        // The USE table includes only characters present in the syllabic, positional,
+        // joining, or default-ignorable inputs, then removes scripts handled by dedicated shapers.
+        List<Codepoint> universalCodePoints = new(universalCodePointValues.Count);
+        foreach (int codePointValue in universalCodePointValues)
         {
-            Codepoint codePoint = codePoints[i];
+            GC category = (GC)unicodeGeneralCategory.Get((uint)codePointValue);
+            uint joiningValue = arabicJoiningTrie.Get((uint)codePointValue);
+
+            universalCodePoints.Add(new Codepoint
+            {
+                Code = codePointValue,
+                IndicSyllabicCategory = (ISC)indicSyllabicCategoryTrie.Get((uint)codePointValue),
+                IndicPositionalCategory = (IPC)indicPositionalCategoryTrie.Get((uint)codePointValue),
+                ArabicJoiningType = GetJoiningType(codePointValue, joiningValue, category),
+                ArabicJoiningGroup = (ArabicJoiningGroup)((joiningValue >> 16) & 0xFF),
+                Category = category,
+                DefaultIgnorable = defaultIgnorableTrie.Get((uint)codePointValue) != 0
+            });
+        }
+
+        OverrideIndicSyllabicCategory(universalCodePoints);
+        OverrideIndicPositionalCategory(universalCodePoints);
+
+        for (int i = universalCodePoints.Count - 1; i >= 0; i--)
+        {
+            ScriptClass script = (ScriptClass)scriptTrie.Get((uint)universalCodePoints[i].Code);
+            if (script is ScriptClass.Arabic or ScriptClass.Lao or ScriptClass.Samaritan or ScriptClass.Syriac or ScriptClass.Thai)
+            {
+                universalCodePoints.RemoveAt(i);
+            }
+        }
+
+        foreach (Codepoint codePoint in universalCodePoints)
+        {
+            if (codePoint.Code is >= 0x0F18 and <= 0x0F19 or >= 0x0F3E and <= 0x0F3F)
+            {
+                codePoint.IndicSyllabicCategory = ISC.VowelDependent;
+            }
+            else if (codePoint.Code is >= 0x1CE2 and <= 0x1CE8)
+            {
+                codePoint.IndicSyllabicCategory = ISC.CantillationMark;
+            }
+            else if (codePoint.Code == 0x1CED)
+            {
+                codePoint.IndicSyllabicCategory = ISC.ToneMark;
+            }
+
+            if (codePoint.Code is 0x11302 or 0x11303 or 0x114C1)
+            {
+                codePoint.IndicPositionalCategory = IPC.Top;
+            }
+        }
+
+        UnicodeTrieBuilder builder = new();
+        Dictionary<string, int> symbols = UniversalCategoryNames.Select((name, value) => (name, value)).ToDictionary(x => x.name, x => x.value);
+        for (int i = 0; i < universalCodePoints.Count; i++)
+        {
+            Codepoint codePoint = universalCodePoints[i];
             string? category = GetCategory(codePoint);
 
             if (category != null)
             {
-                if (!symbols.TryGetValue(category, out int value))
-                {
-                    value = numSymbols++;
-                    symbols[category] = value;
-                }
-
-                builder.Set(codePoint.Code, (uint)value);
-            }
-
-            if (codePoint.IndicSyllabicCategory == ISC.VowelDependent && codePoint.Decomposition.Any())
-            {
-                decompositions[codePoint.Code] = Decompose(codePoint.Code, codePoints);
+                builder.Set(codePoint.Code, (uint)symbols[category]);
             }
         }
 
@@ -543,9 +540,42 @@ public static partial class Generator
 
         StateMachine machine = GetStateMachine("use", symbols);
 
-        GenerateDataClass("UniversalShaping", symbols, decompositions, machine);
+        GenerateDataClass("UniversalShaping", symbols, null, machine);
 
         return codePoints;
+    }
+
+    /// <summary>
+    /// Adds every character range explicitly present in a Unicode property file.
+    /// </summary>
+    /// <param name="codePoints">The destination set.</param>
+    /// <param name="fileName">The property file name.</param>
+    /// <param name="regex">The row parser for the property file.</param>
+    private static void AddCodePointRanges(HashSet<int> codePoints, string fileName, Regex regex)
+    {
+        using StreamReader reader = GetStreamReader(fileName);
+        string? line;
+        while ((line = reader.ReadLine()) != null)
+        {
+            Match match = regex.Match(line);
+            if (!match.Success)
+            {
+                continue;
+            }
+
+            string end = match.Groups[2].Value;
+            if (string.IsNullOrEmpty(end))
+            {
+                end = match.Groups[1].Value;
+            }
+
+            int min = ParseHexInt(match.Groups[1].Value);
+            int max = ParseHexInt(end);
+            for (int codePoint = min; codePoint <= max; codePoint++)
+            {
+                codePoints.Add(codePoint);
+            }
+        }
     }
 
     private static void OverrideIndicSyllabicCategory(List<Codepoint> codePoints)
@@ -569,7 +599,8 @@ public static partial class Generator
                     end = start;
                 }
 
-                if (!IndicSyllabicCategoryMap.TryGetValue(point, out ISC category))
+                if (!UniversalSyllabicCategoryOverrides.TryGetValue(point, out ISC category)
+                    && !IndicSyllabicCategoryMap.TryGetValue(point, out category))
                 {
                     continue;
                 }
@@ -624,50 +655,28 @@ public static partial class Generator
         }
     }
 
-    private static List<int> Decompose(int code, List<Codepoint> codepoints)
-    {
-        List<int> decomposition = [];
-        Codepoint codePoint = codepoints.First(x => x.Code == code);
-        foreach (int c in codePoint.Decomposition)
-        {
-            List<int> codes = Decompose(c, codepoints);
-            codes = codes.Count > 0 ? codes : [c];
-            decomposition.AddRange(codes);
-        }
-
-        return decomposition;
-    }
-
+    /// <summary>
+    /// Determines whether a code point is a base.
+    /// </summary>
     private static bool IsBase(Codepoint codepoint)
-        => new List<ISC>
-            {
-                ISC.Number,
-                ISC.Consonant,
-                ISC.ConsonantHeadLetter,
-                ISC.ToneLetter,
-                ISC.VowelIndependent
-            }
-            .Contains(codepoint.IndicSyllabicCategory)
-        || (new List<ArabicJoiningType>
-            {
-                ArabicJoiningType.JoinCausing,
-                ArabicJoiningType.DualJoining,
-                ArabicJoiningType.LeftJoining,
-                ArabicJoiningType.RightJoining
-            }.Contains(codepoint.ArabicJoiningType)
-        && codepoint.IndicSyllabicCategory != ISC.Joiner)
-           || (codepoint.Category == GC.OtherLetter
-           && new List<ISC>
-               {
-                   ISC.Avagraha,
-                   ISC.Bindu,
-                   ISC.ConsonantFinal,
-                   ISC.ConsonantMedial,
-                   ISC.ConsonantSubjoined,
-                   ISC.Vowel,
-                   ISC.VowelDependent
-               }
-               .Contains(codepoint.IndicSyllabicCategory));
+        => codepoint.IndicSyllabicCategory is ISC.Number
+            or ISC.Consonant
+            or ISC.ConsonantHeadLetter
+            or ISC.ToneLetter
+            or ISC.VowelIndependent
+        || (codepoint.ArabicJoiningType is ArabicJoiningType.JoinCausing
+            or ArabicJoiningType.DualJoining
+            or ArabicJoiningType.LeftJoining
+            or ArabicJoiningType.RightJoining
+            && codepoint.IndicSyllabicCategory != ISC.Joiner)
+        || (codepoint.Category == GC.OtherLetter
+            && codepoint.IndicSyllabicCategory is ISC.Avagraha
+                or ISC.Bindu
+                or ISC.ConsonantFinal
+                or ISC.ConsonantMedial
+                or ISC.ConsonantSubjoined
+                or ISC.Vowel
+                or ISC.VowelDependent);
 
     /// <summary>
     /// Generates the supplementary data for the shaper.
@@ -714,6 +723,27 @@ public static partial class Generator
             foreach (KeyValuePair<string, int> item in symbols)
             {
                 writer.Write($"            \"{item.Key}\"");
+                if (counter != max)
+                {
+                    writer.Write(",");
+                }
+
+                counter++;
+                writer.Write(Environment.NewLine);
+            }
+
+            writer.WriteLine("        };");
+            writer.Write(Environment.NewLine);
+
+            // Emit the reordering lookup in symbol order so the shaper can index it
+            // directly without building a second table when the type initializes.
+            writer.WriteLine("        public static ReadOnlySpan<bool> PostBaseCategories => new bool[]");
+            writer.WriteLine("        {");
+
+            counter = 0;
+            foreach (KeyValuePair<string, int> item in symbols)
+            {
+                writer.Write($"            {UniversalPostBaseCategoryNames.Contains(item.Key).ToString().ToLowerInvariant()}");
                 if (counter != max)
                 {
                     writer.Write(",");
@@ -844,9 +874,9 @@ public static partial class Generator
 
         public ArabicJoiningGroup ArabicJoiningGroup { get; set; }
 
-        public IEnumerable<int> Decomposition { get; set; } = Array.Empty<int>();
-
         public GC Category { get; set; }
+
+        public bool DefaultIgnorable { get; set; }
 
         public string Block { get; set; } = "No_Block";
     }

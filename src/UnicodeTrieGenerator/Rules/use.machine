@@ -1,46 +1,81 @@
-consonant_modifiers = CMAbv* CMBlw* ((H B | SUB) VS? CMAbv? CMBlw*)*;
+h = H | HVM | IS | Sk;
+
+consonant_modifiers = CMAbv* CMBlw* ((h B | SUB) CMAbv* CMBlw*)*;
 medial_consonants = MPre? MAbv? MBlw? MPst?;
-dependent_vowels = VPre* VAbv* VBlw* VPst*;
-vowel_modifiers = VMPre* VMAbv* VMBlw* VMPst*;
+dependent_vowels = VPre* VAbv* VBlw* VPst* | H;
+vowel_modifiers = HVM? VMPre* VMAbv* VMBlw* VMPst*;
 final_consonants = FAbv* FBlw* FPst*;
 final_modifiers = FMAbv* FMBlw* | FMPst?;
 
+complex_syllable_start = (R | CS)? (B | GB);
+complex_syllable_middle =
+    consonant_modifiers
+    medial_consonants
+    dependent_vowels
+    vowel_modifiers
+    (Sk B)*
+;
+complex_syllable_tail =
+    complex_syllable_middle
+    final_consonants
+    final_modifiers
+;
+number_joiner_terminated_cluster_tail = (HN N)* HN;
+numeral_cluster_tail = (HN N)+;
+symbol_cluster_tail = SMAbv+ SMBlw* | SMBlw+;
+
+virama_terminated_cluster_tail =
+    consonant_modifiers
+    (IS | RK)
+;
 virama_terminated_cluster =
-  R? (B | GB) VS?
-  consonant_modifiers
-  (H | RK)
+    complex_syllable_start
+    virama_terminated_cluster_tail
 ;
-
+sakot_terminated_cluster_tail =
+    complex_syllable_middle
+    Sk
+;
+sakot_terminated_cluster =
+    complex_syllable_start
+    sakot_terminated_cluster_tail
+;
 standard_cluster =
-  R? (B | GB) VS?
-  consonant_modifiers
-  medial_consonants
-  dependent_vowels
-  vowel_modifiers
-  final_consonants
-  final_modifiers
+    complex_syllable_start
+    complex_syllable_tail
 ;
-
+tail =
+    complex_syllable_tail
+  | sakot_terminated_cluster_tail
+  | symbol_cluster_tail
+  | virama_terminated_cluster_tail
+;
 broken_cluster =
-  R?
-  consonant_modifiers
-  medial_consonants
-  dependent_vowels
-  vowel_modifiers
-  final_consonants
+    R?
+    (tail | number_joiner_terminated_cluster_tail | numeral_cluster_tail)
 ;
 
-number_joiner_terminated_cluster = N VS? (HN N VS?)* HN;
-numeral_cluster = N VS? (HN N VS?)*;
-symbol_cluster = S VS? SMAbv* SMBlw*;
-independent_cluster = (IND | O | WJ) VS?;
+number_joiner_terminated_cluster = N number_joiner_terminated_cluster_tail;
+numeral_cluster = N numeral_cluster_tail?;
+symbol_cluster = (O | GB | SB) tail?;
+hieroglyph_cluster = SB* G HR? HM? SE* (J SB* (G HR? HM? SE*)?)*;
+
+other =
+    O | B | N | GB | CGJ | SUB | H | HN | ZWNJ | WJ | R | CS | IS | Sk
+  | G | J | SB | SE | HVM | HM | HR | RK | FAbv | FBlw | FPst | MAbv
+  | MBlw | MPst | MPre | CMAbv | CMBlw | VAbv | VBlw | VPst | VPre
+  | VMAbv | VMBlw | VMPst | VMPre | SMAbv | SMBlw | FMAbv | FMBlw | FMPst
+;
 
 Main =
-    independent_cluster:independent_cluster
-  | virama_terminated_cluster:virama_terminated_cluster
-  | standard_cluster:standard_cluster
-  | number_joiner_terminated_cluster:number_joiner_terminated_cluster
-  | numeral_cluster:numeral_cluster
-  | symbol_cluster:symbol_cluster
-  | broken_cluster:broken_cluster
+    virama_terminated_cluster:virama_terminated_cluster ZWNJ?
+  | sakot_terminated_cluster:sakot_terminated_cluster ZWNJ?
+  | standard_cluster:standard_cluster ZWNJ?
+  | number_joiner_terminated_cluster:number_joiner_terminated_cluster ZWNJ?
+  | numeral_cluster:numeral_cluster ZWNJ?
+  | symbol_cluster:symbol_cluster ZWNJ?
+  | hieroglyph_cluster:hieroglyph_cluster ZWNJ?
+  | non_cluster:FMPst
+  | broken_cluster:broken_cluster ZWNJ?
+  | non_cluster:other
 ;

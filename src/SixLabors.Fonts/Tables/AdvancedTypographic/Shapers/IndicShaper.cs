@@ -16,6 +16,41 @@ namespace SixLabors.Fonts.Tables.AdvancedTypographic.Shapers;
 internal sealed class IndicShaper : DefaultShaper
 {
     /// <summary>
+    /// Devanagari letter RRA.
+    /// </summary>
+    private const int DevanagariLetterRra = 0x0931;
+
+    /// <summary>
+    /// Bengali letter RRA.
+    /// </summary>
+    private const int BengaliLetterRra = 0x09DC;
+
+    /// <summary>
+    /// Bengali letter RHA.
+    /// </summary>
+    private const int BengaliLetterRha = 0x09DD;
+
+    /// <summary>
+    /// Tamil letter AU.
+    /// </summary>
+    private const int TamilLetterAu = 0x0B94;
+
+    /// <summary>
+    /// Bengali letter YA.
+    /// </summary>
+    private const int BengaliLetterYa = 0x09AF;
+
+    /// <summary>
+    /// Bengali sign Nukta.
+    /// </summary>
+    private const int BengaliSignNukta = 0x09BC;
+
+    /// <summary>
+    /// Bengali letter YYA.
+    /// </summary>
+    private const int BengaliLetterYya = 0x09DF;
+
+    /// <summary>
     /// The bit shift extracting the shaping category from a packed Indic shaping
     /// property word; the category occupies the upper byte.
     /// </summary>
@@ -225,6 +260,43 @@ internal sealed class IndicShaper : DefaultShaper
         => VowelConstraints.Insert(buffer, this.fontMetrics, this.ScriptClass, index, count);
 
     /// <inheritdoc />
+    public override bool TryDecompose(CodePoint codePoint, out CodePoint first, out CodePoint second)
+    {
+        // Indic normalization keeps these four letters atomic even though canonical
+        // decomposition data contains pairs for them. Fonts expect the original
+        // letters during script-specific substitution.
+        if (codePoint.Value is DevanagariLetterRra or BengaliLetterRra or BengaliLetterRha or TamilLetterAu)
+        {
+            first = default;
+            second = default;
+            return false;
+        }
+
+        return base.TryDecompose(codePoint, out first, out second);
+    }
+
+    /// <inheritdoc />
+    public override bool TryCompose(CodePoint first, CodePoint second, out CodePoint composed)
+    {
+        // A split vowel begins with a mark and must remain decomposed for reordering.
+        if (CodePoint.IsMark(first))
+        {
+            composed = default;
+            return false;
+        }
+
+        if (first.Value == BengaliLetterYa && second.Value == BengaliSignNukta)
+        {
+            // This excluded canonical pair is intentionally restored to Bengali YYA
+            // so fonts can address the letter as one substitution input.
+            composed = new CodePoint(BengaliLetterYya);
+            return true;
+        }
+
+        return base.TryCompose(first, second, out composed);
+    }
+
+    /// <inheritdoc />
     protected override void PlanFeatures(ShapingBuffer buffer, int index, int count)
     {
         this.EnableFeature(buffer, index, count, LoclTag, ShapingFeatureFlags.PerSyllable, this.setupSyllablesAction, null);
@@ -261,49 +333,6 @@ internal sealed class IndicShaper : DefaultShaper
         // scripts build through their dedicated features, so the feature is
         // disabled for the whole plan and its lookups are never collected.
         this.Features.DisableFeature(LigaTag);
-    }
-
-    /// <inheritdoc />
-    protected override void AssignFeatures(ShapingBuffer buffer, int index, int count)
-    {
-        if (buffer.Role != ShapingBufferRole.Substitution)
-        {
-            return;
-        }
-
-        FontMetrics fontMetrics = this.fontMetrics;
-
-        // Decompose split matras
-        Span<ushort> decompositionIds = stackalloc ushort[16];
-        int end = index + count;
-        for (int i = end - 1; i >= index; i--)
-        {
-            ref GlyphShapingData data = ref buffer[i];
-            if (UniversalShapingData.Decompositions.TryGetValue(data.CodePoint.Value, out int[]? decompositions) && decompositions != null)
-            {
-                Span<ushort> ids = decompositionIds[..decompositions.Length];
-                bool shouldDecompose = true;
-                for (int j = 0; j < decompositions.Length; j++)
-                {
-                    if (!fontMetrics.TryGetGlyphId(new CodePoint(decompositions[j]), out ushort id))
-                    {
-                        shouldDecompose = false;
-                        break;
-                    }
-
-                    ids[j] = id;
-                }
-
-                if (shouldDecompose)
-                {
-                    buffer.Replace(i, ids, KnownFeatureTags.GlyphCompositionDecomposition);
-                    for (int j = 0; j < decompositions.Length; j++)
-                    {
-                        buffer[i + j].CodePoint = new(decompositions[j]);
-                    }
-                }
-            }
-        }
     }
 
     /// <summary>

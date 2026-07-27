@@ -54,15 +54,21 @@ internal static class ShaperFactory
         TextOptions textOptions)
         => script switch
         {
-            // Arabic
+            // Arabic and Syriac
             ScriptClass.Arabic
             or ScriptClass.Syriac
 
-            // Arabic keeps its own shaper even when the font names no script of
-            // its own, because it is the one script given a fallback of its own.
-            // Layout mode controls glyph orientation and placement, not the
-            // bidirectional text run that determines joining forms.
+            // Arabic keeps its script shaper when the font has no matching script
+            // system because Arabic alone has presentation-form fallback shaping.
+            // Syriac requires a non-default script system selected from the font.
+            //
+            // The script shaper assigns joining forms along the horizontal inline
+            // axis. Forced vertical layout keeps glyphs upright and stacks them, so
+            // generic shaping applies common and vertical features without contextual
+            // joining. Mixed vertical layout rotates Arabic and Syriac glyphs, keeping
+            // their horizontal RTL inline direction and script-specific joining.
             => (unicodeScriptTag != default || script == ScriptClass.Arabic)
+            && !textOptions.LayoutMode.IsVertical()
             ? new ArabicShaper(script, textOptions)
             : new DefaultShaper(script, textOptions),
 

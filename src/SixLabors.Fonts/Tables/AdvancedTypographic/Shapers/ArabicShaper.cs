@@ -169,16 +169,6 @@ internal sealed class ArabicShaper : DefaultShaper
         this.Features.AddFlags(CaltTag, ShapingFeatureFlags.ManualZwj);
         this.Features.AddFlags(LigaTag, ShapingFeatureFlags.ManualZwj);
         this.Features.AddFlags(CligTag, ShapingFeatureFlags.ManualZwj);
-
-        // HarfBuzz plans these as Arabic-script features, independently of the
-        // generic horizontal feature list. Horizontal runs already get them from
-        // DefaultShaper; forced vertical Arabic needs them here as well.
-        if (buffer.TextOptions.LayoutMode.IsVertical())
-        {
-            this.EnableFeature(buffer, index, count, CaltTag);
-            this.EnableFeature(buffer, index, count, LigaTag);
-            this.EnableFeature(buffer, index, count, CligTag);
-        }
     }
 
     /// <inheritdoc/>

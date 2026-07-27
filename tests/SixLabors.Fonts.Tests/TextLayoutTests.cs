@@ -506,6 +506,37 @@ public class TextLayoutTests
         }
     }
 
+    /// <summary>
+    /// Verifies that configuring an unused fallback font does not alter positioning
+    /// for glyphs supplied by the primary font.
+    /// </summary>
+    [Fact]
+    public void UnusedFallbackFontDoesNotChangePrimaryFontPositioning()
+    {
+        if (SystemFonts.TryGet("Arial", out FontFamily arial)
+            && SystemFonts.TryGet("Microsoft JhengHei", out FontFamily jhengHei))
+        {
+            const string text = "Taumata";
+            Font font = arial.CreateFont(20);
+            TextOptions primaryOnly = new(font);
+            TextOptions withFallback = new(font)
+            {
+                FallbackFontFamilies = new[] { jhengHei }
+            };
+
+            ReadOnlySpan<GlyphMetrics> expected = TextMeasurer.GetGlyphMetrics(text, primaryOnly).Span;
+            ReadOnlySpan<GlyphMetrics> actual = TextMeasurer.GetGlyphMetrics(text, withFallback).Span;
+
+            Assert.Equal(expected.Length, actual.Length);
+            for (int i = 0; i < expected.Length; i++)
+            {
+                Assert.Equal(expected[i].Advance, actual[i].Advance);
+                Assert.Equal(expected[i].Bounds, actual[i].Bounds);
+                Assert.Equal(expected[i].RenderableBounds, actual[i].RenderableBounds);
+            }
+        }
+    }
+
     [Fact]
     public void KeepAllSuppressesBreaksBetweenTypographicWordUnits()
     {
@@ -1401,15 +1432,13 @@ public class TextLayoutTests
 #endif
 
     /// <summary>
-    /// Verifies that page orientation does not disable Arabic joining substitutions.
+    /// Verifies that mixed vertical page orientation does not disable Arabic joining substitutions.
     /// </summary>
-    /// <param name="layoutMode">The vertical page layout to measure.</param>
+    /// <param name="layoutMode">The mixed vertical page layout to measure.</param>
     [Theory]
-    [InlineData(LayoutMode.VerticalLeftRight)]
-    [InlineData(LayoutMode.VerticalRightLeft)]
     [InlineData(LayoutMode.VerticalMixedLeftRight)]
     [InlineData(LayoutMode.VerticalMixedRightLeft)]
-    public void MeasureArabic_VerticalLayoutPreservesJoiningForms(LayoutMode layoutMode)
+    public void MeasureArabic_VerticalMixedLayoutPreservesJoiningForms(LayoutMode layoutMode)
     {
         Font font = TestFonts.GetFontFamily(new FontCollection(), TestFonts.NotoNaskhArabicRegular).CreateFont(30);
         const string text = "مرحبا";
@@ -2694,9 +2723,11 @@ public class TextLayoutTests
         Assert.Equal(characterPosition, glyphs.ToArray().Select(x => x.Bounds.Y), Comparer);
     }
 
+    // An isolated Balinese mark forms a broken syllable, so shaping inserts one
+    // dotted-circle base. Repeating the zero-advance mark must not add tracking.
     [Theory]
-    [InlineData("\u1B3C", 1, 83.8)]
-    [InlineData("\u1B3C\u1B3C", 1, 83.8)]
+    [InlineData("\u1B3C", 1, 54.78125)]
+    [InlineData("\u1B3C\u1B3C", 1, 54.78125)]
     public void FontTracking_DoNotAddSpacingAfterCharacterThatDidNotAdvance(string text, float tracking, float width)
     {
         Font font = TestFonts.GetFont(TestFonts.NotoSansBalineseRegular, 64);

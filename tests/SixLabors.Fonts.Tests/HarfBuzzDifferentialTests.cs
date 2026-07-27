@@ -10,7 +10,7 @@ namespace SixLabors.Fonts.Tests;
 
 /// <summary>
 /// Differential shaping checks against HarfBuzz. Both engines shape identical font
-/// bytes; glyph ids and advances must match exactly. These tests are the correctness
+/// bytes; glyph ids, placement offsets, and advances must match exactly. These tests are the correctness
 /// gate for shaping performance work: any change to the shaping pipeline must keep
 /// them green, and new benchmark scenarios must add a matching case here.
 /// </summary>
@@ -22,6 +22,7 @@ public class HarfBuzzDifferentialTests
             // Latin: ligature opportunities and kern-sensitive pairs.
             { TestFonts.OpenSansFile, "The quick brown fox jumps over the lazy dog; fifty fluffy waffles.", false },
             { TestFonts.OpenSansFile, "AVATAR To Ya. WAV Tc office flag 1/2 fi ffl", false },
+            { TestFonts.Arial, "Taumata", false },
 
             // Arabic: joining forms, mandatory ligatures, mark anchoring.
             { TestFonts.ArabicFontFile, "سلام عليكم ورحمة الله وبركاته لا إله إلا الله", true },
@@ -30,6 +31,8 @@ public class HarfBuzzDifferentialTests
             // Devanagari: conjuncts, matras, and reordering.
             { TestFonts.NotoSansDevanagariRegular, "क्षत्रिय द्वारा प्रकृति की रक्षा कर्तव्य है", false },
             { TestFonts.NotoSansDevanagariRegular, "श्रद्धांजलि", false },
+            { TestFonts.SinhalaSansRegular, "\u0D9A\u0DCA\u0DC2", false },
+            { TestFonts.SinhalaSansRegular, "\u0D9A\u0DCA\u200D\u0DC2", false },
 
             // Emoji joiner sequences: the zero width joiner and variation selector
             // participate in the fonts' sequence lookups (including contextual
@@ -74,12 +77,16 @@ public class HarfBuzzDifferentialTests
         GlyphInfo[] infos = buffer.GetGlyphInfoSpan().ToArray();
         GlyphPosition[] positions = buffer.GetGlyphPositionSpan().ToArray();
 
-        Assert.Equal(infos.Length, glyphs.Length);
+        uint[] expectedGlyphIds = Array.ConvertAll(infos, x => x.Codepoint);
+        uint[] actualGlyphIds = glyphs.ToArray().Select(x => (uint)x.GlyphId).ToArray();
+        Assert.Equal(expectedGlyphIds, actualGlyphIds);
 
         for (int i = 0; i < glyphs.Length; i++)
         {
             Assert.Equal(infos[i].Codepoint, glyphs[i].GlyphId);
             Assert.Equal(positions[i].XAdvance, glyphs[i].AdvanceWidth);
+            Assert.Equal(positions[i].XOffset, glyphs[i].Offset.X);
+            Assert.Equal(positions[i].YOffset, glyphs[i].Offset.Y);
         }
     }
 }

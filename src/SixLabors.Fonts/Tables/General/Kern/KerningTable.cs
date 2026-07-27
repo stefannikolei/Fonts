@@ -122,9 +122,12 @@ internal sealed class KerningTable : Table
         }
 
         ref GlyphShapingPosition currentPosition = ref buffer.PositionAt(left);
-        if (currentPosition.IsKerned)
+        if (currentPosition.IsKerned
+            || buffer.MetricsAt(left).Metrics.FontMetrics != fontMetrics
+            || buffer.MetricsAt(right).Metrics.FontMetrics != fontMetrics)
         {
-            // Already kerned via previous processing.
+            // A shared shaping buffer can contain glyph ids from several fonts. A
+            // kerning table's glyph ids are meaningful only within its own font.
             return;
         }
 

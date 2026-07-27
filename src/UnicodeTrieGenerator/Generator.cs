@@ -538,6 +538,7 @@ public static partial class Generator
             { "Left", IndicPositionalCategory.Left },
             { "Left_And_Right", IndicPositionalCategory.LeftAndRight },
             { "NA", IndicPositionalCategory.NA },
+            { "Not_Applicable", IndicPositionalCategory.NA },
             { "Overstruck", IndicPositionalCategory.Overstruck },
             { "Right", IndicPositionalCategory.Right },
             { "Top", IndicPositionalCategory.Top },
@@ -581,7 +582,7 @@ public static partial class Generator
         GenerateEastAsianWidthTrie();
         GenerateEmojiTrie();
         UnicodeTrie ugc = GenerateUnicodeCategoryTrie();
-        GenerateScriptTrie();
+        UnicodeTrie script = GenerateScriptTrie();
         GenerateGraphemeBreakTrie();
         GenerateIndicConjunctBreakTrie();
         UnicodeTrie uajt = GenerateArabicShapingTrie();
@@ -594,7 +595,7 @@ public static partial class Generator
         GenerateArabicFallbackData();
         GenerateScriptDirectionData();
 
-        List<Codepoint> codePoints = GenerateUniversalShapingDataTrie(ugc, uisc, uipc, uajt);
+        List<Codepoint> codePoints = GenerateUniversalShapingDataTrie(ugc, uisc, uipc, uajt, script);
         GenerateIndicShapingDataTrie([.. codePoints]);
         GenerateKhmerShapingData();
         GenerateMyanmarShapingData();
@@ -1034,7 +1035,7 @@ public static partial class Generator
     /// <summary>
     /// Generates the UnicodeTrie for the script code point ranges.
     /// </summary>
-    private static void GenerateScriptTrie()
+    private static UnicodeTrie GenerateScriptTrie()
     {
         Regex regex = UnicodePropertyRowRegex();
         UnicodeTrieBuilder builder = new((uint)ScriptClass.Unknown);
@@ -1065,6 +1066,7 @@ public static partial class Generator
 
         UnicodeTrie trie = builder.Freeze();
         GenerateTrieClass("Script", trie);
+        return trie;
     }
 
     /// <summary>

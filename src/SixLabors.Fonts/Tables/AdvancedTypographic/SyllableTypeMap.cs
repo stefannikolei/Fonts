@@ -24,10 +24,13 @@ internal static class SyllableTypeMap
     {
         "broken_cluster" => SyllableType.BrokenCluster,
         "consonant_syllable" => SyllableType.ConsonantSyllable,
+        "hieroglyph_cluster" => SyllableType.HieroglyphCluster,
         "independent_cluster" => SyllableType.IndependentCluster,
         "non_khmer_cluster" => SyllableType.NonIndicCluster,
+        "non_cluster" => SyllableType.NonCluster,
         "number_joiner_terminated_cluster" => SyllableType.NumberJoinerTerminatedCluster,
         "numeral_cluster" => SyllableType.NumeralCluster,
+        "sakot_terminated_cluster" => SyllableType.SakotTerminatedCluster,
         "standalone_cluster" => SyllableType.StandaloneCluster,
         "standard_cluster" => SyllableType.StandardCluster,
         "symbol_cluster" => SyllableType.SymbolCluster,

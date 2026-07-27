@@ -184,6 +184,13 @@ internal class GPosTable : Table
             for (int s = 0; s < segments.Count; s++)
             {
                 (int index, int count, ScriptClass script, ShapePlan shapePlan) = segments[s];
+                if (shapePlan.FontMetrics != fontMetrics)
+                {
+                    // Glyph ids and lookup indices are local to the font bound to
+                    // the plan, even though all fonts share one positioning buffer.
+                    continue;
+                }
+
                 updated |= this.PositionSegment(
                     fontMetrics,
                     buffer,

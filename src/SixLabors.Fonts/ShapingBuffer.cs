@@ -1,7 +1,6 @@
 // Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
-using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using SixLabors.Fonts.Tables.AdvancedTypographic;
@@ -963,38 +962,6 @@ internal sealed class ShapingBuffer
     }
 
     /// <summary>
-    /// Gets the glyph records matching the given codepoint offset as copies.
-    /// </summary>
-    /// <param name="offset">The zero-based index within the input codepoint buffer.</param>
-    /// <param name="data">
-    /// When this method returns, contains copies of the records associated with the
-    /// specified offset, if any were found.
-    /// </param>
-    /// <returns>
-    /// <see langword="true"/> if the buffer contains records for the specified offset;
-    /// otherwise, <see langword="false"/>.
-    /// </returns>
-    public bool TryGetGlyphShapingDataAtOffset(int offset, [NotNullWhen(true)] out IReadOnlyList<GlyphShapingData>? data)
-    {
-        List<GlyphShapingData> match = [];
-        for (int i = 0; i < this.Count; i++)
-        {
-            if (this.data[i].CodePointIndex == offset)
-            {
-                match.Add(this.data[i]);
-            }
-            else if (match.Count > 0)
-            {
-                // Offsets, though non-sequential, are sorted, so we can stop searching.
-                break;
-            }
-        }
-
-        data = match;
-        return match.Count > 0;
-    }
-
-    /// <summary>
     /// Performs a 1:1 replacement of a glyph id at the given position.
     /// </summary>
     /// <param name="index">The zero-based index of the record to replace.</param>
@@ -1407,9 +1374,9 @@ internal sealed class ShapingBuffer
     }
 
     /// <summary>
-    /// Replaces fallback glyphs in this buffer with glyphs shaped by a fallback font:
-    /// records whose metrics resolved to real glyphs in <paramref name="workspace"/>
-    /// supersede the fallback records at the same codepoint offset.
+    /// Replaces fallback glyphs in this buffer with glyphs shaped by a fallback font.
+    /// Each surviving workspace offset supersedes the source interval up to the next
+    /// surviving offset, including records consumed by substitution.
     /// </summary>
     /// <param name="font">The fallback font used to resolve metrics.</param>
     /// <param name="workspace">The substituted workspace buffer for the fallback font.</param>
@@ -1419,6 +1386,8 @@ internal sealed class ShapingBuffer
     /// </returns>
     public bool TryUpdate(Font font, ShapingBuffer workspace)
     {
+        // The fallback font supplies outlines and font tables, while layout mode and
+        // color policy remain properties of the destination shaping operation.
         FontMetrics fontMetrics = font.FontMetrics;
         LayoutMode layoutMode = this.TextOptions.LayoutMode;
         ColorFontSupport colorFontSupport = this.TextOptions.ColorFontSupport;
@@ -1432,67 +1401,155 @@ internal sealed class ShapingBuffer
 
         uint verticalMask = ShapePlanFeatures.VerticalFeatureMask;
 
-        for (int i = 0; i < this.Count; i++)
+        for (int i = 0; i < this.Count;)
         {
             if (this.metrics[i].Metrics.GlyphType != GlyphType.Fallback)
             {
-                // We've already got the correct glyph.
+                // A primary or earlier fallback font already resolved this record.
+                // Later fallback passes must not replace a successful choice.
+                i++;
                 continue;
             }
 
+            // Fallback fonts inherit the point size of the unresolved destination
+            // record. Their Font instance identifies the face, but an explicit text
+            // run can have a different size from the options' default font.
             int offset = this.data[i].CodePointIndex;
             float pointSize = this.metrics[i].PointSize;
-            if (workspace.TryGetGlyphShapingDataAtOffset(offset, out IReadOnlyList<GlyphShapingData>? replacements))
+
+            // Shaping preserves ascending source offsets even when substitution
+            // changes the number of glyphs. Locate the contiguous replacement group
+            // directly in the workspace instead of allocating a temporary list.
+            int replacementStart = 0;
+            while (replacementStart < workspace.Count && workspace.data[replacementStart].CodePointIndex < offset)
             {
-                int replacementCount = 0;
-                for (int j = 0; j < replacements.Count; j++)
+                replacementStart++;
+            }
+
+            int replacementEnd = replacementStart;
+            while (replacementEnd < workspace.Count && workspace.data[replacementEnd].CodePointIndex == offset)
+            {
+                replacementEnd++;
+            }
+
+            if (replacementStart == replacementEnd)
+            {
+                // The fallback shaping result has no glyph at this source offset and
+                // no earlier result in this pass claimed it. Leave the destination
+                // record available for the next configured fallback font.
+                hasFallBacks = true;
+                i++;
+                continue;
+            }
+
+            // A substitution can consume later source records into the glyphs at
+            // this offset. The next surviving offset marks the end of that source
+            // interval; replacing only the first record would leave the consumed
+            // primary-font .notdef records visible.
+            int replacementLimit = replacementEnd < workspace.Count
+                ? workspace.data[replacementEnd].CodePointIndex
+                : int.MaxValue;
+
+            // Validate the whole replacement group before mutating the destination.
+            // Installing only the glyphs this font can draw would mix independently
+            // shaped fragments and destroy the substitution result. Controls retain
+            // the established exception because their fallback metrics are layout
+            // placeholders rather than visible missing-glyph boxes.
+            bool replacementsComplete = true;
+            for (int j = replacementStart; j < replacementEnd; j++)
+            {
+                ref GlyphShapingData shape = ref workspace.data[j];
+                TextRun shapeRun = this.TextRuns[shape.TextRunIndex];
+                FontGlyphMetrics glyphMetrics = this.GetGlyphMetrics(
+                    fontMetrics,
+                    shape.CodePoint,
+                    shape.GlyphId,
+                    shapeRun.TextAttributes,
+                    shapeRun.TextDecorations,
+                    layoutMode,
+                    colorFontSupport);
+
+                if (glyphMetrics.GlyphType == GlyphType.Fallback && !CodePoint.IsControl(shape.CodePoint))
                 {
-                    GlyphShapingData shape = replacements[j];
-                    ushort id = shape.GlyphId;
-                    CodePoint codePoint = shape.CodePoint;
-
-                    TextRun shapeRun = this.TextRuns[shape.TextRunIndex];
-                    TextAttributes textAttributes = shapeRun.TextAttributes;
-                    TextDecorations textDecorations = shapeRun.TextDecorations;
-
-                    bool isVertical = AdvancedTypographicUtils.IsVerticalGlyph(codePoint, layoutMode)
-                        || (shape.AppliedFeatureMask & verticalMask) != 0;
-
-                    FontGlyphMetrics glyphMetrics = this.GetGlyphMetrics(fontMetrics, codePoint, id, textAttributes, textDecorations, layoutMode, colorFontSupport);
-
-                    // If the glyphs are fallbacks we don't want them as
-                    // we've already captured them on the first run.
-                    if (glyphMetrics.GlyphType == GlyphType.Fallback && !CodePoint.IsControl(codePoint))
-                    {
-                        hasFallBacks = true;
-                        continue;
-                    }
-
-                    if (replacementCount == 0)
-                    {
-                        // There should only be a single fallback glyph at this position
-                        // from the previous buffer.
-                        this.RemoveAt(i);
-                    }
-
-                    // Track the number of inserted glyphs at the offset so we can
-                    // correctly increment our position.
-                    shape.CodePointIndex = offset;
-                    shape.ClearFeatures();
-
-                    this.glyphDigest.Add(glyphMetrics.GlyphId);
-                    this.InsertAt(i + replacementCount, shape, new(font, pointSize, glyphMetrics));
-                    this.positions[i + replacementCount] = new(isVertical
-                        ? new(0, 0, 0, glyphMetrics.AdvanceHeight)
-                        : new(0, 0, glyphMetrics.AdvanceWidth, 0));
-                    replacementCount++;
-                }
-
-                if (replacementCount > 0)
-                {
-                    i += replacementCount - 1;
+                    replacementsComplete = false;
+                    break;
                 }
             }
+
+            if (!replacementsComplete)
+            {
+                // Keep the original group intact so another fallback font can try the
+                // same source interval as one shaping unit.
+                hasFallBacks = true;
+                i++;
+                continue;
+            }
+
+            // Multiple glyphs can survive at the same source offset. Walk back to
+            // include every primary-font result at the replacement boundary, then
+            // extend through offsets consumed by the fallback substitution.
+            int destinationStart = i;
+            while (destinationStart > 0 && this.data[destinationStart - 1].CodePointIndex == offset)
+            {
+                destinationStart--;
+            }
+
+            int destinationEnd = destinationStart;
+            while (destinationEnd < this.Count && this.data[destinationEnd].CodePointIndex < replacementLimit)
+            {
+                destinationEnd++;
+            }
+
+            // Remove backwards so each deletion cannot change the indices of records
+            // still awaiting removal. RemoveAt keeps shaping data, metrics, and
+            // positions aligned across their parallel arrays.
+            for (int j = destinationEnd - 1; j >= destinationStart; j--)
+            {
+                this.RemoveAt(j);
+            }
+
+            int replacementCount = 0;
+            for (int j = replacementStart; j < replacementEnd; j++)
+            {
+                GlyphShapingData shape = workspace.data[j];
+                CodePoint codePoint = shape.CodePoint;
+                TextRun shapeRun = this.TextRuns[shape.TextRunIndex];
+
+                // The validation pass primed the direct-mapped metrics cache, so this
+                // second lookup retrieves the value needed for insertion without a
+                // second font-table or dictionary lookup.
+                FontGlyphMetrics glyphMetrics = this.GetGlyphMetrics(
+                    fontMetrics,
+                    codePoint,
+                    shape.GlyphId,
+                    shapeRun.TextAttributes,
+                    shapeRun.TextDecorations,
+                    layoutMode,
+                    colorFontSupport);
+
+                bool isVertical = AdvancedTypographicUtils.IsVerticalGlyph(codePoint, layoutMode)
+                    || (shape.AppliedFeatureMask & verticalMask) != 0;
+
+                // Substitution masks belong to the temporary workspace plan. The
+                // destination retains the substitution result but positioning starts
+                // with clean feature state for the fallback font's positioning plan.
+                shape.ClearFeatures();
+
+                this.glyphDigest.Add(glyphMetrics.GlyphId);
+                this.InsertAt(destinationStart + replacementCount, shape, new(font, pointSize, glyphMetrics));
+
+                // Positioning begins from the fallback glyph's natural advance on the
+                // active layout axis. Offsets and cross-axis adjustments remain zero
+                // until the fallback font's positioning tables run.
+                this.positions[destinationStart + replacementCount] = new(isVertical
+                    ? new(0, 0, 0, glyphMetrics.AdvanceHeight)
+                    : new(0, 0, glyphMetrics.AdvanceWidth, 0));
+                replacementCount++;
+            }
+
+            // Continue after the inserted group. Reexamining it would treat neither
+            // its resolved metrics nor its workspace offsets as new fallback work.
+            i = destinationStart + replacementCount;
         }
 
         return !hasFallBacks;

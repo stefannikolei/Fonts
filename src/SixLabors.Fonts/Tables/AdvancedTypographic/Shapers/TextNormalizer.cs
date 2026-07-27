@@ -187,7 +187,7 @@ internal static class TextNormalizer
             return 0;
         }
 
-        if (TryWriteDecomposition(shaper, fontMetrics, buffer, i, codePoint, out produced))
+        if (TryWriteDecomposition(shaper, fontMetrics, buffer, i, codePoint, mayShortCircuit, out produced))
         {
             return produced - 1;
         }
@@ -207,9 +207,10 @@ internal static class TextNormalizer
     /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="i">The zero-based index of the record.</param>
     /// <param name="codePoint">The character to take apart.</param>
+    /// <param name="mayShortCircuit">Whether a drawable leading part may end recursive decomposition.</param>
     /// <param name="produced">When this method returns, contains the number of records written.</param>
     /// <returns><see langword="true"/> when the character came apart.</returns>
-    private static bool TryWriteDecomposition(BaseShaper shaper, FontMetrics fontMetrics, ShapingBuffer buffer, int i, CodePoint codePoint, out int produced)
+    private static bool TryWriteDecomposition(BaseShaper shaper, FontMetrics fontMetrics, ShapingBuffer buffer, int i, CodePoint codePoint, bool mayShortCircuit, out int produced)
     {
         produced = 0;
 
@@ -219,7 +220,7 @@ internal static class TextNormalizer
         Span<ushort> glyphs = stackalloc ushort[MaxDecompositionParts];
 
         int gathered = 0;
-        if (!TryGather(shaper, fontMetrics, codePoint, parts, glyphs, ref gathered))
+        if (!TryGather(shaper, fontMetrics, codePoint, parts, glyphs, mayShortCircuit, ref gathered))
         {
             return false;
         }
@@ -253,9 +254,10 @@ internal static class TextNormalizer
     /// <param name="codePoint">The character to take apart.</param>
     /// <param name="parts">The characters gathered so far.</param>
     /// <param name="glyphs">The glyphs of those characters.</param>
+    /// <param name="mayShortCircuit">Whether a drawable leading part may end recursive decomposition.</param>
     /// <param name="gathered">The number gathered so far, advanced as parts are added.</param>
     /// <returns><see langword="true"/> when the whole chain resolved to drawable parts.</returns>
-    private static bool TryGather(BaseShaper shaper, FontMetrics fontMetrics, CodePoint codePoint, Span<CodePoint> parts, Span<ushort> glyphs, ref int gathered)
+    private static bool TryGather(BaseShaper shaper, FontMetrics fontMetrics, CodePoint codePoint, Span<CodePoint> parts, Span<ushort> glyphs, bool mayShortCircuit, ref int gathered)
     {
         if (!shaper.TryDecompose(codePoint, out CodePoint first, out CodePoint second))
         {
@@ -271,9 +273,11 @@ internal static class TextNormalizer
             return false;
         }
 
-        // A leading part the font can draw ends the walk. Otherwise the leading part
-        // comes apart in turn, and the trailing part follows whatever that yields.
-        if (fontMetrics.TryGetGlyphId(first, out ushort firstId))
+        // The composed-diacritics mode keeps the shortest drawable leading part.
+        // Indic and related shapers instead follow that part's decomposition to its
+        // end even when the font can already draw it.
+        bool hasFirst = fontMetrics.TryGetGlyphId(first, out ushort firstId);
+        if (mayShortCircuit && hasFirst)
         {
             if (gathered + 1 > parts.Length)
             {
@@ -284,9 +288,24 @@ internal static class TextNormalizer
             glyphs[gathered] = firstId;
             gathered++;
         }
-        else if (!TryGather(shaper, fontMetrics, first, parts, glyphs, ref gathered))
+        else
         {
-            return false;
+            // Recursive gathering writes into shared stack storage. Remember the
+            // starting length so a leading decomposition that cannot be completed
+            // leaves no partial parts before the drawable leading fallback is used.
+            int checkpoint = gathered;
+            if (!TryGather(shaper, fontMetrics, first, parts, glyphs, mayShortCircuit, ref gathered))
+            {
+                gathered = checkpoint;
+                if (!hasFirst || gathered + 1 > parts.Length)
+                {
+                    return false;
+                }
+
+                parts[gathered] = first;
+                glyphs[gathered] = firstId;
+                gathered++;
+            }
         }
 
         if (hasSecond)

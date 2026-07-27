@@ -32,6 +32,11 @@ internal enum SyllableType
     ConsonantSyllable,
 
     /// <summary>
+    /// The hieroglyph_cluster rule.
+    /// </summary>
+    HieroglyphCluster,
+
+    /// <summary>
     /// The independent_cluster rule.
     /// </summary>
     IndependentCluster,
@@ -43,6 +48,11 @@ internal enum SyllableType
     NonIndicCluster,
 
     /// <summary>
+    /// The non_cluster rule.
+    /// </summary>
+    NonCluster,
+
+    /// <summary>
     /// The number_joiner_terminated_cluster rule.
     /// </summary>
     NumberJoinerTerminatedCluster,
@@ -51,6 +61,11 @@ internal enum SyllableType
     /// The numeral_cluster rule.
     /// </summary>
     NumeralCluster,
+
+    /// <summary>
+    /// The sakot_terminated_cluster rule.
+    /// </summary>
+    SakotTerminatedCluster,
 
     /// <summary>
     /// The standalone_cluster rule.

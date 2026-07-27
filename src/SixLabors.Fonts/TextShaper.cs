@@ -17,10 +17,10 @@ namespace SixLabors.Fonts;
 /// scale the text.
 /// </para>
 /// <para>
-/// <see cref="Shape(Font, TextShapingBuffer)"/> treats the text as one unwrapped
-/// logical line and resolves mixed-direction text. <see cref="ShapeRun(Font,
-/// TextShapingBuffer)"/> shapes one directional run that has already been selected
-/// by the caller.
+/// <see cref="Shape(Font, TextShapingBuffer)"/> treats the text as unwrapped
+/// logical lines separated by hard breaks and resolves mixed-direction text within
+/// each line. <see cref="ShapeRun(Font, TextShapingBuffer)"/> shapes one directional
+/// run that has already been selected by the caller.
 /// </para>
 /// <para>
 /// Advances and offsets are expressed in font design units; see
@@ -30,8 +30,9 @@ namespace SixLabors.Fonts;
 public static partial class TextShaper
 {
     /// <summary>
-    /// Shapes the buffer's text as one unwrapped logical line, replacing the
-    /// buffer's glyphs with the line's visually ordered glyphs.
+    /// Shapes the buffer's text as unwrapped logical lines separated by hard
+    /// breaks, replacing the buffer's glyphs with each line's visually ordered
+    /// glyphs.
     /// </summary>
     /// <param name="font">The font to shape against.</param>
     /// <param name="buffer">The buffer holding the line, which receives the glyphs.</param>
@@ -44,9 +45,9 @@ public static partial class TextShaper
     }
 
     /// <summary>
-    /// Shapes the buffer's text as one unwrapped logical line with the given
-    /// features turned on, replacing the buffer's glyphs with the line's visually
-    /// ordered glyphs.
+    /// Shapes the buffer's text as unwrapped logical lines separated by hard breaks
+    /// with the given features turned on, replacing the buffer's glyphs with each
+    /// line's visually ordered glyphs.
     /// </summary>
     /// <param name="font">The font to shape against.</param>
     /// <param name="buffer">The buffer holding the line, which receives the glyphs.</param>
@@ -117,9 +118,22 @@ public static partial class TextShaper
             {
                 // ShapeCore deliberately leaves positioned records in logical order
                 // because layout cannot choose visual order until line breaking. This
-                // API fixes the boundary at the complete unwrapped buffer, so the same
-                // per-line L2 transformation used by layout can run immediately.
-                BidiReordering.Reorder(shaped, scratch.BidiRuns, scratch.BidiMap);
+                // API has no soft wrapping, so each newline function fixes a complete
+                // line on which the shared L2 transformation can run immediately.
+                ReadOnlySpan<int> paragraphEnds = scratch.BidiData.ParagraphEnds;
+                int glyphStart = 0;
+                for (int paragraph = 0; paragraph <= paragraphEnds.Length; paragraph++)
+                {
+                    int codePointEnd = paragraph < paragraphEnds.Length ? paragraphEnds[paragraph] : scratch.BidiData.Length;
+                    int glyphEnd = glyphStart;
+                    while (glyphEnd < shaped.Count && shaped[glyphEnd].CodePointIndex < codePointEnd)
+                    {
+                        glyphEnd++;
+                    }
+
+                    BidiReordering.Reorder(shaped, scratch.BidiRuns, scratch.BidiMap, glyphStart, glyphEnd);
+                    glyphStart = glyphEnd;
+                }
             }
             else if (scratch.RunReadsRightToLeft)
             {

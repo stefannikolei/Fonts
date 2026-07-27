@@ -169,6 +169,107 @@ public class TextShaperTests
         }
     }
 
+    /// <summary>
+    /// Verifies that automatic paragraph direction and visual reordering restart
+    /// after a hard break.
+    /// </summary>
+    [Fact]
+    public void Shape_HardBreaks_ResolveAndReorderEachParagraph()
+    {
+        const string text = "אבג\nabc";
+        Font font = new FontCollection().Add(TestFonts.Anchor2FontFile).CreateFont(72);
+        TextShapingBuffer buffer = new();
+        buffer.Add(text);
+        buffer.Direction = TextDirection.Auto;
+
+        TextShaper.Shape(font, buffer);
+
+        // The first paragraph resolves RTL and the second resolves LTR. Their
+        // records remain in line order rather than participating in one reversal.
+        int[] expectedCodePointIndices = [3, 2, 1, 0, 4, 5, 6];
+        Assert.Equal(expectedCodePointIndices.Length, buffer.Count);
+        for (int i = 0; i < buffer.Count; i++)
+        {
+            Assert.Equal(expectedCodePointIndices[i], buffer[i].CodePointIndex);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that shaping newline-delimited text together produces the same
+    /// records as shaping those logical lines independently.
+    /// </summary>
+    /// <param name="hardBreak">The newline function separating the logical lines.</param>
+    [Theory]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    public void Shape_HardBreaks_MatchSeparateCalls(string hardBreak)
+    {
+        string firstLine = "abc אבג" + hardBreak;
+        const string secondLine = "אבג abc";
+        Font font = new FontCollection().Add(TestFonts.Anchor2FontFile).CreateFont(72);
+        TextShapingBuffer combined = new();
+        combined.Add(firstLine + secondLine);
+        combined.Direction = TextDirection.Auto;
+        TextShaper.Shape(font, combined);
+
+        TextShapingBuffer first = new();
+        first.Add(firstLine);
+        first.Direction = TextDirection.Auto;
+        TextShaper.Shape(font, first);
+
+        TextShapingBuffer second = new();
+        second.Add(secondLine);
+        second.Direction = TextDirection.Auto;
+        TextShaper.Shape(font, second);
+
+        Assert.Equal(first.Count + second.Count, combined.Count);
+        int firstLineCodePointCount = CodePoint.GetCodePointCount(firstLine);
+
+        for (int i = 0; i < first.Count; i++)
+        {
+            ShapedGlyph expected = first[i];
+            ShapedGlyph actual = combined[i];
+            Assert.Equal(expected.GlyphId, actual.GlyphId);
+            Assert.Equal(expected.CodePointIndex, actual.CodePointIndex);
+            Assert.Equal(expected.AdvanceWidth, actual.AdvanceWidth);
+            Assert.Equal(expected.AdvanceHeight, actual.AdvanceHeight);
+            Assert.Equal(expected.Offset, actual.Offset);
+        }
+
+        for (int i = 0; i < second.Count; i++)
+        {
+            ShapedGlyph expected = second[i];
+            ShapedGlyph actual = combined[first.Count + i];
+            Assert.Equal(expected.GlyphId, actual.GlyphId);
+            Assert.Equal(expected.CodePointIndex + firstLineCodePointCount, actual.CodePointIndex);
+            Assert.Equal(expected.AdvanceWidth, actual.AdvanceWidth);
+            Assert.Equal(expected.AdvanceHeight, actual.AdvanceHeight);
+            Assert.Equal(expected.Offset, actual.Offset);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that a directional-run request remains one protocol unit even when
+    /// its contents include a separator.
+    /// </summary>
+    [Fact]
+    public void ShapeRun_HardBreak_RemainsOneDirectionalRun()
+    {
+        const string text = "אבג\nabc";
+        Font font = new FontCollection().Add(TestFonts.Anchor2FontFile).CreateFont(72);
+        TextShapingBuffer buffer = new();
+        buffer.Add(text);
+        buffer.Direction = TextDirection.RightToLeft;
+
+        TextShaper.ShapeRun(font, buffer);
+
+        Assert.Equal(text.Length, buffer.Count);
+        for (int i = 1; i < buffer.Count; i++)
+        {
+            Assert.True(buffer[i].CodePointIndex < buffer[i - 1].CodePointIndex);
+        }
+    }
+
     [Fact]
     public void ShapeRun_MixedDirection_UsesStatedDirectionForWholeRun()
     {

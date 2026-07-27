@@ -24,13 +24,6 @@ internal static class BidiReordering
     private interface IBidiReorderingOperations<TState>
     {
         /// <summary>
-        /// Gets the number of live glyph records.
-        /// </summary>
-        /// <param name="state">The reordered storage.</param>
-        /// <returns>The live glyph count.</returns>
-        static abstract int GetCount(TState state);
-
-        /// <summary>
         /// Gets the resolved embedding level of one glyph.
         /// </summary>
         /// <param name="state">The reordered storage.</param>
@@ -52,7 +45,7 @@ internal static class BidiReordering
     /// </summary>
     /// <param name="glyphs">The logically ordered layout entries.</param>
     public static void Reorder(List<GlyphLayoutData> glyphs)
-        => Reorder<List<GlyphLayoutData>, LayoutGlyphOperations>(glyphs);
+        => Reorder<List<GlyphLayoutData>, LayoutGlyphOperations>(glyphs, 0, glyphs.Count);
 
     /// <summary>
     /// Reorders positioned shaping records for one line.
@@ -61,7 +54,18 @@ internal static class BidiReordering
     /// <param name="bidiRuns">The resolved bidirectional runs covering the source text.</param>
     /// <param name="bidiMap">The source codepoint to bidirectional-run mapping.</param>
     public static void Reorder(ShapingBuffer glyphs, BidiRun[] bidiRuns, int[] bidiMap)
-        => Reorder<ShapingGlyphState, ShapingGlyphOperations>(new(glyphs, bidiRuns, bidiMap));
+        => Reorder<ShapingGlyphState, ShapingGlyphOperations>(new(glyphs, bidiRuns, bidiMap), 0, glyphs.Count);
+
+    /// <summary>
+    /// Reorders a half-open range of positioned shaping records for one line.
+    /// </summary>
+    /// <param name="glyphs">The logically ordered shaping records.</param>
+    /// <param name="bidiRuns">The resolved bidirectional runs covering the source text.</param>
+    /// <param name="bidiMap">The source codepoint to bidirectional-run mapping.</param>
+    /// <param name="start">The first glyph record in the line.</param>
+    /// <param name="end">The glyph record immediately after the line.</param>
+    public static void Reorder(ShapingBuffer glyphs, BidiRun[] bidiRuns, int[] bidiMap, int start, int end)
+        => Reorder<ShapingGlyphState, ShapingGlyphOperations>(new(glyphs, bidiRuns, bidiMap), start, end);
 
     /// <summary>
     /// Applies rule L2 of the Unicode Bidirectional Algorithm to one line.
@@ -69,13 +73,14 @@ internal static class BidiReordering
     /// <typeparam name="TState">The reordered storage.</typeparam>
     /// <typeparam name="TOperations">The specialized operations for that storage.</typeparam>
     /// <param name="state">The reordered storage and any level-mapping state it needs.</param>
-    private static void Reorder<TState, TOperations>(TState state)
+    /// <param name="start">The first glyph record in the line.</param>
+    /// <param name="end">The glyph record immediately after the line.</param>
+    private static void Reorder<TState, TOperations>(TState state, int start, int end)
         where TOperations : struct, IBidiReorderingOperations<TState>
     {
-        int count = TOperations.GetCount(state);
         int maximumLevel = 0;
         int minimumOddLevel = int.MaxValue;
-        for (int i = 0; i < count; i++)
+        for (int i = start; i < end; i++)
         {
             int level = TOperations.GetLevel(state, i);
             maximumLevel = Math.Max(maximumLevel, level);
@@ -97,26 +102,26 @@ internal static class BidiReordering
         // requires no temporary permutation or per-run allocation.
         for (int level = maximumLevel; level >= minimumOddLevel; level--)
         {
-            int start = 0;
-            while (start < count)
+            int sequenceStart = start;
+            while (sequenceStart < end)
             {
-                while (start < count && TOperations.GetLevel(state, start) < level)
+                while (sequenceStart < end && TOperations.GetLevel(state, sequenceStart) < level)
                 {
-                    start++;
+                    sequenceStart++;
                 }
 
-                int end = start;
-                while (end < count && TOperations.GetLevel(state, end) >= level)
+                int sequenceEnd = sequenceStart;
+                while (sequenceEnd < end && TOperations.GetLevel(state, sequenceEnd) >= level)
                 {
-                    end++;
+                    sequenceEnd++;
                 }
 
-                if (end - start > 1)
+                if (sequenceEnd - sequenceStart > 1)
                 {
-                    TOperations.Reverse(state, start, end);
+                    TOperations.Reverse(state, sequenceStart, sequenceEnd);
                 }
 
-                start = end + 1;
+                sequenceStart = sequenceEnd + 1;
             }
         }
     }
@@ -126,9 +131,6 @@ internal static class BidiReordering
     /// </summary>
     private readonly struct LayoutGlyphOperations : IBidiReorderingOperations<List<GlyphLayoutData>>
     {
-        /// <inheritdoc/>
-        public static int GetCount(List<GlyphLayoutData> state) => state.Count;
-
         /// <inheritdoc/>
         public static int GetLevel(List<GlyphLayoutData> state, int index) => state[index].BidiRun.Level;
 
@@ -176,9 +178,6 @@ internal static class BidiReordering
     /// </summary>
     private readonly struct ShapingGlyphOperations : IBidiReorderingOperations<ShapingGlyphState>
     {
-        /// <inheritdoc/>
-        public static int GetCount(ShapingGlyphState state) => state.Glyphs.Count;
-
         /// <inheritdoc/>
         public static int GetLevel(ShapingGlyphState state, int index)
         {

@@ -107,6 +107,31 @@ public class BidiAlgorithmTests
         }
     }
 
+    /// <summary>
+    /// Verifies that caller-provided level storage produces the same result as the
+    /// algorithm's internal storage for one paragraph.
+    /// </summary>
+    [Fact]
+    public void SuppliedLevelBufferMatchesInternalLevelBuffer()
+    {
+        const string text = "בְּרֵאשִׁית בָּרָא אֱלֹהִים";
+        BidiData data = new();
+        data.Init(text, 2);
+
+        BidiAlgorithm internalBufferAlgorithm = new();
+        internalBufferAlgorithm.Process(data);
+        sbyte[] expected = internalBufferAlgorithm.ResolvedLevels.Span.ToArray();
+
+        // A non-level sentinel proves that Process initializes every supplied
+        // element before applying the explicit and implicit resolution rules.
+        sbyte[] actual = new sbyte[data.Length];
+        Array.Fill(actual, sbyte.MaxValue);
+        BidiAlgorithm suppliedBufferAlgorithm = new();
+        suppliedBufferAlgorithm.Process(data.Types, data.PairedBracketTypes, data.PairedBracketValues, data.ParagraphEmbeddingLevel, data.HasBrackets, data.HasEmbeddings, data.HasIsolates, actual);
+
+        Assert.Equal(expected, actual);
+    }
+
     [Fact]
     public void MixingArabicWordsWithNumbers_Works()
     {

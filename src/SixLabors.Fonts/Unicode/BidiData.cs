@@ -1,6 +1,8 @@
 // Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
+using System.Runtime.InteropServices;
+
 namespace SixLabors.Fonts.Unicode;
 
 /// <summary>
@@ -9,13 +11,23 @@ namespace SixLabors.Fonts.Unicode;
 /// </summary>
 internal partial class BidiData
 {
+    /// <summary>
+    /// The carriage return code point.
+    /// </summary>
+    private const int CarriageReturn = 0x000D;
+
+    /// <summary>
+    /// The line feed code point.
+    /// </summary>
+    private const int LineFeed = 0x000A;
+
     private ArrayBuilder<BidiCharacterType> types;
     private ArrayBuilder<BidiPairedBracketType> pairedBracketTypes;
     private ArrayBuilder<int> pairedBracketValues;
     private ArrayBuilder<BidiCharacterType> savedTypes;
     private ArrayBuilder<BidiPairedBracketType> savedPairedBracketTypes;
     private ArrayBuilder<sbyte> tempLevelBuffer;
-    private readonly List<int> paragraphPositions = new();
+    private readonly List<int> paragraphEnds = new();
 
     public sbyte ParagraphEmbeddingLevel { get; private set; }
 
@@ -24,6 +36,12 @@ internal partial class BidiData
     public bool HasEmbeddings { get; private set; }
 
     public bool HasIsolates { get; private set; }
+
+    /// <summary>
+    /// Gets the code point positions immediately after each newline function.
+    /// A carriage-return and line-feed pair contributes one position after the pair.
+    /// </summary>
+    public ReadOnlySpan<int> ParagraphEnds => CollectionsMarshal.AsSpan(this.paragraphEnds);
 
     /// <summary>
     /// Gets the length of the data held by the BidiData
@@ -102,7 +120,7 @@ internal partial class BidiData
         this.pairedBracketTypes.Length = length;
         this.pairedBracketValues.Length = length;
 
-        this.paragraphPositions.Clear();
+        this.paragraphEnds.Clear();
         this.ParagraphEmbeddingLevel = paragraphEmbeddingLevel;
 
         // Resolve the BidiCharacterType, paired bracket type and paired
@@ -112,10 +130,27 @@ internal partial class BidiData
         this.HasIsolates = false;
 
         int i = 0;
+        bool previousWasCarriageReturn = false;
         var codePointEnumerator = new SpanCodePointEnumerator(text);
         while (codePointEnumerator.MoveNext())
         {
             CodePoint codePoint = codePointEnumerator.Current;
+
+            if (CodePoint.IsNewLine(codePoint))
+            {
+                if (codePoint.Value == LineFeed && previousWasCarriageReturn)
+                {
+                    // CRLF is one newline function, so extend the boundary recorded
+                    // for CR instead of introducing an empty paragraph between them.
+                    this.paragraphEnds[^1] = i + 1;
+                }
+                else
+                {
+                    this.paragraphEnds.Add(i + 1);
+                }
+            }
+
+            previousWasCarriageReturn = codePoint.Value == CarriageReturn;
 
             // ASCII values answer from the precomputed tables: one classification,
             // one bracket type, and one pairing value per code point instead of the

@@ -225,42 +225,49 @@ public static partial class TextShaper
             }
         }
 
-        // Purely left-to-right text resolves to a single even-level run without running
-        // the bidirectional algorithm: with no right-to-left or directional codepoints and
-        // a left-to-right (or auto) paragraph direction, every resolved level is zero.
-        // This is the overwhelmingly common case for Latin text and skips the full UAX#9
-        // pass. An overridden or right-to-left paragraph always resolves levels.
         scratch.ClearBidiRuns();
-        if (options.TextDirection != TextDirection.RightToLeft
-            && options.TextBidiMode != TextBidiMode.Override
-            && bidiData.IsUniformLeftToRight)
+        if (options.TextBidiMode == TextBidiMode.Override)
         {
-            scratch.AddBidiRun(new BidiRun(BidiCharacterType.LeftToRight, 0, 0, bidiData.Types.Length));
+            // A directional-run request is one higher-level protocol unit even if
+            // its text contains separator characters.
+            bidi.Process(bidiData);
+            AppendBidiRuns(scratch, bidi.ResolvedLevels, 0);
         }
         else
         {
-            bidi.Process(bidiData);
-
-            // Coalesce equal-level neighbours into runs inline: the levels walk is
-            // trivial and an enumerator here would be the pass's only allocation.
-            ArraySlice<sbyte> levels = bidi.ResolvedLevels;
-            if (levels.Length > 0)
+            // UAX #9 applies level resolution independently to each paragraph.
+            // Keeping a run boundary at every newline also prevents font features
+            // and joining behaviour from crossing that protocol boundary.
+            ReadOnlySpan<int> paragraphEnds = bidiData.ParagraphEnds;
+            int paragraphStart = 0;
+            for (int paragraph = 0; paragraph <= paragraphEnds.Length; paragraph++)
             {
-                int startRun = 0;
-                sbyte runLevel = levels[0];
-                for (int i = 1; i < levels.Length; i++)
+                int paragraphEnd = paragraph < paragraphEnds.Length ? paragraphEnds[paragraph] : bidiData.Types.Length;
+                int paragraphLength = paragraphEnd - paragraphStart;
+                if (paragraphLength == 0)
                 {
-                    if (levels[i] == runLevel)
-                    {
-                        continue;
-                    }
-
-                    scratch.AddBidiRun(new BidiRun((runLevel & 0x01) == 0 ? BidiCharacterType.LeftToRight : BidiCharacterType.RightToLeft, runLevel, startRun, i - startRun));
-                    startRun = i;
-                    runLevel = levels[i];
+                    paragraphStart = paragraphEnd;
+                    continue;
                 }
 
-                scratch.AddBidiRun(new BidiRun((runLevel & 0x01) == 0 ? BidiCharacterType.LeftToRight : BidiCharacterType.RightToLeft, runLevel, startRun, levels.Length - startRun));
+                // Purely left-to-right text resolves to an even-level run without
+                // paying for the full bidirectional algorithm.
+                if (options.TextDirection != TextDirection.RightToLeft && bidiData.IsUniformLeftToRight)
+                {
+                    scratch.AddBidiRun(new BidiRun(BidiCharacterType.LeftToRight, 0, paragraphStart, paragraphLength));
+                }
+                else
+                {
+                    ArraySlice<sbyte> paragraphLevels = bidiData.GetTempLevelBuffer(paragraphLength);
+                    ArraySlice<BidiCharacterType> paragraphTypes = bidiData.Types.Slice(paragraphStart, paragraphLength);
+                    ArraySlice<BidiPairedBracketType> paragraphBracketTypes = bidiData.PairedBracketTypes.Slice(paragraphStart, paragraphLength);
+                    ArraySlice<int> paragraphBracketValues = bidiData.PairedBracketValues.Slice(paragraphStart, paragraphLength);
+                    bidi.Process(paragraphTypes, paragraphBracketTypes, paragraphBracketValues, (sbyte)options.TextDirection, bidiData.HasBrackets, bidiData.HasEmbeddings, bidiData.HasIsolates, paragraphLevels);
+
+                    AppendBidiRuns(scratch, paragraphLevels, paragraphStart);
+                }
+
+                paragraphStart = paragraphEnd;
             }
         }
 
@@ -436,6 +443,38 @@ public static partial class TextShaper
         HideDefaultIgnorables(shaped);
 
         return shaped;
+    }
+
+    /// <summary>
+    /// Coalesces adjacent equal embedding levels from one paragraph into shaping runs.
+    /// </summary>
+    /// <param name="scratch">The shaping state receiving the runs.</param>
+    /// <param name="levels">The resolved levels relative to the paragraph.</param>
+    /// <param name="textStart">The paragraph's code point offset in the complete text.</param>
+    private static void AppendBidiRuns(ShapingScratch scratch, ArraySlice<sbyte> levels, int textStart)
+    {
+        if (levels.Length == 0)
+        {
+            return;
+        }
+
+        int startRun = 0;
+        sbyte runLevel = levels[0];
+        for (int i = 1; i < levels.Length; i++)
+        {
+            if (levels[i] == runLevel)
+            {
+                continue;
+            }
+
+            BidiCharacterType direction = (runLevel & 0x01) == 0 ? BidiCharacterType.LeftToRight : BidiCharacterType.RightToLeft;
+            scratch.AddBidiRun(new BidiRun(direction, runLevel, textStart + startRun, i - startRun));
+            startRun = i;
+            runLevel = levels[i];
+        }
+
+        BidiCharacterType finalDirection = (runLevel & 0x01) == 0 ? BidiCharacterType.LeftToRight : BidiCharacterType.RightToLeft;
+        scratch.AddBidiRun(new BidiRun(finalDirection, runLevel, textStart + startRun, levels.Length - startRun));
     }
 
     /// <summary>

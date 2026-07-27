@@ -261,8 +261,11 @@ internal sealed class BidiAlgorithm
         else
         {
             this.ResolvedLevels = this.resolvedLevelsBuffer.Add(this.originalTypes.Length);
-            this.ResolvedLevels.Fill(this.paragraphEmbeddingLevel);
         }
+
+        // Every character begins at the paragraph level. The explicit and implicit
+        // rules below replace only the levels to which their conditions apply.
+        this.ResolvedLevels.Fill(this.paragraphEmbeddingLevel);
 
         // Resolve explicit embedding levels (Rules X1-X8)
         this.ResolveExplicitEmbeddingLevels();
@@ -306,11 +309,12 @@ internal sealed class BidiAlgorithm
                 case BidiCharacterType.LeftToRightIsolate:
                 case BidiCharacterType.RightToLeftIsolate:
                     // Skip isolate pairs
-                    // (Because we're working with a slice, we need to adjust the indices
-                    //  we're using for the isolatePairs map)
-                    if (this.isolatePairs.TryGetValue(data.Start + i, out i))
+                    // Isolate pairs are indexed relative to the paragraph slice. A
+                    // nested slice therefore needs its offset within that paragraph.
+                    int paragraphOffset = data.Start - this.originalTypes.Start;
+                    if (this.isolatePairs.TryGetValue(paragraphOffset + i, out int isolateEnd))
                     {
-                        i -= data.Start;
+                        i = isolateEnd - paragraphOffset;
                     }
                     else
                     {

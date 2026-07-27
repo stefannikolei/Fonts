@@ -13,10 +13,14 @@ namespace SixLabors.Fonts;
 /// call replaces the glyphs.
 /// </summary>
 /// <remarks>
-/// <see cref="TextShaper.Shape(Font, TextShapingBuffer)"/> treats the text as one
-/// unwrapped logical line. <see cref="TextShaper.ShapeRun(Font,
-/// TextShapingBuffer)"/> treats it as one directional run. An instance is not
-/// thread safe.
+/// <para>
+/// <see cref="TextShaper.Shape(Font, TextShapingBuffer)"/> treats the text as
+/// unwrapped logical lines separated by hard breaks.
+/// </para>
+/// <para>
+/// <see cref="TextShaper.ShapeRun(Font, TextShapingBuffer)"/> treats the text as
+/// one directional run. An instance is not thread safe.
+/// </para>
 /// </remarks>
 public sealed class TextShapingBuffer
 {
@@ -65,8 +69,8 @@ public sealed class TextShapingBuffer
     public int Count { get; private set; }
 
     /// <summary>
-    /// Gets the shaped glyphs in visual order for a logical line, or reading order
-    /// for a directional run.
+    /// Gets the shaped glyphs in visual order within each logical line, or reading
+    /// order for a directional run.
     /// </summary>
     public ReadOnlySpan<ShapedGlyph> Glyphs => this.glyphs.AsSpan(0, this.Count);
 

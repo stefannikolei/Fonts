@@ -60,9 +60,9 @@ internal static class ShaperFactory
 
             // Arabic keeps its own shaper even when the font names no script of
             // its own, because it is the one script given a fallback of its own.
-            // Only horizontal text is joined; upright text is shaped plainly.
+            // Layout mode controls glyph orientation and placement, not the
+            // bidirectional text run that determines joining forms.
             => (unicodeScriptTag != default || script == ScriptClass.Arabic)
-            && textOptions.LayoutMode.IsHorizontal()
             ? new ArabicShaper(script, textOptions)
             : new DefaultShaper(script, textOptions),
 

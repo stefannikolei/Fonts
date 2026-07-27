@@ -1400,6 +1400,33 @@ public class TextLayoutTests
     }
 #endif
 
+    /// <summary>
+    /// Verifies that page orientation does not disable Arabic joining substitutions.
+    /// </summary>
+    /// <param name="layoutMode">The vertical page layout to measure.</param>
+    [Theory]
+    [InlineData(LayoutMode.VerticalLeftRight)]
+    [InlineData(LayoutMode.VerticalRightLeft)]
+    [InlineData(LayoutMode.VerticalMixedLeftRight)]
+    [InlineData(LayoutMode.VerticalMixedRightLeft)]
+    public void MeasureArabic_VerticalLayoutPreservesJoiningForms(LayoutMode layoutMode)
+    {
+        Font font = TestFonts.GetFontFamily(new FontCollection(), TestFonts.NotoNaskhArabicRegular).CreateFont(30);
+        const string text = "مرحبا";
+
+        GlyphRenderer horizontal = new();
+        TextRenderer.RenderTo(horizontal, text, new TextOptions(font));
+
+        GlyphRenderer vertical = new();
+        TextRenderer.RenderTo(vertical, text, new TextOptions(font) { LayoutMode = layoutMode });
+
+        Assert.Equal(horizontal.GlyphKeys.Count, vertical.GlyphKeys.Count);
+        for (int i = 0; i < horizontal.GlyphKeys.Count; i++)
+        {
+            Assert.Equal(horizontal.GlyphKeys[i].GlyphId, vertical.GlyphKeys[i].GlyphId);
+        }
+    }
+
     [Theory]
     [InlineData(LayoutMode.HorizontalTopBottom)]
     [InlineData(LayoutMode.HorizontalBottomTop)]

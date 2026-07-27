@@ -9,6 +9,10 @@ namespace SixLabors.Fonts;
 /// Reorders positioned glyph records from logical order to visual order for one
 /// resolved line.
 /// </summary>
+/// <remarks>
+/// Implements rule L2 of the
+/// <see href="https://www.unicode.org/reports/tr9/#L2">Unicode Bidirectional Algorithm</see>.
+/// </remarks>
 internal static class BidiReordering
 {
     /// <summary>

@@ -131,21 +131,6 @@ internal sealed class UniversalShaper : DefaultShaper
     private static readonly Tag PstsTag = Tag.Parse("psts");
 
     /// <summary>
-    /// The 'dist' (distances) feature tag.
-    /// </summary>
-    private static readonly Tag DistTag = Tag.Parse("dist");
-
-    /// <summary>
-    /// The 'abvm' (above-base mark positioning) feature tag.
-    /// </summary>
-    private static readonly Tag AbvmTag = Tag.Parse("abvm");
-
-    /// <summary>
-    /// The 'blwm' (below-base mark positioning) feature tag.
-    /// </summary>
-    private static readonly Tag BlwmTag = Tag.Parse("blwm");
-
-    /// <summary>
     /// Dotted circle code point (U+25CC) used as a placeholder base.
     /// </summary>
     private const int DottedCircle = 0x25cc;
@@ -184,11 +169,34 @@ internal sealed class UniversalShaper : DefaultShaper
         this.fontMetrics = fontMetrics;
         this.setupSyllablesAction = this.SetupSyllables;
         this.reorderAction = this.Reorder;
+
+        // Every character comes apart first, even one the font already draws whole.
+        // This shaper divides a run into syllables and moves their pieces about, so a
+        // character standing for several pieces must be split before the division can
+        // see them.
+        this.NormalizationMode = NormalizationMode.ComposedDiacriticsNoShortCircuit;
     }
+
+    /// <inheritdoc/>
+    protected override void PreprocessText(ShapingBuffer buffer, int index, int count)
+        => VowelConstraints.Insert(buffer, this.fontMetrics, this.ScriptClass, index, count);
 
     /// <inheritdoc/>
     protected override void PlanFeatures(ShapingBuffer buffer, int index, int count)
     {
+        // A cursive script needs a mask for each form its characters can take, so
+        // the pass that settles them has somewhere to record its choice.
+        if (ArabicJoining.Joins(this.ScriptClass))
+        {
+            this.AddFeature(buffer, index, count, ArabicJoining.IsolTag, ShapingFeatureFlags.ManualZwj, false, null, null);
+            this.AddFeature(buffer, index, count, ArabicJoining.FinaTag, ShapingFeatureFlags.ManualZwj, false, null, null);
+            this.AddFeature(buffer, index, count, ArabicJoining.Fin2Tag, ShapingFeatureFlags.ManualZwj, false, null, null);
+            this.AddFeature(buffer, index, count, ArabicJoining.Fin3Tag, ShapingFeatureFlags.ManualZwj, false, null, null);
+            this.AddFeature(buffer, index, count, ArabicJoining.MediTag, ShapingFeatureFlags.ManualZwj, false, null, null);
+            this.AddFeature(buffer, index, count, ArabicJoining.Med2Tag, ShapingFeatureFlags.ManualZwj, false, null, null);
+            this.AddFeature(buffer, index, count, ArabicJoining.InitTag, ShapingFeatureFlags.ManualZwj, false, null, null);
+        }
+
         // Default glyph pre-processing group
         this.EnableFeature(buffer, index, count, LoclTag, ShapingFeatureFlags.PerSyllable, this.setupSyllablesAction, null);
         this.EnableFeature(buffer, index, count, CcmpTag, ShapingFeatureFlags.PerSyllable);
@@ -215,14 +223,20 @@ internal sealed class UniversalShaper : DefaultShaper
         this.EnableFeature(buffer, index, count, BlwsTag, ShapingFeatureFlags.ManualZwj);
         this.EnableFeature(buffer, index, count, PresTag, ShapingFeatureFlags.ManualZwj);
         this.EnableFeature(buffer, index, count, PstsTag, ShapingFeatureFlags.ManualZwj);
-        this.EnableFeature(buffer, index, count, DistTag);
-        this.EnableFeature(buffer, index, count, AbvmTag);
-        this.EnableFeature(buffer, index, count, BlwmTag);
     }
 
     /// <inheritdoc/>
     protected override void AssignFeatures(ShapingBuffer buffer, int index, int count)
-        => this.DecomposeSplitVowels(buffer, index, count);
+    {
+        this.DecomposeSplitVowels(buffer, index, count);
+
+        // Several of the scripts this engine shapes are cursive, and their
+        // characters take their form from the ones around them.
+        if (ArabicJoining.Joins(this.ScriptClass))
+        {
+            ArabicJoining.Apply(buffer, index, count, this.ScriptClass, this.Features);
+        }
+    }
 
     /// <summary>
     /// Decomposes split vowels into their constituent parts if supported by the font.

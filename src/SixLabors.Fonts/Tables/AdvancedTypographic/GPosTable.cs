@@ -211,7 +211,7 @@ internal class GPosTable : Table
                 continue;
             }
 
-            ScriptClass current = this.GetScriptClass(CodePoint.GetScriptClass(buffer[i].CodePoint));
+            ScriptClass current = CodePoint.GetScriptClass(buffer[i].CodePoint);
 
             int index = i;
             int count = 1;
@@ -227,7 +227,7 @@ internal class GPosTable : Table
                     break;
                 }
 
-                ScriptClass next = this.GetScriptClass(CodePoint.GetScriptClass(nextData.CodePoint));
+                ScriptClass next = CodePoint.GetScriptClass(nextData.CodePoint);
                 if (next != current &&
                     current is not ScriptClass.Common and not ScriptClass.Unknown and not ScriptClass.Inherited &&
                     next is not ScriptClass.Common and not ScriptClass.Unknown and not ScriptClass.Inherited)
@@ -254,7 +254,7 @@ internal class GPosTable : Table
 
             // Plan positioning features for each glyph. Records seeded across buffers
             // had their feature registrations cleared, so this pass re-plans.
-            shapePlan.Shaper.Plan(buffer, index, count);
+            shapePlan.Shaper.Plan(fontMetrics, buffer, index, count);
 
             updated |= this.PositionSegment(
                 fontMetrics,
@@ -606,68 +606,73 @@ internal class GPosTable : Table
     }
 
     /// <summary>
-    /// Maps a script class to an effective script class, checking whether the font supports it.
-    /// Falls back to <see cref="ScriptClass.Default"/> if the script is not present in the font.
-    /// </summary>
-    /// <param name="current">The script class to check.</param>
-    /// <returns>The effective script class.</returns>
-    private ScriptClass GetScriptClass(ScriptClass current)
-    {
-        if (current is ScriptClass.Common or ScriptClass.Unknown or ScriptClass.Inherited)
-        {
-            return current;
-        }
-
-        if (this.ScriptList is null)
-        {
-            return ScriptClass.Default;
-        }
-
-        Tag[] tags = UnicodeScriptTagMap.Instance[current];
-
-        for (int i = 0; i < tags.Length; i++)
-        {
-            if (this.ScriptList.TryGetValue(tags[i].Value, out ScriptListTable? _))
-            {
-                return current;
-            }
-        }
-
-        // Script for `current` not present in the font: use default shaper.
-        return ScriptClass.Default;
-    }
-
-    /// <summary>
     /// Fixes cursive attachment positioning by propagating Y (or X for vertical) offsets.
     /// </summary>
+    /// <remarks>
+    /// HarfBuzz 14.2.1, <c>tests/harfbuzz/src/OT/Layout/GPOS/GPOS.hh</c>, <c>GPOS::position_finish_offsets</c> and <c>propagate_attachment_offsets</c>, resolves the parent chain before adding the parent's minor-axis offset to a cursively attached glyph. The direction controls the outer traversal order, while recursion makes every parent complete before its child. This OpenType attachment propagation rule is not derivable from the Unicode Character Database.
+    /// </remarks>
     /// <param name="buffer">The glyph positioning buffer.</param>
     /// <param name="index">The starting index.</param>
     /// <param name="count">The number of glyphs to process.</param>
     private static void FixCursiveAttachment(ShapingBuffer buffer, int index, int count)
     {
-        LayoutMode layoutMode = buffer.TextOptions.LayoutMode;
-        for (int i = 0; i < count; i++)
+        int end = index + count;
+        int currentIndex = index;
+        int increment = 1;
+        if (buffer[index].Direction == TextDirection.RightToLeft)
         {
-            int currentIndex = i + index;
-            ref GlyphShapingPosition position = ref buffer.PositionAt(currentIndex);
-            if (position.CursiveAttachment != -1)
-            {
-                int j = position.CursiveAttachment + currentIndex;
-                if (j < index || j >= index + count)
-                {
-                    return;
-                }
+            currentIndex = end - 1;
+            end = index - 1;
+            increment = -1;
+        }
 
-                ref GlyphShapingPosition cursivePosition = ref buffer.PositionAt(j);
-                if (!AdvancedTypographicUtils.IsVerticalGlyph(buffer[currentIndex].CodePoint, layoutMode))
-                {
-                    position.Bounds.Y += cursivePosition.Bounds.Y;
-                }
-                else
-                {
-                    position.Bounds.X += cursivePosition.Bounds.X;
-                }
+        while (currentIndex != end)
+        {
+            ref GlyphShapingPosition position = ref buffer.PositionAt(currentIndex);
+            if (position.CursiveAttachment != GlyphShapingPosition.NoCursiveAttachment)
+            {
+                PropagateCursiveAttachment(buffer, index, index + count, currentIndex, AdvancedTypographicUtils.MaxNestingLevel);
             }
+
+            currentIndex += increment;
+        }
+    }
+
+    /// <summary>
+    /// Resolves one cursive attachment chain and accumulates its parent's minor-axis offset into the child.
+    /// </summary>
+    /// <param name="buffer">The glyph positioning buffer.</param>
+    /// <param name="start">The first index in the positioned segment.</param>
+    /// <param name="end">The index immediately after the positioned segment.</param>
+    /// <param name="currentIndex">The child glyph whose attachment is being resolved.</param>
+    /// <param name="nestingLevel">The number of parent links that may still be followed.</param>
+    private static void PropagateCursiveAttachment(ShapingBuffer buffer, int start, int end, int currentIndex, int nestingLevel)
+    {
+        ref GlyphShapingPosition position = ref buffer.PositionAt(currentIndex);
+        int chain = position.CursiveAttachment;
+        position.CursiveAttachment = GlyphShapingPosition.NoCursiveAttachment;
+
+        int parentIndex = currentIndex + chain;
+        if (parentIndex < start || parentIndex >= end || nestingLevel == 0)
+        {
+            return;
+        }
+
+        ref GlyphShapingPosition parent = ref buffer.PositionAt(parentIndex);
+        if (parent.CursiveAttachment != GlyphShapingPosition.NoCursiveAttachment)
+        {
+            PropagateCursiveAttachment(buffer, start, end, parentIndex, nestingLevel - 1);
+        }
+
+        // Cursive attachment only accumulates the cross-run axis. Main-axis
+        // advances were resolved by the lookup itself.
+        if (!AdvancedTypographicUtils.IsVerticalGlyph(buffer[currentIndex].CodePoint, buffer.TextOptions.LayoutMode))
+        {
+            position.Bounds.Y += parent.Bounds.Y;
+        }
+        else
+        {
+            position.Bounds.X += parent.Bounds.X;
         }
     }
 

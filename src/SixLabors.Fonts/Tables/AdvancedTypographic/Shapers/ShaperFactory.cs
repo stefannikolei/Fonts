@@ -13,6 +13,32 @@ internal static class ShaperFactory
     /// <summary>The 'mym2' (Myanmar v2) script tag used to distinguish Myanmar shaper versions.</summary>
     private static readonly Tag Mym2Tag = Tag.Parse("mym2");
 
+    /// <summary>The 'latn' (Latin) script tag, which a font can carry in place of the one asked for.</summary>
+    private static readonly Tag LatnTag = Tag.Parse("latn");
+
+    /// <summary>
+    /// The last character of a script tag naming the third revision of its
+    /// script, the revision the universal engine describes.
+    /// </summary>
+    private const uint ThirdRevisionTagSuffix = (byte)'3';
+
+    /// <summary>
+    /// Determines whether the font offers nothing designed for the script, so
+    /// that the tag settled on is the default one or a Latin one.
+    /// </summary>
+    /// <param name="unicodeScriptTag">The script tag found in the font.</param>
+    /// <returns><see langword="true"/> when the font was not designed for the script.</returns>
+    private static bool IsDefaultDesign(Tag unicodeScriptTag)
+        => unicodeScriptTag == default || unicodeScriptTag == LatnTag;
+
+    /// <summary>
+    /// Determines whether the tag names the third revision of its script.
+    /// </summary>
+    /// <param name="unicodeScriptTag">The script tag found in the font.</param>
+    /// <returns><see langword="true"/> when the tag names the third revision.</returns>
+    private static bool IsThirdRevision(Tag unicodeScriptTag)
+        => (unicodeScriptTag.Value & 0xFF) == ThirdRevisionTagSuffix;
+
     /// <summary>
     /// Creates a shaper based on the given script language.
     /// </summary>
@@ -30,13 +56,15 @@ internal static class ShaperFactory
         {
             // Arabic
             ScriptClass.Arabic
-            or ScriptClass.Mongolian
             or ScriptClass.Syriac
-            or ScriptClass.Nko
-            or ScriptClass.PhagsPa
-            or ScriptClass.Mandaic
-            or ScriptClass.Manichaean
-            or ScriptClass.PsalterPahlavi => new ArabicShaper(script, textOptions),
+
+            // Arabic keeps its own shaper even when the font names no script of
+            // its own, because it is the one script given a fallback of its own.
+            // Only horizontal text is joined; upright text is shaped plainly.
+            => (unicodeScriptTag != default || script == ScriptClass.Arabic)
+            && textOptions.LayoutMode.IsHorizontal()
+            ? new ArabicShaper(script, textOptions)
+            : new DefaultShaper(script, textOptions),
 
             // Hebrew
             ScriptClass.Hebrew => new HebrewShaper(script, textOptions, fontMetrics, unicodeScriptTag != default),
@@ -58,7 +86,19 @@ internal static class ShaperFactory
             or ScriptClass.Oriya
             or ScriptClass.Tamil
             or ScriptClass.Telugu
-            or ScriptClass.Khmer => new IndicShaper(script, unicodeScriptTag, textOptions, fontMetrics),
+
+            // A font whose only script is the default one, or the Latin one we
+            // would otherwise pick arbitrarily, was not designed for the script,
+            // so it is shaped plainly. A font designed to the third revision of
+            // the script is shaped by the universal engine, which is what that
+            // revision describes.
+            => IsDefaultDesign(unicodeScriptTag)
+            ? new DefaultShaper(script, textOptions)
+            : IsThirdRevision(unicodeScriptTag)
+            ? new UniversalShaper(script, textOptions, fontMetrics)
+            : new IndicShaper(script, unicodeScriptTag, textOptions, fontMetrics),
+
+            ScriptClass.Khmer => new KhmerShaper(script, textOptions, fontMetrics),
 
             // Myanmar
             ScriptClass.Myanmar
@@ -127,7 +167,49 @@ internal static class ShaperFactory
             or ScriptClass.Sidetic
             or ScriptClass.TaiYo
             or ScriptClass.TolongSiki
-            => new UniversalShaper(script, textOptions, fontMetrics),
+            or ScriptClass.Ahom
+            or ScriptClass.Multani
+            or ScriptClass.Miao
+            or ScriptClass.Adlam
+            or ScriptClass.Bhaiksuki
+            or ScriptClass.Marchen
+            or ScriptClass.Newa
+            or ScriptClass.MasaramGondi
+            or ScriptClass.Soyombo
+            or ScriptClass.ZanabazarSquare
+            or ScriptClass.Dogra
+            or ScriptClass.GunjalaGondi
+            or ScriptClass.HanifiRohingya
+            or ScriptClass.Makasar
+            or ScriptClass.Medefaidrin
+            or ScriptClass.OldSogdian
+            or ScriptClass.Sogdian
+            or ScriptClass.Elymaic
+            or ScriptClass.Nandinagari
+            or ScriptClass.NyiakengPuachueHmong
+            or ScriptClass.Wancho
+            or ScriptClass.Chorasmian
+            or ScriptClass.DivesAkuru
+            or ScriptClass.KhitanSmallScript
+            or ScriptClass.Yezidi
+            or ScriptClass.CyproMinoan
+            or ScriptClass.OldUyghur
+            or ScriptClass.Tangsa
+            or ScriptClass.Toto
+            or ScriptClass.Vithkuqi
+            or ScriptClass.Mongolian
+            or ScriptClass.Nko
+            or ScriptClass.PhagsPa
+            or ScriptClass.Mandaic
+            or ScriptClass.Manichaean
+            or ScriptClass.PsalterPahlavi
+
+            // A font whose only script is the default one, or the Latin one we
+            // would otherwise pick arbitrarily, was not designed for the script,
+            // so it is shaped plainly.
+            => IsDefaultDesign(unicodeScriptTag)
+            ? new DefaultShaper(script, textOptions)
+            : new UniversalShaper(script, textOptions, fontMetrics),
             _ => new DefaultShaper(script, textOptions),
         };
 }

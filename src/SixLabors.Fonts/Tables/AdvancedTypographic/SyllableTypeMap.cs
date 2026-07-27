@@ -25,6 +25,7 @@ internal static class SyllableTypeMap
         "broken_cluster" => SyllableType.BrokenCluster,
         "consonant_syllable" => SyllableType.ConsonantSyllable,
         "independent_cluster" => SyllableType.IndependentCluster,
+        "non_khmer_cluster" => SyllableType.NonIndicCluster,
         "number_joiner_terminated_cluster" => SyllableType.NumberJoinerTerminatedCluster,
         "numeral_cluster" => SyllableType.NumeralCluster,
         "standalone_cluster" => SyllableType.StandaloneCluster,

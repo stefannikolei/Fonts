@@ -1,7 +1,7 @@
 c = C | Ra;               # is_consonant
 n = (ZWNJ? RS)? (N N?)?;  # is_consonant_modifier
 z = ZWJ | ZWNJ;           # is_joiner
-h = H | Coeng;            # is_halant_or_coeng (Coeng for Khmer)
+h = H;                    # is_halant
 reph = Ra H | Repha;      # possible reph
 sm = SM | SMPst;
 
@@ -14,7 +14,7 @@ place_holder = Placeholder | Dotted_Circle;
 halant_group = z? h (ZWJ N?)?;
 final_halant_group = halant_group | h ZWNJ;
 medial_group = CM?;
-halant_or_matra_group = (final_halant_group | matra_group*) (Coeng (cn | V))?;
+halant_or_matra_group = final_halant_group | matra_group*;
 
 complex_syllable_tail = (halant_group cn)* medial_group halant_or_matra_group syllable_tail;
 

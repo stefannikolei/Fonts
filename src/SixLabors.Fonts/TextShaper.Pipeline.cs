@@ -197,6 +197,11 @@ public static partial class TextShaper
                 ? (bidi.ResolveEmbeddingLevel(bidiData.Types) == 1 ? BidiCharacterType.RightToLeft : BidiCharacterType.LeftToRight)
                 : (options.TextDirection == TextDirection.RightToLeft ? BidiCharacterType.RightToLeft : BidiCharacterType.LeftToRight);
 
+            // The way the whole run reads is settled here, including when the caller
+            // left it to the text to say, so the shaping API can hand the run back in
+            // the order it is read.
+            scratch.RunReadsRightToLeft = overrideType == BidiCharacterType.RightToLeft;
+
             for (int i = 0; i < bidiData.Types.Length; i++)
             {
                 // Bidi override is a higher-level protocol override: real text behaves as the requested
@@ -716,7 +721,7 @@ public static partial class TextShaper
                 // as transparent and the hide stage replaces them at the end.
                 substitutions.TryGetGlyphId(font.FontMetrics, current, next, out ushort glyphId, out skipNextCodePoint);
 
-                substitutions.AddGlyph(glyphId, current, (TextDirection)bidiRuns[bidiRunIndex].Direction, (ushort)textRunIndex, codePointIndex);
+                substitutions.AddGlyph(glyphId, current, (TextDirection)bidiRuns[bidiRunIndex].Direction, (ushort)textRunIndex, codePointIndex, graphemeIndex);
 
                 codePointIndex++;
                 graphemeCodePointIndex++;

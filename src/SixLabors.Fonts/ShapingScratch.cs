@@ -1,6 +1,8 @@
 // Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
+using System.Globalization;
+using SixLabors.Fonts.Tables.AdvancedTypographic;
 using SixLabors.Fonts.Unicode;
 
 namespace SixLabors.Fonts;
@@ -23,6 +25,12 @@ internal sealed class ShapingScratch
     /// The per-font-run workspace buffer glyphs are substituted in.
     /// </summary>
     private ShapingBuffer? workspace;
+
+    /// <summary>
+    /// The options the shaping pipeline is driven through, held for the lifetime of
+    /// the pooled scratch so shaping a run never builds them.
+    /// </summary>
+    private TextOptions? shapingOptions;
 
     /// <summary>
     /// The accumulated result buffer glyphs are seeded and positioned in.
@@ -93,6 +101,13 @@ internal sealed class ShapingScratch
     public int BidiRunCount { get; private set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether the run of the current pass reads
+    /// right to left. Settled while the run's direction is resolved, so it holds even
+    /// when the caller left the direction to the text to say.
+    /// </summary>
+    public bool RunReadsRightToLeft { get; set; }
+
+    /// <summary>
     /// Gets the run table of the current pass's projection. Only the first
     /// <see cref="RunCount"/> entries are live.
     /// </summary>
@@ -113,6 +128,29 @@ internal sealed class ShapingScratch
     /// Empties the bidi run storage for a new pass.
     /// </summary>
     public void ClearBidiRuns() => this.BidiRunCount = 0;
+
+    /// <summary>
+    /// Returns the options carrying the properties of one run, refreshed in place.
+    /// The run is taken as reading the one way throughout, so the direction stands
+    /// whichever way the text would read on its own.
+    /// </summary>
+    /// <param name="font">The font being shaped against.</param>
+    /// <param name="direction">The direction the run reads in.</param>
+    /// <param name="language">The language the run is written in.</param>
+    /// <param name="features">The feature tags to turn on for the run.</param>
+    /// <returns>The options.</returns>
+    public TextOptions GetShapingOptions(Font font, TextDirection direction, CultureInfo language, Tag[] features)
+    {
+        TextOptions current = this.shapingOptions ??= new TextOptions(font);
+
+        current.Font = font;
+        current.TextDirection = direction;
+        current.TextBidiMode = TextBidiMode.Override;
+        current.Culture = language;
+        current.FeatureTags = features;
+
+        return current;
+    }
 
     /// <summary>
     /// Appends a resolved bidi run.
@@ -205,6 +243,11 @@ internal sealed class ShapingScratch
     /// <returns>The reusable buffers, sharing one feature map.</returns>
     public (ShapingBuffer Workspace, ShapingBuffer Result) Prepare(TextOptions options)
     {
+        // A pooled scratch carries nothing over from its last use. The direction is
+        // settled again for every pass, and a pass that never settles it must not read
+        // the answer the previous one left.
+        this.RunReadsRightToLeft = false;
+
         ShapingBuffer? workspace = this.workspace;
         ShapingBuffer? result = this.result;
         if (workspace is null || result is null)

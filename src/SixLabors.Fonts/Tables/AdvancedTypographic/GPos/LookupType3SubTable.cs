@@ -105,6 +105,9 @@ internal static class LookupType3SubTable
         public override void CollectDigest(ref GlyphSetDigest digest) => this.coverageTable.CollectDigest(ref digest);
 
         /// <inheritdoc/>
+        /// <remarks>
+        /// HarfBuzz 14.2.1, <c>tests/harfbuzz/src/OT/Layout/GPOS/CursivePosFormat1.hh</c>, <c>OT::Layout::GPOS_impl::CursivePosFormat1_2::apply</c>, reads the entry anchor from the current glyph and uses <c>skipping_iterator_t::prev</c> to find the preceding lookup-visible glyph whose exit anchor connects to it. The iterator's filtering behavior is defined by <c>matcher_t::may_skip</c> and <c>skipping_iterator_t::match</c> in <c>tests/harfbuzz/src/hb-ot-layout-gsubgpos.hh</c>. This OpenType lookup traversal rule is not derivable from the Unicode Character Database.
+        /// </remarks>
         public override bool TryUpdatePosition(
             FontMetrics fontMetrics,
             GPosTable table,
@@ -113,35 +116,8 @@ internal static class LookupType3SubTable
             int index,
             int count)
         {
-            if (count <= 1)
-            {
-                return false;
-            }
-
-            // Implements Cursive Attachment Positioning Subtable:
-            // https://docs.microsoft.com/en-us/typography/opentype/spec/gpos#lookup-type-3-cursive-attachment-positioning-subtable
             ushort glyphId = buffer[index].GlyphId;
             if (glyphId == 0)
-            {
-                return false;
-            }
-
-            int nextIndex = index + 1;
-            ushort nextGlyphId = buffer[nextIndex].GlyphId;
-            if (nextGlyphId == 0)
-            {
-                return false;
-            }
-
-            int coverageNext = this.coverageTable.CoverageIndexOf(nextGlyphId);
-            if (coverageNext < 0 || coverageNext >= this.entryExitAnchors.Length)
-            {
-                return false;
-            }
-
-            EntryExitAnchors nextRecord = this.entryExitAnchors[coverageNext];
-            AnchorTable? entry = nextRecord.EntryAnchor;
-            if (entry is null)
             {
                 return false;
             }
@@ -152,21 +128,45 @@ internal static class LookupType3SubTable
                 return false;
             }
 
-            EntryExitAnchors curRecord = this.entryExitAnchors[coverage];
-            AnchorTable? exit = curRecord.ExitAnchor;
+            EntryExitAnchors currentRecord = this.entryExitAnchors[coverage];
+            AnchorTable? entry = currentRecord.EntryAnchor;
+            if (entry is null)
+            {
+                return false;
+            }
+
+            // Cursive attachment joins the current glyph to the closest preceding
+            // glyph that the lookup can see. In particular, marks excluded by the
+            // lookup's filtering set are transparent to this search.
+            SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
+            int previousIndex = iterator.Prev();
+            if (previousIndex < 0)
+            {
+                return false;
+            }
+
+            ushort previousGlyphId = buffer[previousIndex].GlyphId;
+            int previousCoverage = this.coverageTable.CoverageIndexOf(previousGlyphId);
+            if (previousCoverage < 0 || previousCoverage >= this.entryExitAnchors.Length)
+            {
+                return false;
+            }
+
+            EntryExitAnchors previousRecord = this.entryExitAnchors[previousCoverage];
+            AnchorTable? exit = previousRecord.ExitAnchor;
             if (exit is null)
             {
                 return false;
             }
 
+            ref GlyphShapingData previous = ref buffer[previousIndex];
             ref GlyphShapingData current = ref buffer[index];
-            ref GlyphShapingData next = ref buffer[nextIndex];
 
-            AnchorXY exitXY = exit.GetAnchor(fontMetrics, ref current, buffer);
-            AnchorXY entryXY = entry.GetAnchor(fontMetrics, ref next, buffer);
+            AnchorXY exitXY = exit.GetAnchor(fontMetrics, ref previous, buffer);
+            AnchorXY entryXY = entry.GetAnchor(fontMetrics, ref current, buffer);
 
+            ref GlyphShapingPosition previousPosition = ref buffer.PositionAt(previousIndex);
             ref GlyphShapingPosition currentPosition = ref buffer.PositionAt(index);
-            ref GlyphShapingPosition nextPosition = ref buffer.PositionAt(nextIndex);
 
             bool isVerticalLayout = AdvancedTypographicUtils.IsVerticalGlyph(current.CodePoint, buffer.TextOptions.LayoutMode);
             if (!isVerticalLayout)
@@ -174,33 +174,33 @@ internal static class LookupType3SubTable
                 // Horizontal
                 if (current.Direction == TextDirection.LeftToRight)
                 {
-                    currentPosition.Bounds.Width = exitXY.XCoordinate + currentPosition.Bounds.X;
+                    previousPosition.Bounds.Width = exitXY.XCoordinate + previousPosition.Bounds.X;
 
-                    int delta = entryXY.XCoordinate + nextPosition.Bounds.X;
-                    nextPosition.Bounds.Width -= delta;
-                    nextPosition.Bounds.X -= delta;
+                    int delta = entryXY.XCoordinate + currentPosition.Bounds.X;
+                    currentPosition.Bounds.Width -= delta;
+                    currentPosition.Bounds.X -= delta;
                 }
                 else
                 {
-                    int delta = exitXY.XCoordinate + currentPosition.Bounds.X;
-                    currentPosition.Bounds.Width -= delta;
-                    currentPosition.Bounds.X -= delta;
+                    int delta = exitXY.XCoordinate + previousPosition.Bounds.X;
+                    previousPosition.Bounds.Width -= delta;
+                    previousPosition.Bounds.X -= delta;
 
-                    nextPosition.Bounds.Width = entryXY.XCoordinate + nextPosition.Bounds.X;
+                    currentPosition.Bounds.Width = entryXY.XCoordinate + currentPosition.Bounds.X;
                 }
             }
             else
             {
                 // Vertical layout modes advance top-to-bottom; column progression is handled by layout.
-                currentPosition.Bounds.Height = exitXY.YCoordinate + currentPosition.Bounds.Y;
+                previousPosition.Bounds.Height = exitXY.YCoordinate + previousPosition.Bounds.Y;
 
-                int delta = entryXY.YCoordinate + nextPosition.Bounds.Y;
-                nextPosition.Bounds.Height -= delta;
-                nextPosition.Bounds.Y -= delta;
+                int delta = entryXY.YCoordinate + currentPosition.Bounds.Y;
+                currentPosition.Bounds.Height -= delta;
+                currentPosition.Bounds.Y -= delta;
             }
 
-            int child = index;
-            int parent = nextIndex;
+            int child = previousIndex;
+            int parent = index;
             int xOffset = entryXY.XCoordinate - exitXY.XCoordinate;
             int yOffset = entryXY.YCoordinate - exitXY.YCoordinate;
             if ((this.LookupFlags & LookupFlags.RightToLeft) != LookupFlags.RightToLeft)
@@ -216,7 +216,7 @@ internal static class LookupType3SubTable
             // previous connection now attaches to new parent.Watch out for case
             // where new parent is on the path from old chain...
             bool horizontal = !isVerticalLayout;
-            ReverseCursiveMinorOffset(buffer, index, child, horizontal, parent);
+            ReverseCursiveMinorOffset(buffer, child, horizontal, parent);
 
             ref GlyphShapingPosition c = ref buffer.PositionAt(child);
             c.CursiveAttachment = parent - child;
@@ -234,7 +234,7 @@ internal static class LookupType3SubTable
             ref GlyphShapingPosition p = ref buffer.PositionAt(parent);
             if (p.CursiveAttachment == -c.CursiveAttachment)
             {
-                p.CursiveAttachment = 0;
+                p.CursiveAttachment = GlyphShapingPosition.NoCursiveAttachment;
 
                 // Bounds.X/Y carry shaping placement offsets here. Clear only the
                 // detached parent's minor axis.
@@ -256,25 +256,19 @@ internal static class LookupType3SubTable
         /// of a previous connection attaches to the new parent.
         /// </summary>
         /// <param name="buffer">The glyph positioning buffer.</param>
-        /// <param name="position">The original glyph position that initiated the chain reversal.</param>
         /// <param name="i">The current index in the chain being reversed.</param>
         /// <param name="horizontal">Whether the layout is horizontal.</param>
         /// <param name="parent">The new parent index to stop at.</param>
-        private static void ReverseCursiveMinorOffset(
-            ShapingBuffer buffer,
-            int position,
-            int i,
-            bool horizontal,
-            int parent)
+        private static void ReverseCursiveMinorOffset(ShapingBuffer buffer, int i, bool horizontal, int parent)
         {
             ref GlyphShapingPosition c = ref buffer.PositionAt(i);
             int chain = c.CursiveAttachment;
-            if (chain <= 0)
+            if (chain == GlyphShapingPosition.NoCursiveAttachment)
             {
                 return;
             }
 
-            c.CursiveAttachment = 0;
+            c.CursiveAttachment = GlyphShapingPosition.NoCursiveAttachment;
 
             int j = i + chain;
 
@@ -284,7 +278,7 @@ internal static class LookupType3SubTable
                 return;
             }
 
-            ReverseCursiveMinorOffset(buffer, position, j, horizontal, parent);
+            ReverseCursiveMinorOffset(buffer, j, horizontal, parent);
 
             ref GlyphShapingPosition p = ref buffer.PositionAt(j);
             if (horizontal)

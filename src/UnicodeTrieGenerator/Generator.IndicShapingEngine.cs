@@ -37,7 +37,7 @@ public static partial class Generator
         { ISC.ConsonantSucceedingRepha, Categories.CM },
         { ISC.ConsonantWithStacker, Categories.CS },
         { ISC.GeminationMark, Categories.SM }, // https://github.com/harfbuzz/harfbuzz/issues/552
-        { ISC.InvisibleStacker, Categories.Coeng }, // TODO: Use H once we add explicit Khmer shaper
+        { ISC.InvisibleStacker, Categories.H },
         { ISC.Joiner, Categories.ZWJ },
         { ISC.ModifyingLetter, Categories.X },
         { ISC.NonJoiner, Categories.ZWNJ },
@@ -56,9 +56,12 @@ public static partial class Generator
         { ISC.VowelIndependent, Categories.V }
     };
 
-    // Per-codepoint category overrides for Indic-style shaping.
-    // These values augment the base Unicode/Indic tables to match
-    // HarfBuzz behavior for Indic, Khmer, and Myanmar scripts.
+    /// <summary>
+    /// Gets the per-character category overrides applied to the shared shaping trie.
+    /// </summary>
+    /// <remarks>
+    /// These values are transcribed from HarfBuzz 14.2.1, <c>src/gen-indic-table.py</c>, symbol <c>category_overrides</c>. They are not derivable from the Unicode Character Database.
+    /// </remarks>
     private static readonly Dictionary<int, Categories> IndicShapingOverrides = new()
     {
         // --------------------------------------------------------------------
@@ -190,23 +193,23 @@ public static partial class Generator
         // --------------------------------------------------------------------
         // Khmer overrides
         // --------------------------------------------------------------------
-        { 0x179A, Categories.Ra },       // Khmer Ra
-        { 0x17C6, Categories.N }, // TODO: Replace with Xgroup as per below once we support it.
+        { 0x179A, Categories.Ra },
+        { 0x17CC, Categories.Robatic },
+        { 0x17C9, Categories.Robatic },
+        { 0x17CA, Categories.Robatic },
+        { 0x17C6, Categories.Xgroup },
+        { 0x17CB, Categories.Xgroup },
+        { 0x17CD, Categories.Xgroup },
+        { 0x17CE, Categories.Xgroup },
+        { 0x17CF, Categories.Xgroup },
+        { 0x17D0, Categories.Xgroup },
+        { 0x17D1, Categories.Xgroup },
+        { 0x17C7, Categories.Ygroup },
+        { 0x17C8, Categories.Ygroup },
+        { 0x17DD, Categories.Ygroup },
 
-        // { 0x17CC, Categories.Robatic },
-        // { 0x17C9, Categories.Robatic },
-        // { 0x17CA, Categories.Robatic },
-        // { 0x17C6, Categories.Xgroup },
-        // { 0x17CB, Categories.Xgroup },
-        // { 0x17CD, Categories.Xgroup },
-        // { 0x17CE, Categories.Xgroup },
-        // { 0x17CF, Categories.Xgroup },
-        // { 0x17D0, Categories.Xgroup },
-        // { 0x17D1, Categories.Xgroup },
-        // { 0x17C7, Categories.Ygroup },
-        // { 0x17C8, Categories.Ygroup },
-        // { 0x17DD, Categories.Ygroup },
-        // { 0x17D3, Categories.Ygroup },   // Just guessing. Uniscribe does not categorize it.
+        // The reference source labels this compatibility category as a guess based on Uniscribe behavior.
+        { 0x17D3, Categories.Ygroup },
 
         // https://github.com/harfbuzz/harfbuzz/issues/2384
         { 0x17D9, Categories.Placeholder },
@@ -353,7 +356,10 @@ public static partial class Generator
             position = Positions.Before_Sub;
         }
 
-        return (int)Math.Log((int)position, 2);
+        // The trie stores the position zero-based. Zero is the unassigned
+        // sentinel of the enum, so every named position sits one ahead of the
+        // value the shaper reads back out.
+        return (int)position - 1;
     }
 
     private static void GenerateIndicShapingDataTrie(Codepoint[] codePoints)
@@ -420,6 +426,15 @@ public static partial class Generator
         GenerateDataClass("IndicShaping", null, null, machine, true);
     }
 
+    /// <summary>
+    /// Converts dependent vowels in the Khmer and Myanmar blocks to the positional category their syllable machines consume.
+    /// </summary>
+    /// <remarks>
+    /// This conversion is transcribed from HarfBuzz 14.2.1, <c>src/gen-indic-table.py</c>, symbols <c>matra_categories</c> and <c>position_to_category</c>. The conversion is not derivable from the Unicode Character Database.
+    /// </remarks>
+    /// <param name="codepoint">The character whose block and position determine the category.</param>
+    /// <param name="category">The category mapped from its syllabic property.</param>
+    /// <returns>The category stored in the shaping trie.</returns>
     private static Categories NormalizeCategoryForBlock(Codepoint codepoint, Categories category)
     {
         // HarfBuzz: matra_categories = ('M', 'MPst')
@@ -430,10 +445,7 @@ public static partial class Generator
         {
             string block = codepoint.Block;
 
-            // TODO: Once we implement the Khmer shaper, enable Khmer here too.
-            // if (block.StartsWith("Khmer", StringComparison.Ordinal) ||
-            //    block.StartsWith("Myanmar", StringComparison.Ordinal))
-            if (block.StartsWith("Myanmar", StringComparison.Ordinal))
+            if (block.StartsWith("Khmer", StringComparison.Ordinal) || block.StartsWith("Myanmar", StringComparison.Ordinal))
             {
                 // Base positional category from IndicPositionalCategory.txt
                 Positions basePos = PositionMap.GetValueOrDefault(
@@ -456,6 +468,15 @@ public static partial class Generator
 
     private static void SetBlocks(Codepoint[] codePoints)
     {
+        // Blocks span the whole of Unicode, so every character of every range is
+        // looked up. Index the characters by code once and the whole file costs
+        // one lookup per character rather than a scan.
+        Dictionary<int, Codepoint> byCode = new(codePoints.Length);
+        foreach (Codepoint codePoint in codePoints)
+        {
+            byCode.TryAdd(codePoint.Code, codePoint);
+        }
+
         Regex regex = IndicPropertyRowRegex();
 
         using StreamReader sr = GetStreamReader("Blocks.txt");
@@ -464,29 +485,27 @@ public static partial class Generator
         {
             Match match = regex.Match(line);
 
-            if (match.Success)
+            if (!match.Success)
             {
-                string start = match.Groups[1].Value;
-                string end = match.Groups[2].Value;
-                string block = match.Groups[3].Value;
+                continue;
+            }
 
-                if (string.IsNullOrEmpty(end))
+            string start = match.Groups[1].Value;
+            string end = match.Groups[2].Value;
+            string block = match.Groups[3].Value;
+
+            if (string.IsNullOrEmpty(end))
+            {
+                end = start;
+            }
+
+            int min = ParseHexInt(start);
+            int max = ParseHexInt(end);
+
+            for (int i = min; i <= max; i++)
+            {
+                if (byCode.TryGetValue(i, out Codepoint? codePoint))
                 {
-                    end = start;
-                }
-
-                int min = ParseHexInt(start);
-                int max = ParseHexInt(end);
-
-                for (int i = min; i <= max; i++)
-                {
-                    // TODO: Make an enum of block values and create a trie. This is painfully slow.
-                    Codepoint? codePoint = Array.Find(codePoints, x => x.Code == i);
-                    if (codePoint is null)
-                    {
-                        continue;
-                    }
-
                     codePoint.Block = block;
                 }
             }

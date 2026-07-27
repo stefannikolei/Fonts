@@ -136,21 +136,6 @@ internal sealed class IndicShaper : DefaultShaper
     private static readonly Tag HalnTag = Tag.Parse("haln");
 
     /// <summary>
-    /// The 'dist' (distances) feature tag.
-    /// </summary>
-    private static readonly Tag DistTag = Tag.Parse("dist");
-
-    /// <summary>
-    /// The 'abvm' (above-base mark positioning) feature tag.
-    /// </summary>
-    private static readonly Tag AbvmTag = Tag.Parse("abvm");
-
-    /// <summary>
-    /// The 'blwm' (below-base mark positioning) feature tag.
-    /// </summary>
-    private static readonly Tag BlwmTag = Tag.Parse("blwm");
-
-    /// <summary>
     /// Dotted circle code point (U+25CC) used as a placeholder base.
     /// </summary>
     private const int DottedCircle = 0x25cc;
@@ -214,6 +199,13 @@ internal sealed class IndicShaper : DefaultShaper
         this.initialReorderAction = this.InitialReorder;
         this.finalReorderAction = this.FinalReorder;
 
+        // Every character comes apart first, even one the font already draws whole.
+        // This shaper reads a syllable by its pieces and moves them about, so a vowel
+        // written as one character has to be split into the pieces that are reordered;
+        // were it left whole because the font can draw it, the reordering would never
+        // see it.
+        this.NormalizationMode = NormalizationMode.ComposedDiacriticsNoShortCircuit;
+
         if (IndicConfigurations.TryGetValue(script, out ShapingConfiguration value))
         {
             this.indicConfiguration = value;
@@ -226,6 +218,10 @@ internal sealed class IndicShaper : DefaultShaper
         this.isOldSpec = this.indicConfiguration.HasOldSpec && !unicodeScriptTag.ToString().EndsWith("2", StringComparison.OrdinalIgnoreCase);
         this.zeroContext = !this.isOldSpec && script != ScriptClass.Malayalam;
     }
+
+    /// <inheritdoc />
+    protected override void PreprocessText(ShapingBuffer buffer, int index, int count)
+        => VowelConstraints.Insert(buffer, this.fontMetrics, this.ScriptClass, index, count);
 
     /// <inheritdoc />
     protected override void PlanFeatures(ShapingBuffer buffer, int index, int count)
@@ -253,9 +249,6 @@ internal sealed class IndicShaper : DefaultShaper
         this.EnableFeature(buffer, index, count, BlwsTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable);
         this.EnableFeature(buffer, index, count, PstsTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable);
         this.EnableFeature(buffer, index, count, HalnTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable);
-        this.EnableFeature(buffer, index, count, DistTag);
-        this.EnableFeature(buffer, index, count, AbvmTag);
-        this.EnableFeature(buffer, index, count, BlwmTag);
     }
 
     /// <inheritdoc />
@@ -285,9 +278,7 @@ internal sealed class IndicShaper : DefaultShaper
         for (int i = end - 1; i >= index; i--)
         {
             ref GlyphShapingData data = ref buffer[i];
-            if ((Decompositions.TryGetValue(data.CodePoint.Value, out int[]? decompositions) ||
-                UniversalShapingData.Decompositions.TryGetValue(data.CodePoint.Value, out decompositions)) &&
-                decompositions != null)
+            if (UniversalShapingData.Decompositions.TryGetValue(data.CodePoint.Value, out int[]? decompositions) && decompositions != null)
             {
                 Span<ushort> ids = decompositionIds[..decompositions.Length];
                 bool shouldDecompose = true;
@@ -784,7 +775,7 @@ internal sealed class IndicShaper : DefaultShaper
                 if (item.Syllable.Type != SyllableType.None)
                 {
                     Categories category = item.Syllable.IndicCategory;
-                    if ((FlagUnsafe(category) & (JoinerFlags | Flag(Categories.N) | Flag(Categories.RS) | Flag(Categories.CM) | (HalantOrCoengFlags & FlagUnsafe(category)))) != 0)
+                    if ((FlagUnsafe(category) & (JoinerFlags | Flag(Categories.N) | Flag(Categories.RS) | Flag(Categories.CM) | (HalantFlags & FlagUnsafe(category)))) != 0)
                     {
                         item.Syllable.IndicPosition = lastPosition;
                         if (category == Categories.H && item.Syllable.IndicPosition == Positions.Pre_M)
@@ -1092,8 +1083,8 @@ internal sealed class IndicShaper : DefaultShaper
     /// </summary>
     /// <param name="data">The glyph shaping data.</param>
     /// <returns><see langword="true"/> if the glyph is a halant or coeng.</returns>
-    private static bool IsHalantOrCoeng(ref GlyphShapingData data)
-        => (FlagUnsafe(data.Syllable.IndicCategory) & HalantOrCoengFlags) != 0;
+    private static bool IsHalant(ref GlyphShapingData data)
+        => (FlagUnsafe(data.Syllable.IndicCategory) & HalantFlags) != 0;
 
     /// <summary>
     /// Finds the start index of the next syllable in the buffer.
@@ -1168,7 +1159,7 @@ internal sealed class IndicShaper : DefaultShaper
                                     // Ok, this was a 'pref' candidate but didn't form any.
                                     // Base is around here...
                                     basePosition = i;
-                                    while (basePosition < end && IsHalantOrCoeng(ref buffer[basePosition]))
+                                    while (basePosition < end && IsHalant(ref buffer[basePosition]))
                                     {
                                         basePosition++;
                                     }
@@ -1196,7 +1187,7 @@ internal sealed class IndicShaper : DefaultShaper
                                 i++;
                             }
 
-                            if (i == end || !IsHalantOrCoeng(ref buffer[i]))
+                            if (i == end || !IsHalant(ref buffer[i]))
                             {
                                 break;
                             }
@@ -1239,7 +1230,7 @@ internal sealed class IndicShaper : DefaultShaper
 
             if (basePosition < end)
             {
-                while (start < basePosition && (FlagUnsafe(buffer[basePosition].Syllable.IndicCategory) & (Flag(Categories.N) | HalantOrCoengFlags)) != 0)
+                while (start < basePosition && (FlagUnsafe(buffer[basePosition].Syllable.IndicCategory) & (Flag(Categories.N) | HalantFlags)) != 0)
                 {
                     basePosition--;
                 }
@@ -1265,7 +1256,7 @@ internal sealed class IndicShaper : DefaultShaper
                 // We want to position matra after them.
                 if (this.ScriptClass is not ScriptClass.Malayalam and not ScriptClass.Tamil)
                 {
-                    while (newPos > start && (FlagUnsafe(buffer[newPos].Syllable.IndicCategory) & (Flag(Categories.M) | HalantOrCoengFlags)) == 0)
+                    while (newPos > start && (FlagUnsafe(buffer[newPos].Syllable.IndicCategory) & (Flag(Categories.M) | HalantFlags)) == 0)
                     {
                         newPos--;
                     }
@@ -1274,7 +1265,7 @@ internal sealed class IndicShaper : DefaultShaper
                     // Otherwise only proceed if the Halant does
                     // not belong to the Matra itself!
                     ref GlyphShapingData current = ref buffer[newPos];
-                    if (IsHalantOrCoeng(ref current) && current.Syllable.IndicPosition != Positions.Pre_M)
+                    if (IsHalant(ref current) && current.Syllable.IndicPosition != Positions.Pre_M)
                     {
                         // If ZWJ or ZWNJ follow this halant, position is moved after it.
                         if (newPos + 1 < end && IsJoiner(ref buffer[newPos + 1]))
@@ -1349,12 +1340,12 @@ internal sealed class IndicShaper : DefaultShaper
                     //    fixed in shaping engine, there was no case where reph position
                     //    will be found on this step.
                     newRephPos = start + 1;
-                    while (newRephPos < basePosition && !IsHalantOrCoeng(ref buffer[newRephPos]))
+                    while (newRephPos < basePosition && !IsHalant(ref buffer[newRephPos]))
                     {
                         newRephPos++;
                     }
 
-                    if (newRephPos < basePosition && IsHalantOrCoeng(ref buffer[newRephPos]))
+                    if (newRephPos < basePosition && IsHalant(ref buffer[newRephPos]))
                     {
                         // ->If ZWJ or ZWNJ are following this halant, position is moved after it.
                         if (newRephPos + 1 < basePosition && IsJoiner(ref buffer[newRephPos + 1]))
@@ -1408,12 +1399,12 @@ internal sealed class IndicShaper : DefaultShaper
                 {
                     // Copied from step 2.
                     newRephPos = start + 1;
-                    while (newRephPos < basePosition && !IsHalantOrCoeng(ref buffer[newRephPos]))
+                    while (newRephPos < basePosition && !IsHalant(ref buffer[newRephPos]))
                     {
                         newRephPos++;
                     }
 
-                    if (newRephPos < basePosition && IsHalantOrCoeng(ref buffer[newRephPos]))
+                    if (newRephPos < basePosition && IsHalant(ref buffer[newRephPos]))
                     {
                         // ->If ZWJ or ZWNJ are following this halant, position is moved after it.
                         if (newRephPos + 1 < basePosition && IsJoiner(ref buffer[newRephPos + 1]))
@@ -1439,7 +1430,7 @@ internal sealed class IndicShaper : DefaultShaper
                     // However, if it's a plain Consonant,Halant we shouldn't do that.
                     // Uniscribe doesn't do this.
                     // TEST: U+0930,U+094D,U+0915,U+094B,U+094D
-                    if (IsHalantOrCoeng(ref buffer[newRephPos]))
+                    if (IsHalant(ref buffer[newRephPos]))
                     {
                         for (int i = basePosition + 1; i < newRephPos; i++)
                         {
@@ -1495,7 +1486,7 @@ internal sealed class IndicShaper : DefaultShaper
                             // We want to position matra after them.
                             if (this.ScriptClass is not ScriptClass.Malayalam and not ScriptClass.Tamil)
                             {
-                                while (newPos > start && (FlagUnsafe(buffer[newPos - 1].Syllable.IndicCategory) & (Flag(Categories.M) | HalantOrCoengFlags)) == 0)
+                                while (newPos > start && (FlagUnsafe(buffer[newPos - 1].Syllable.IndicCategory) & (Flag(Categories.M) | HalantFlags)) == 0)
                                 {
                                     newPos--;
                                 }
@@ -1517,7 +1508,7 @@ internal sealed class IndicShaper : DefaultShaper
                                 }
                             }
 
-                            if (newPos > start && IsHalantOrCoeng(ref buffer[newPos - 1]))
+                            if (newPos > start && IsHalant(ref buffer[newPos - 1]))
                             {
                                 // -> If ZWJ or ZWNJ follow this halant, position is moved after it.
                                 if (newPos < end && IsJoiner(ref buffer[newPos]))

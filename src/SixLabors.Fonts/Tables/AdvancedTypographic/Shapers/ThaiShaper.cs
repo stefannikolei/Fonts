@@ -6,9 +6,13 @@ using SixLabors.Fonts.Unicode;
 namespace SixLabors.Fonts.Tables.AdvancedTypographic.Shapers;
 
 /// <summary>
-/// Thai and Lao shaper. Handles SARA AM decomposition, NIKHAHIT/NIGGAHITA reordering,
-/// and PUA-based fallback mark positioning for legacy fonts.
-/// Based on HarfBuzz: <see href="https://github.com/harfbuzz/harfbuzz/blob/main/src/hb-ot-shaper-thai.cc"/>
+/// The shaper for Thai and Lao.
+/// <para>
+/// SARA AM is decomposed into NIKHAHIT and SARA AA and the NIKHAHIT reordered
+/// before the above-base marks it follows. A Thai font offering no features of
+/// its own then has its marks positioned by substituting the private-use
+/// characters a legacy font supplies for the purpose.
+/// </para>
 /// </summary>
 #pragma warning disable SA1201 // Nested types are grouped with the static data they define.
 internal class ThaiShaper : DefaultShaper
@@ -212,21 +216,15 @@ internal class ThaiShaper : DefaultShaper
     }
 
     /// <inheritdoc/>
-    protected override void AssignFeatures(ShapingBuffer buffer, int index, int count)
+    protected override void PreprocessText(ShapingBuffer buffer, int index, int count)
     {
-        base.AssignFeatures(buffer, index, count);
-
-        if (buffer.Role != ShapingBufferRole.Substitution)
-        {
-            return;
-        }
-
-        // Step 1: Always decompose SARA AM -> NIKHAHIT + SARA AA and reorder.
-        // This is needed even when the font has Thai/Lao GSUB tables.
+        // SARA AM is always decomposed into NIKHAHIT + SARA AA and reordered,
+        // which a font carrying Thai or Lao features needs just as much as one
+        // that carries none.
         count = PreprocessSaraAm(buffer, this.fontMetrics, index, count);
 
-        // Step 2: PUA-based fallback mark positioning.
-        // Only applied for Thai (not Lao) when the font lacks Thai GSUB features.
+        // The private-use fallback positions marks for a Thai font that offers no
+        // features to position them with. Lao has no such fallback.
         if (this.ScriptClass == ScriptClass.Thai && !this.hasGsub)
         {
             DoThaiPuaShaping(buffer, this.fontMetrics, index, count);

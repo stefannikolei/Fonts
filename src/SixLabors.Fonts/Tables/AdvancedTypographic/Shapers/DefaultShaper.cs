@@ -77,6 +77,16 @@ internal class DefaultShaper : BaseShaper
     protected static readonly Tag MkmkTag = Tag.Parse("mkmk");
 
     /// <summary>
+    /// The 'abvm' (above-base mark positioning) feature tag.
+    /// </summary>
+    protected static readonly Tag AbvmTag = Tag.Parse("abvm");
+
+    /// <summary>
+    /// The 'blwm' (below-base mark positioning) feature tag.
+    /// </summary>
+    protected static readonly Tag BlwmTag = Tag.Parse("blwm");
+
+    /// <summary>
     /// The 'calt' (contextual alternates) feature tag.
     /// </summary>
     protected static readonly Tag CaltTag = Tag.Parse("calt");
@@ -100,6 +110,11 @@ internal class DefaultShaper : BaseShaper
     /// The 'curs' (cursive positioning) feature tag.
     /// </summary>
     protected static readonly Tag CursTag = Tag.Parse("curs");
+
+    /// <summary>
+    /// The 'dist' (distances) feature tag.
+    /// </summary>
+    protected static readonly Tag DistTag = Tag.Parse("dist");
 
     /// <summary>
     /// The 'kern' (kerning) feature tag.
@@ -295,14 +310,19 @@ internal class DefaultShaper : BaseShaper
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// The common and horizontal feature sets are transcribed from HarfBuzz 14.2.1, <c>src/hb-ot-shape.cc</c>, symbols <c>common_features</c> and <c>horizontal_features</c>. The feature sets are shaping behavior and are not derivable from the Unicode Character Database.
+    /// </remarks>
     protected override void PlanPostprocessingFeatures(ShapingBuffer buffer, int index, int count)
     {
         // Add common features.
+        this.EnableFeature(buffer, index, count, AbvmTag);
+        this.EnableFeature(buffer, index, count, BlwmTag);
         this.EnableFeature(buffer, index, count, CcmpTag);
         this.EnableFeature(buffer, index, count, LoclTag);
         this.EnableFeature(buffer, index, count, RligTag);
-        this.EnableFeature(buffer, index, count, MarkTag);
-        this.EnableFeature(buffer, index, count, MkmkTag);
+        this.EnableFeature(buffer, index, count, MarkTag, ShapingFeatureFlags.ManualJoiners);
+        this.EnableFeature(buffer, index, count, MkmkTag, ShapingFeatureFlags.ManualJoiners);
 
         LayoutMode layoutMode = buffer.TextOptions.LayoutMode;
         bool isVerticalLayout = false;
@@ -321,6 +341,7 @@ internal class DefaultShaper : BaseShaper
             this.EnableFeature(buffer, index, count, LigaTag);
             this.EnableFeature(buffer, index, count, RcltTag);
             this.EnableFeature(buffer, index, count, CursTag);
+            this.EnableFeature(buffer, index, count, DistTag);
             this.EnableFeature(buffer, index, count, KernTag);
         }
         else

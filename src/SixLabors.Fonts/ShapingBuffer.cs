@@ -110,6 +110,19 @@ internal sealed class ShapingBuffer
     private const uint FractionSlashCodePoint = 0x2044;
 
     /// <summary>
+    /// The lowest character that can begin a constrained vowel sequence, which
+    /// is the first Devanagari vowel letter. Text made only of characters below
+    /// it cannot contain such a sequence.
+    /// </summary>
+    private const uint FirstVowelConstraintCharacter = 0x0905;
+
+    /// <summary>
+    /// The dotted circle, U+25CC, which stands in for a base a mark has no
+    /// valid one to attach to.
+    /// </summary>
+    private const int DottedCircleCodePoint = 0x25CC;
+
+    /// <summary>
     /// The glyph id cache entry bits forming the lookup key: the marker, the
     /// codepoint, and the encoded following codepoint.
     /// </summary>
@@ -174,7 +187,17 @@ internal sealed class ShapingBuffer
     /// Cleared when a reset adopts a different options instance, whose values the
     /// plans captured when built.
     /// </summary>
-    private readonly List<(ScriptClass Script, Tag ScriptTag, FontMetrics FontMetrics, ShapePlan Plan)> planCache = new(4);
+    private readonly List<(ScriptClass Script, Tag ScriptTag, FontMetrics FontMetrics, string Language, ShapePlan Plan)> planCache = new(4);
+
+    /// <summary>
+    /// The language the cached language tags were resolved for.
+    /// </summary>
+    private string languageKey = string.Empty;
+
+    /// <summary>
+    /// The feature tags the cached plans were built for.
+    /// </summary>
+    private IReadOnlyList<Tag>? featureKey;
 
     /// <summary>
     /// The output-side record storage for substitution passes. Allocated on the
@@ -280,6 +303,13 @@ internal sealed class ShapingBuffer
     /// forming costs nothing for the text that does not use it.
     /// </summary>
     public bool HasFractionSlash { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether any record carries a character
+    /// that can begin a constrained vowel sequence. Recorded as records enter
+    /// the buffer so text that cannot contain one is never walked for it.
+    /// </summary>
+    public bool HasVowelConstraintCandidates { get; set; }
 
     /// <summary>
     /// Gets the union of every feature bit enabled on any record, accumulated as
@@ -511,14 +541,20 @@ internal sealed class ShapingBuffer
         this.placeholderBidiRuns.Clear();
         this.SegmentPlans.Clear();
 
-        // Cached plans and language tags captured option values when built, so only
-        // a different options instance invalidates them; this is the same identity
-        // contract the shaper and plan caches follow.
-        if (!ReferenceEquals(this.TextOptions, textOptions))
+        // Cached plans and language tags captured option values when built, so what
+        // invalidates them is those values changing. A caller shaping run after run
+        // through one buffer hands the same options over each time with the members
+        // rewritten, so identity alone would never notice.
+        string language = textOptions.Culture?.Name ?? string.Empty;
+        if (!ReferenceEquals(this.TextOptions, textOptions)
+            || !string.Equals(this.languageKey, language, StringComparison.Ordinal)
+            || !ReferenceEquals(this.featureKey, textOptions.FeatureTags))
         {
             this.planCache.Clear();
             this.TextOptions = textOptions;
             this.LanguageTags = ResolveLanguageTags(textOptions);
+            this.languageKey = language;
+            this.featureKey = textOptions.FeatureTags;
         }
     }
 
@@ -533,6 +569,7 @@ internal sealed class ShapingBuffer
         this.EnabledFeatureMaskUnion = ShapePlanFeatures.GlobalFeatureMask;
         this.HasDefaultIgnorables = false;
         this.HasFractionSlash = false;
+        this.HasVowelConstraintCandidates = false;
         this.placeholderBidiRuns.Clear();
         this.SegmentPlans.Clear();
     }
@@ -709,13 +746,15 @@ internal sealed class ShapingBuffer
     /// <param name="direction">The resolved text direction for the codepoint.</param>
     /// <param name="textRunIndex">The index of the text run this glyph belongs to.</param>
     /// <param name="offset">The zero-based index within the input codepoint buffer.</param>
-    public void AddGlyph(ushort glyphId, CodePoint codePoint, TextDirection direction, ushort textRunIndex, int offset)
+    /// <param name="graphemeIndex">The zero-based index of the grapheme the glyph belongs to.</param>
+    public void AddGlyph(ushort glyphId, CodePoint codePoint, TextDirection direction, ushort textRunIndex, int offset, int graphemeIndex)
     {
         this.glyphDigest.Add(glyphId);
         ref GlyphShapingData slot = ref this.Append();
         slot = new(textRunIndex)
         {
             CodePointIndex = offset,
+            GraphemeIndex = graphemeIndex,
             CodePoint = codePoint,
             Direction = direction,
             GlyphId = glyphId,
@@ -734,6 +773,13 @@ internal sealed class ShapingBuffer
         if (value == FractionSlashCodePoint)
         {
             this.HasFractionSlash = true;
+        }
+
+        // Only a character that can begin a constrained vowel sequence makes the
+        // sequence worth looking for, and they all sit above this one.
+        if (value >= FirstVowelConstraintCharacter)
+        {
+            this.HasVowelConstraintCandidates = true;
         }
 
         if (value >= 0x80
@@ -871,15 +917,22 @@ internal sealed class ShapingBuffer
     /// <param name="endIndex">The zero-based index at which to stop reversing (exclusive).</param>
     public void ReverseRange(int startIndex, int endIndex)
     {
-        int s = Math.Min(startIndex, this.Count);
-        int e = Math.Min(endIndex, this.Count);
+        int s = Math.Max(0, Math.Min(startIndex, this.Count));
+        int e = Math.Max(0, Math.Min(endIndex, this.Count));
 
         if (e < s + 2)
         {
             return;
         }
 
-        Array.Reverse(this.data, s, e - s);
+        // A record is its shaping state, its metrics, and its position, held in
+        // step across three arrays; all three move together or the record comes
+        // apart.
+        int length = e - s;
+
+        Array.Reverse(this.data, s, length);
+        Array.Reverse(this.metrics, s, length);
+        Array.Reverse(this.positions, s, length);
     }
 
     /// <summary>
@@ -1137,6 +1190,39 @@ internal sealed class ShapingBuffer
     }
 
     /// <summary>
+    /// Joins the record at <paramref name="mergeIndex"/> into the one at
+    /// <paramref name="index"/>, which takes the given glyph, and removes it. The
+    /// two records need not sit next to each other: records between them keep both
+    /// their place and their order.
+    /// </summary>
+    /// <remarks>
+    /// The joined record covers the text of both, so the codepoint-to-glyph
+    /// projection stays total. The caller sets the codepoint, because the character
+    /// the pair stands for is the caller's to name.
+    /// </remarks>
+    /// <param name="index">The zero-based index of the record that remains.</param>
+    /// <param name="mergeIndex">The zero-based index of the record that is folded in.</param>
+    /// <param name="glyphId">The glyph the remaining record takes.</param>
+    /// <param name="feature">The feature to apply to the remaining record.</param>
+    public void MergeGlyph(int index, int mergeIndex, ushort glyphId, Tag feature)
+    {
+        this.glyphDigest.Add(glyphId);
+
+        ref GlyphShapingData merged = ref this.data[mergeIndex];
+        int codePointCount = merged.CodePointCount;
+
+        this.RemoveAt(mergeIndex);
+
+        ref GlyphShapingData current = ref this.data[index];
+        current.CodePointCount += codePointCount;
+        current.GlyphId = glyphId;
+        current.LigatureId = 0;
+        current.LigatureComponent = -1;
+        current.IsSubstituted = true;
+        current.AppliedFeatureMask |= ShapePlanFeatures.GetVerticalMask(feature);
+    }
+
+    /// <summary>
     /// Replaces a single glyph id with a buffer of glyph ids.
     /// </summary>
     /// <param name="index">The zero-based index of the record to replace.</param>
@@ -1257,6 +1343,7 @@ internal sealed class ShapingBuffer
         // knowledge of default ignorables must travel with its records.
         this.HasDefaultIgnorables |= workspace.HasDefaultIgnorables;
         this.HasFractionSlash |= workspace.HasFractionSlash;
+        this.HasVowelConstraintCandidates |= workspace.HasVowelConstraintCandidates;
 
         uint verticalMask = ShapePlanFeatures.VerticalFeatureMask;
 
@@ -1340,6 +1427,7 @@ internal sealed class ShapingBuffer
         // knowledge of default ignorables must travel with its records.
         this.HasDefaultIgnorables |= workspace.HasDefaultIgnorables;
         this.HasFractionSlash |= workspace.HasFractionSlash;
+        this.HasVowelConstraintCandidates |= workspace.HasVowelConstraintCandidates;
 
         uint verticalMask = ShapePlanFeatures.VerticalFeatureMask;
 
@@ -1505,11 +1593,18 @@ internal sealed class ShapingBuffer
     /// <returns>The <see cref="ShapePlan"/>.</returns>
     public ShapePlan GetOrCreatePlan(ScriptClass script, Tag unicodeScriptTag, FontMetrics fontMetrics)
     {
-        List<(ScriptClass Script, Tag ScriptTag, FontMetrics FontMetrics, ShapePlan Plan)> cache = this.planCache;
+        // The plan carries the language system the font's features were selected
+        // through, so a plan built for one language cannot stand in for another.
+        string language = this.TextOptions.Culture?.Name ?? string.Empty;
+
+        List<(ScriptClass Script, Tag ScriptTag, FontMetrics FontMetrics, string Language, ShapePlan Plan)> cache = this.planCache;
         for (int i = 0; i < cache.Count; i++)
         {
-            (ScriptClass cachedScript, Tag cachedTag, FontMetrics cachedMetrics, ShapePlan cachedPlan) = cache[i];
-            if (cachedScript == script && cachedTag == unicodeScriptTag && ReferenceEquals(cachedMetrics, fontMetrics))
+            (ScriptClass cachedScript, Tag cachedTag, FontMetrics cachedMetrics, string cachedLanguage, ShapePlan cachedPlan) = cache[i];
+            if (cachedScript == script
+                && cachedTag == unicodeScriptTag
+                && ReferenceEquals(cachedMetrics, fontMetrics)
+                && string.Equals(cachedLanguage, language, StringComparison.Ordinal))
             {
                 return cachedPlan;
             }
@@ -1518,7 +1613,7 @@ internal sealed class ShapingBuffer
         ShapePlan plan = ShapePlan.Build(fontMetrics, script, unicodeScriptTag, this.TextOptions, this.LanguageTags);
         if (plan.IsCacheable)
         {
-            cache.Add((script, unicodeScriptTag, fontMetrics, plan));
+            cache.Add((script, unicodeScriptTag, fontMetrics, language, plan));
         }
 
         return plan;
@@ -1965,6 +2060,31 @@ internal sealed class ShapingBuffer
         {
             Array.Resize(ref this.positions, Math.Max(this.positions.Length * 2, required));
         }
+    }
+
+    /// <summary>
+    /// Places a dotted circle before the record at the given position. The
+    /// circle copies the following record's run and direction so it travels
+    /// with it, and stands for itself rather than continuing what it precedes.
+    /// </summary>
+    /// <param name="index">The position to insert before.</param>
+    /// <param name="glyphId">The dotted circle's glyph id.</param>
+    public void InsertDottedCircle(int index, ushort glyphId)
+    {
+        this.EnsureCapacity(this.Count + 1);
+        Array.Copy(this.data, index, this.data, index + 1, this.Count - index);
+        this.Count++;
+
+        GlyphShapingData following = this.data[index + 1];
+        this.data[index] = new GlyphShapingData(following, true)
+        {
+            GlyphId = glyphId,
+            CodePoint = new CodePoint(DottedCircleCodePoint),
+            CodePointCount = 1,
+            LigatureComponent = -1,
+        };
+
+        this.glyphDigest.Add(glyphId);
     }
 
     /// <summary>

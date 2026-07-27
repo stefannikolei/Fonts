@@ -50,12 +50,18 @@ public class HarfBuzzDifferentialTests
     [MemberData(nameof(ShapingCases))]
     public void ShapesIdenticallyToHarfBuzz(string fontFile, string text, bool rightToLeft)
     {
-        // SixLabors side, font design units, logical order.
+        // SixLabors side, font design units. The direction is stated, so the text is
+        // taken as one run, which is what the other engine is handed below.
         Font font = new FontCollection().Add(fontFile).CreateFont(16);
-        IReadOnlyList<ShapedGlyph> glyphs = TextShaper.Shape(text, new TextOptions(font));
+        TextShapingBuffer shapingBuffer = new();
+        shapingBuffer.Add(text);
+        shapingBuffer.Direction = rightToLeft ? TextDirection.RightToLeft : TextDirection.LeftToRight;
+        TextShaper.Shape(font, shapingBuffer);
 
-        // HarfBuzz side. Output for right-to-left runs is in visual order, so the
-        // comparison walks it reversed to recover logical order.
+        ReadOnlySpan<ShapedGlyph> glyphs = shapingBuffer.Glyphs;
+
+        // HarfBuzz side. Both engines hand back a run in the order it is read, so
+        // the two are compared position for position with nothing in between.
         using Blob blob = Blob.FromFile(fontFile);
         using HBFace face = new(blob, 0);
         using HBFont hbFont = new(face);
@@ -68,13 +74,12 @@ public class HarfBuzzDifferentialTests
         GlyphInfo[] infos = buffer.GetGlyphInfoSpan().ToArray();
         GlyphPosition[] positions = buffer.GetGlyphPositionSpan().ToArray();
 
-        Assert.Equal(infos.Length, glyphs.Count);
+        Assert.Equal(infos.Length, glyphs.Length);
 
-        for (int i = 0; i < glyphs.Count; i++)
+        for (int i = 0; i < glyphs.Length; i++)
         {
-            int hbIndex = rightToLeft ? infos.Length - 1 - i : i;
-            Assert.Equal(infos[hbIndex].Codepoint, glyphs[i].GlyphId);
-            Assert.Equal(positions[hbIndex].XAdvance, glyphs[i].AdvanceWidth);
+            Assert.Equal(infos[i].Codepoint, glyphs[i].GlyphId);
+            Assert.Equal(positions[i].XAdvance, glyphs[i].AdvanceWidth);
         }
     }
 }

@@ -140,6 +140,7 @@ internal struct GlyphShapingData
     {
         this.GlyphId = data.GlyphId;
         this.CodePointIndex = data.CodePointIndex;
+        this.GraphemeIndex = data.GraphemeIndex;
         this.CodePoint = data.CodePoint;
         this.CodePointCount = data.CodePointCount;
         this.Direction = data.Direction;
@@ -222,6 +223,13 @@ internal struct GlyphShapingData
     /// leading codepoint this glyph represents.
     /// </summary>
     public int CodePointIndex { get; set; }
+
+    /// <summary>
+    /// Gets or sets the zero-based index of the grapheme this glyph belongs to. The
+    /// text is walked grapheme by grapheme as the buffer is filled, so the grouping is
+    /// recorded there rather than worked out again from the characters later.
+    /// </summary>
+    public int GraphemeIndex { get; set; }
 
     /// <summary>
     /// Gets or sets the leading codepoint.

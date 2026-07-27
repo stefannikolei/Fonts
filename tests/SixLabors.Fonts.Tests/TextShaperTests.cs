@@ -7,28 +7,59 @@ namespace SixLabors.Fonts.Tests;
 
 public class TextShaperTests
 {
+    /// <summary>
+    /// Shapes one run of left to right text, the arrangement most of these tests
+    /// need, and returns its glyphs.
+    /// </summary>
+    /// <param name="font">The font to shape against.</param>
+    /// <param name="text">The text of the run.</param>
+    /// <returns>The shaped glyphs.</returns>
+    private static ShapedGlyph[] Shape(Font font, string text)
+    {
+        TextShapingBuffer buffer = new();
+        buffer.Add(text);
+        TextShaper.Shape(font, buffer);
+
+        return buffer.Glyphs.ToArray();
+    }
+
+    /// <summary>
+    /// Shapes one run of left to right text written in the given language.
+    /// </summary>
+    /// <param name="font">The font to shape against.</param>
+    /// <param name="text">The text of the run.</param>
+    /// <param name="language">The language the run is written in.</param>
+    /// <returns>The shaped glyphs.</returns>
+    private static ShapedGlyph[] Shape(Font font, string text, CultureInfo language)
+    {
+        TextShapingBuffer buffer = new();
+        buffer.Add(text);
+        buffer.Language = language;
+        TextShaper.Shape(font, buffer);
+
+        return buffer.Glyphs.ToArray();
+    }
+
     [Fact]
     public void Shape_Latin_ProducesSequentialGlyphStream()
     {
         Font font = new FontCollection().Add(TestFonts.OpenSansFile).CreateFont(72);
-        IReadOnlyList<ShapedGlyph> glyphs = TextShaper.Shape("Hxp", new TextOptions(font));
+        ShapedGlyph[] glyphs = Shape(font, "Hxp");
 
-        Assert.Equal(3, glyphs.Count);
-        for (int i = 0; i < glyphs.Count; i++)
+        Assert.Equal(3, glyphs.Length);
+        for (int i = 0; i < glyphs.Length; i++)
         {
             Assert.Equal(i, glyphs[i].CodePointIndex);
-            Assert.Equal(1, glyphs[i].CodePointCount);
             Assert.NotEqual(0, glyphs[i].GlyphId);
             Assert.True(glyphs[i].AdvanceWidth > 0);
-            Assert.Same(font, glyphs[i].Font);
         }
     }
 
     [Fact]
     public void Shape_EmptyText_ProducesNoGlyphs()
-        => Assert.Empty(TextShaper.Shape(
-            string.Empty,
-            new TextOptions(new FontCollection().Add(TestFonts.OpenSansFile).CreateFont(72))));
+        => Assert.Empty(Shape(
+            new FontCollection().Add(TestFonts.OpenSansFile).CreateFont(72),
+            string.Empty));
 
     [Fact]
     public void Shape_AdvancesMatchMeasuredAdvance()
@@ -39,7 +70,7 @@ public class TextShaperTests
         TextOptions options = new(font);
         const string text = "Hxplq";
 
-        IReadOnlyList<ShapedGlyph> glyphs = TextShaper.Shape(text, options);
+        ShapedGlyph[] glyphs = Shape(font, text);
 
         float scale = font.Size / font.FontMetrics.UnitsPerEm;
         float shapedAdvance = 0;
@@ -58,25 +89,33 @@ public class TextShaperTests
         // Dubai applies mandatory Arabic ligatures; Lam + Alef must merge into a single
         // glyph spanning both codepoints.
         Font font = new FontCollection().Add(TestFonts.ArabicFontFile).CreateFont(72);
-        IReadOnlyList<ShapedGlyph> glyphs = TextShaper.Shape("لا", new TextOptions(font));
+        ShapedGlyph[] glyphs = Shape(font, "لا");
 
         Assert.Single(glyphs);
+        // Two characters merged into one glyph, so the run's only glyph carries the
+        // cluster of the first of them.
         Assert.Equal(0, glyphs[0].CodePointIndex);
-        Assert.Equal(2, glyphs[0].CodePointCount);
     }
 
     [Fact]
-    public void Shape_RightToLeft_KeepsLogicalOrder()
+    public void Shape_RightToLeft_ReportsRunInReadingOrder()
     {
-        // The shaper reports glyphs in logical (source) order; visual reordering is a
-        // layout concern.
+        // A run that reads right to left is handed back in that order, so the first
+        // glyph is the rightmost one and the codepoints it came from descend.
+        // Ordering runs against one another belongs to the caller, which alone
+        // knows where its lines break.
         Font font = new FontCollection().Add(TestFonts.ArabicFontFile).CreateFont(72);
-        IReadOnlyList<ShapedGlyph> glyphs = TextShaper.Shape("سلام", new TextOptions(font));
+        TextShapingBuffer buffer = new();
+        buffer.Add("سلام");
+        buffer.Direction = TextDirection.RightToLeft;
+        TextShaper.Shape(font, buffer);
 
-        Assert.True(glyphs.Count > 1);
-        for (int i = 1; i < glyphs.Count; i++)
+        ReadOnlySpan<ShapedGlyph> glyphs = buffer.Glyphs;
+
+        Assert.True(glyphs.Length > 1);
+        for (int i = 1; i < glyphs.Length; i++)
         {
-            Assert.True(glyphs[i].CodePointIndex > glyphs[i - 1].CodePointIndex);
+            Assert.True(glyphs[i].CodePointIndex < glyphs[i - 1].CodePointIndex);
         }
     }
 
@@ -86,28 +125,10 @@ public class TextShaperTests
         // With no fallback fonts configured an unmapped codepoint emits the font's
         // missing glyph, matching the single-face shaping model.
         Font font = new FontCollection().Add(TestFonts.OpenSansFile).CreateFont(72);
-        IReadOnlyList<ShapedGlyph> glyphs = TextShaper.Shape("☃", new TextOptions(font));
+        ShapedGlyph[] glyphs = Shape(font, "☃");
 
         Assert.Single(glyphs);
         Assert.Equal(0, glyphs[0].GlyphId);
-    }
-
-    [Fact]
-    public void Shape_Vertical_PopulatesAdvanceHeight()
-    {
-        Font font = new FontCollection().Add(TestFonts.NotoSansSCBaselineSubsetFile).CreateFont(72);
-        TextOptions options = new(font)
-        {
-            LayoutMode = LayoutMode.VerticalLeftRight
-        };
-
-        IReadOnlyList<ShapedGlyph> glyphs = TextShaper.Shape("永国", options);
-
-        Assert.Equal(2, glyphs.Count);
-        foreach (ShapedGlyph glyph in glyphs)
-        {
-            Assert.True(glyph.AdvanceHeight > 0);
-        }
     }
 
     [Theory]
@@ -121,16 +142,11 @@ public class TextShaperTests
         // Romania to ROM; both select the same substitution in this font.
         Font font = new FontCollection().Add(TestFonts.OpenSansFile).CreateFont(72);
 
-        ushort plain = Assert.Single(TextShaper.Shape("ş", new TextOptions(font))).GlyphId;
-        ushort expected = Assert.Single(TextShaper.Shape("ș", new TextOptions(font))).GlyphId;
+        ushort plain = Assert.Single(Shape(font, "ş")).GlyphId;
+        ushort expected = Assert.Single(Shape(font, "ș")).GlyphId;
         Assert.NotEqual(plain, expected);
 
-        TextOptions options = new(font)
-        {
-            Culture = new CultureInfo(cultureName)
-        };
-
-        Assert.Equal(expected, Assert.Single(TextShaper.Shape("ş", options)).GlyphId);
+        Assert.Equal(expected, Assert.Single(Shape(font, "ş", new CultureInfo(cultureName))).GlyphId);
     }
 
     [Theory]
@@ -144,14 +160,9 @@ public class TextShaperTests
         // culture changes the resolved glyph.
         Font font = new FontCollection().Add(TestFonts.OpenSansFile).CreateFont(72);
 
-        ushort plain = Assert.Single(TextShaper.Shape("б", new TextOptions(font))).GlyphId;
+        ushort plain = Assert.Single(Shape(font, "б")).GlyphId;
 
-        TextOptions options = new(font)
-        {
-            Culture = new CultureInfo(cultureName)
-        };
-
-        ushort localized = Assert.Single(TextShaper.Shape("б", options)).GlyphId;
+        ushort localized = Assert.Single(Shape(font, "б", new CultureInfo(cultureName))).GlyphId;
         Assert.NotEqual(plain, localized);
         Assert.NotEqual(0, localized);
     }
@@ -163,14 +174,9 @@ public class TextShaperTests
         // default language system and the localized substitution must not apply.
         Font font = new FontCollection().Add(TestFonts.OpenSansFile).CreateFont(72);
 
-        ushort plain = Assert.Single(TextShaper.Shape("ş", new TextOptions(font))).GlyphId;
+        ushort plain = Assert.Single(Shape(font, "ş")).GlyphId;
 
-        TextOptions options = new(font)
-        {
-            Culture = new CultureInfo("tr-TR")
-        };
-
-        Assert.Equal(plain, Assert.Single(TextShaper.Shape("ş", options)).GlyphId);
+        Assert.Equal(plain, Assert.Single(Shape(font, "ş", new CultureInfo("tr-TR"))).GlyphId);
     }
 
     /// <summary>
@@ -201,12 +207,9 @@ public class TextShaperTests
     public void Shape_Culture_MatchesHarfBuzzLanguageTagExpectations(string? cultureName, int expectedGlyphId)
     {
         Font font = new FontCollection().Add(TestFonts.LanguageTagsFile).CreateFont(72);
-        TextOptions options = new(font)
-        {
-            Culture = cultureName is null ? CultureInfo.InvariantCulture : new CultureInfo(cultureName)
-        };
+        CultureInfo language = cultureName is null ? CultureInfo.InvariantCulture : new CultureInfo(cultureName);
 
-        IReadOnlyList<ShapedGlyph> glyphs = TextShaper.Shape("J", options);
+        ShapedGlyph[] glyphs = Shape(font, "J", language);
 
         Assert.Single(glyphs);
         Assert.Equal(expectedGlyphId, glyphs[0].GlyphId);
@@ -235,20 +238,18 @@ public class TextShaperTests
         {
             foreach ((Font font, string text) in cases)
             {
-                TextOptions options = new(font);
-                IReadOnlyList<ShapedGlyph> expected = TextShaper.Shape(text, options);
-                TextShaper.Shape(text, options, buffer);
+                ShapedGlyph[] expected = Shape(font, text);
 
-                Assert.Equal(expected.Count, buffer.Count);
-                for (int i = 0; i < expected.Count; i++)
+                buffer.Add(text);
+                TextShaper.Shape(font, buffer);
+
+                Assert.Equal(expected.Length, buffer.Count);
+                for (int i = 0; i < expected.Length; i++)
                 {
                     ShapedGlyph expectedGlyph = expected[i];
                     ShapedGlyph actual = buffer[i];
-                    Assert.Same(expectedGlyph.Font, actual.Font);
                     Assert.Equal(expectedGlyph.GlyphId, actual.GlyphId);
-                    Assert.Equal(expectedGlyph.CodePoint, actual.CodePoint);
                     Assert.Equal(expectedGlyph.CodePointIndex, actual.CodePointIndex);
-                    Assert.Equal(expectedGlyph.CodePointCount, actual.CodePointCount);
                     Assert.Equal(expectedGlyph.AdvanceWidth, actual.AdvanceWidth);
                     Assert.Equal(expectedGlyph.AdvanceHeight, actual.AdvanceHeight);
                     Assert.Equal(expectedGlyph.Offset, actual.Offset);
@@ -263,10 +264,12 @@ public class TextShaperTests
         Font font = new FontCollection().Add(TestFonts.OpenSansFile).CreateFont(72);
         TextShapingBuffer buffer = new();
 
-        TextShaper.Shape("Hxp", new TextOptions(font), buffer);
+        buffer.Add("Hxp");
+        TextShaper.Shape(font, buffer);
         Assert.Equal(3, buffer.Count);
 
-        TextShaper.Shape(string.Empty, new TextOptions(font), buffer);
+        buffer.Add(string.Empty);
+        TextShaper.Shape(font, buffer);
         Assert.Equal(0, buffer.Count);
         Assert.True(buffer.Glyphs.IsEmpty);
     }
@@ -287,8 +290,8 @@ public class TextShaperTests
         };
 
         Font font = new FontCollection().Add(fontFile).CreateFont(72);
-        TextOptions options = new(font);
         TextShapingBuffer buffer = new();
+        buffer.Add(text);
 
         // Parallel tests share the pipeline's scratch pool, so any single call may
         // rent state another test left cold for this font and pay its one-time
@@ -299,11 +302,11 @@ public class TextShaperTests
         {
             for (int i = 0; i < 8; i++)
             {
-                TextShaper.Shape(text, options, buffer);
+                TextShaper.Shape(font, buffer);
             }
 
             long before = GC.GetAllocatedBytesForCurrentThread();
-            TextShaper.Shape(text, options, buffer);
+            TextShaper.Shape(font, buffer);
             minimum = Math.Min(minimum, GC.GetAllocatedBytesForCurrentThread() - before);
         }
 

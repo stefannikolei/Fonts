@@ -588,9 +588,13 @@ public static partial class Generator
         UnicodeTrie uisc = GenerateIndicSyllabicCategoryTrie();
         UnicodeTrie uipc = GenerateIndicPositionalCategoryTrie();
         GenerateVerticalOrientationTrie();
+        GenerateNormalizationData();
+        GenerateMarkOrderingData();
+        GenerateScriptDirectionData();
 
         List<Codepoint> codePoints = GenerateUniversalShapingDataTrie(ugc, uisc, uipc, uajt);
         GenerateIndicShapingDataTrie([.. codePoints]);
+        GenerateKhmerShapingData();
         GenerateMyanmarShapingData();
     }
 
@@ -1067,7 +1071,10 @@ public static partial class Generator
     private static UnicodeTrie GenerateArabicShapingTrie()
     {
         Regex regex = ArabicShapingRowRegex();
-        const uint initial = ((int)ArabicJoiningType.NonJoining) | (((int)ArabicJoiningGroup.NoJoiningGroup) << 16);
+
+        // A character the joining data does not list keeps that fact, so the reader
+        // can settle it from the general category the way the property is defined.
+        const uint initial = ((int)ArabicJoiningType.Unlisted) | (((int)ArabicJoiningGroup.NoJoiningGroup) << 16);
         UnicodeTrieBuilder builder = new(initial);
 
         using (StreamReader sr = GetStreamReader("ArabicShaping.txt"))
@@ -1367,6 +1374,6 @@ public static partial class Generator
     /// type, and the joining group.
     /// </summary>
     /// <returns>The regular expression.</returns>
-    [GeneratedRegex(@"^([0-9A-F]+)(?:\.\.([0-9A-F]+))?\s*;[\w\s]+;\s*([A-Z]+);\s*([\w\s]+)")]
+    [GeneratedRegex(@"^([0-9A-F]+)(?:\.\.([0-9A-F]+))?\s*;[^;]+;\s*([A-Z]+);\s*([\w\s]+)")]
     private static partial Regex ArabicShapingRowRegex();
 }

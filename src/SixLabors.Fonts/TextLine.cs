@@ -665,8 +665,9 @@ internal sealed class TextLine
     /// When <see langword="true"/>, marks the line so <see cref="Justify"/> becomes a no-op
     /// (used for paragraph-final lines).
     /// </param>
-    /// <param name="normalizeDecomposedAdvances">
-    /// When <see langword="true"/>, moves decomposed grapheme advances to the final visual entry.
+    /// <param name="redistributeGraphemeAdvances">
+    /// When <see langword="true"/>, moves each decomposed grapheme's advance onto the entry
+    /// that ends it once reordering has settled which entry that is.
     /// </param>
     /// <param name="preserveTrailingBreakingWhitespace">
     /// When <see langword="true"/>, keeps ordinary trailing breaking whitespace in the finalized line.
@@ -674,16 +675,16 @@ internal sealed class TextLine
     /// <returns>This line, for fluent chaining.</returns>
     public TextLine Finalize(
         bool skipJustification = false,
-        bool normalizeDecomposedAdvances = false,
+        bool redistributeGraphemeAdvances = false,
         bool preserveTrailingBreakingWhitespace = false)
     {
         this.SkipJustification = skipJustification;
         this.RemoveTrailingBreakingWhitespace(preserveTrailingBreakingWhitespace);
         this.BidiReOrder();
 
-        if (normalizeDecomposedAdvances)
+        if (redistributeGraphemeAdvances)
         {
-            this.NormalizeDecomposedAdvances();
+            this.RedistributeGraphemeAdvances();
         }
 
         RecalculateLineMetrics(this);
@@ -691,9 +692,11 @@ internal sealed class TextLine
     }
 
     /// <summary>
-    /// Moves decomposed grapheme advances when bidi reordering moved the grapheme boundary marker.
+    /// Gathers each decomposed grapheme's advance onto the entry that ends it, which
+    /// reordering may have changed. This is advance bookkeeping and has nothing to do
+    /// with normalizing text.
     /// </summary>
-    private void NormalizeDecomposedAdvances()
+    private void RedistributeGraphemeAdvances()
     {
         int start = 0;
         while (start < this.data.Count)

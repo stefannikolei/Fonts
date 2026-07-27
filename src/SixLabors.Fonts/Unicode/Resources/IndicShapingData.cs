@@ -9,41 +9,15 @@ internal static partial class IndicShapingData
 {
     /// <summary>
     /// Script shaping category values used for Indic, Khmer, and Myanmar text
-    /// classification. These values correspond to the category codes used by
-    /// HarfBuzz in its Indic-style shaping engines, including the extended
-    /// categories required for Myanmar.
+    /// classification.
     ///
     /// The values serve as the input alphabet for the script syllable machines
     /// and determine script-specific parsing, reordering, and dotted circle insertion.
     ///
-    /// Categories are sourced from the OpenType Script Development Specifications
-    /// and HarfBuzz's generated Indic tables:
-    ///
-    /// Indic specification:
-    /// https://learn.microsoft.com/en-us/typography/script-development/devanagari
-    ///
-    /// General Indic shaper category model and data:
-    /// https://github.com/harfbuzz/harfbuzz/blob/main/src/hb-ot-shaper-indic.cc
-    /// https://github.com/harfbuzz/harfbuzz/blob/main/src/hb-ot-shaper-indic-table.hh
-    ///
-    /// Khmer specification:
-    /// https://learn.microsoft.com/en-us/typography/script-development/khmer
-    ///
-    /// Myanmar specification:
-    /// https://learn.microsoft.com/en-us/typography/script-development/myanmar
-    ///
-    /// Myanmar machine exports:
-    /// https://github.com/harfbuzz/harfbuzz/blob/main/src/hb-ot-shaper-myanmar-machine.rl
-    ///
-    /// Notes:
-    /// * X is the default category and always has value 0.
-    /// * Coeng intentionally shares the same category value as H, matching
-    ///   HarfBuzz behavior for Khmer.
-    /// * Some values are shared across scripts (for example VAbv, VBlw, VPre,
-    ///   VPst) because the OpenType model for dependent vowels is the same.
-    /// * Myanmar-specific medial and tone categories begin at 32 and above,
-    ///   matching HarfBuzz's numeric category assignments.
     /// </summary>
+    /// <remarks>
+    /// The values are transcribed from HarfBuzz 14.2.1, <c>src/gen-indic-table.py</c>, symbols <c>category_map</c>, <c>category_overrides</c>, and <c>position_to_category</c>. The shaping categories and overrides are not derivable from the Unicode Character Database.
+    /// </remarks>
     public enum Categories : int
     {
         // Core Indic-style categories (shared across scripts where applicable)
@@ -54,7 +28,6 @@ internal static partial class IndicShapingData
         N = 3,   // Nukta
         H = 4,   // Halant (virama)
 
-        // Coeng = H,   // Khmer Coeng, mapped to H in HarfBuzz
         ZWNJ = 5,   // Zero width non-joiner
         ZWJ = 6,   // Zero width joiner
         M = 7,   // Generic matra / dependent vowel
@@ -85,10 +58,9 @@ internal static partial class IndicShapingData
         Robatic = 25,  // Khmer Robatic sign
         Xgroup = 26,  // Khmer X-group matra sequence
         Ygroup = 27,  // Khmer Y-group matra sequence
-        Coeng = 28, // Remove once we no longer need it for Khmer
 
         // Myanmar-specific categories
-        // IV = V,   // Independent vowel (shares code 2 with V in HarfBuzz)
+        // IV = V,   // Independent vowel (shares code 2 with V)
         // DB = N,   // Dot-below (shares code 3 with N)
         // GB = Placeholder, // Generic base / placeholder (shares code 10)
         As = 32,  // Asat
@@ -101,10 +73,36 @@ internal static partial class IndicShapingData
         ML = 41 // Medial Mon La
     }
 
+    /// <summary>
+    /// The shaping categories consumed by the Khmer syllable machine.
+    /// </summary>
+    /// <remarks>
+    /// The category set is transcribed from HarfBuzz 14.2.1, <c>src/hb-ot-shaper-khmer-machine.rl</c>, symbol <c>khmer_syllable_machine</c>. The values are not derivable from the Unicode Character Database.
+    /// </remarks>
+    public enum KhmerCategories : int
+    {
+        X = Categories.X,
+        C = Categories.C,
+        V = Categories.V,
+        H = Categories.H,
+        ZWNJ = Categories.ZWNJ,
+        ZWJ = Categories.ZWJ,
+        Placeholder = Categories.Placeholder,
+        Dotted_Circle = Categories.Dotted_Circle,
+        Ra = Categories.Ra,
+        VAbv = Categories.VAbv,
+        VBlw = Categories.VBlw,
+        VPre = Categories.VPre,
+        VPst = Categories.VPst,
+        Robatic = Categories.Robatic,
+        Xgroup = Categories.Xgroup,
+        Ygroup = Categories.Ygroup,
+    }
+
     // Categories used in the Myanmar shaping engine.
     // Note:
     // The OpenType Myanmar spec defines categories D, D0, and P.
-    // HarfBuzz collapses:
+    // The source table collapses:
     //   D  => GB
     //   D0 => D => GB
     //   P  => GB
@@ -341,16 +339,6 @@ internal static partial class IndicShapingData
         }
     };
 
-    public static Dictionary<int, int[]> Decompositions { get; } = new()
-    {
-        // Khmer
-        { 0x17BE, new int[] { 0x17C1, 0x17BE } },
-        { 0x17BF, new int[] { 0x17C1, 0x17BF } },
-        { 0x17C0, new int[] { 0x17C1, 0x17C0 } },
-        { 0x17C4, new int[] { 0x17C1, 0x17C4 } },
-        { 0x17C5, new int[] { 0x17C1, 0x17C5 } }
-    };
-
     public static uint ConsonantFlags { get; } =
         Flag(Categories.C) |
         Flag(Categories.Ra) |
@@ -376,9 +364,10 @@ internal static partial class IndicShapingData
         Flag(Categories.ZWJ) |
         Flag(Categories.ZWNJ);
 
-    public static uint HalantOrCoengFlags { get; } =
-        Flag(Categories.H) |
-        Flag(Categories.Coeng);
+    /// <summary>
+    /// Gets the bit identifying a halant category.
+    /// </summary>
+    public static uint HalantFlags { get; } = Flag(Categories.H);
 
     /// <summary>
     /// Provides a flag value for the given category. Only valid for categories &lt; 32.

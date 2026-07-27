@@ -1,16 +1,22 @@
 // Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
+using System.Globalization;
+
 namespace SixLabors.Fonts;
 
 /// <summary>
-/// A reusable, caller-owned buffer that receives the glyph stream of a shaping call.
-/// Each call replaces the contents; storage grows to its high-water mark and is
+/// A reusable, caller-owned buffer holding one run of text, the properties it is
+/// shaped under, and the glyphs shaping produces. Text and properties are set on
+/// the buffer, the buffer is shaped, and the glyphs are read back from it. Each
+/// shaping call replaces the glyphs; storage grows to its high-water mark and is
 /// retained, so repeated shaping through one instance does not allocate.
 /// </summary>
 /// <remarks>
-/// An instance is not thread safe: use one buffer per shaping thread and reuse it
-/// across calls.
+/// A run reads one way throughout. Text of mixed direction is divided into runs by
+/// the caller, which shapes each of them and places them against one another once
+/// it knows where its lines break. An instance is not thread safe: use one buffer
+/// per shaping thread and reuse it across calls.
 /// </remarks>
 public sealed class TextShapingBuffer
 {
@@ -21,12 +27,40 @@ public sealed class TextShapingBuffer
     private ShapedGlyph[] glyphs = [];
 
     /// <summary>
+    /// The text storage, so a buffer that is refilled from a span does not allocate.
+    /// </summary>
+    private char[] text = [];
+
+    /// <summary>
+    /// The number of characters of <see cref="text"/> that are live.
+    /// </summary>
+    private int textLength;
+
+    /// <summary>
+    /// Gets the text of the run.
+    /// </summary>
+    public ReadOnlySpan<char> Text => this.text.AsSpan(0, this.textLength);
+
+    /// <summary>
+    /// Gets or sets the direction the run reads in. Shaping takes the text as one
+    /// run reading this way, whichever way it would read on its own.
+    /// </summary>
+    public TextDirection Direction { get; set; } = TextDirection.LeftToRight;
+
+    /// <summary>
+    /// Gets or sets the language the run is written in, which selects the language
+    /// specific behaviour of the font's features.
+    /// </summary>
+    public CultureInfo Language { get; set; } = CultureInfo.InvariantCulture;
+
+    /// <summary>
     /// Gets the number of shaped glyphs the last shaping call produced.
     /// </summary>
     public int Count { get; private set; }
 
     /// <summary>
-    /// Gets the shaped glyphs in logical order.
+    /// Gets the shaped glyphs, in the order the run is read: a caller walks them
+    /// forward and adds the advances up.
     /// </summary>
     public ReadOnlySpan<ShapedGlyph> Glyphs => this.glyphs.AsSpan(0, this.Count);
 
@@ -44,14 +78,42 @@ public sealed class TextShapingBuffer
     }
 
     /// <summary>
-    /// Removes all glyphs while retaining the storage.
+    /// Replaces the text of the run, discarding any glyphs already shaped.
     /// </summary>
-    public void Clear() => this.Count = 0;
+    /// <param name="value">The text of the run.</param>
+    public void Add(ReadOnlySpan<char> value)
+    {
+        if (this.text.Length < value.Length)
+        {
+            this.text = new char[Math.Max(value.Length, Math.Max(64, this.text.Length * 2))];
+        }
+
+        value.CopyTo(this.text);
+        this.textLength = value.Length;
+        this.Count = 0;
+    }
+
+    /// <inheritdoc cref="Add(ReadOnlySpan{char})"/>
+    public void Add(string value)
+    {
+        Guard.NotNull(value, nameof(value));
+
+        this.Add(value.AsSpan());
+    }
 
     /// <summary>
-    /// Begins replacing the contents: empties the buffer, ensures capacity for the
-    /// given record count, and returns the writable storage. The written records
-    /// become visible when <see cref="Commit"/> publishes their count.
+    /// Removes the text and the glyphs while retaining the storage.
+    /// </summary>
+    public void Clear()
+    {
+        this.Count = 0;
+        this.textLength = 0;
+    }
+
+    /// <summary>
+    /// Begins replacing the glyphs: empties them, ensures capacity for the given
+    /// record count, and returns the writable storage. The written records become
+    /// visible when <see cref="Commit"/> publishes their count.
     /// </summary>
     /// <param name="capacity">The record capacity to reserve.</param>
     /// <returns>The writable storage span.</returns>

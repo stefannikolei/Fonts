@@ -469,7 +469,14 @@ internal partial class StreamFontMetrics : FontMetrics
         if (this.TryGetGSubTable(out GSubTable? gSubTable))
         {
             gSubTable.ApplySubstitution(this, buffer);
+            return;
         }
+
+        // A font carrying no substitution table has no lookups to apply, but its
+        // runs are still planned: preparing a run's text is what supplies the
+        // characters a script cannot be read without, and the positioning pass
+        // reuses the runs planning records.
+        ScriptItemizer.PlanRuns(this, buffer);
     }
 
     /// <inheritdoc/>

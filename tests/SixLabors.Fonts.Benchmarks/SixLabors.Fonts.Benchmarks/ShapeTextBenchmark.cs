@@ -37,17 +37,16 @@ public enum ShapeTextBenchmarkScenario
 /// resulting glyph stream, summing the advances so the output is fully consumed.
 /// </summary>
 /// <remarks>
-/// The operations are not identical: <see cref="TextShaper"/> runs bidi analysis and run
-/// itemization internally, while HarfBuzz expects the caller to have segmented the text
-/// and only guesses the buffer's script, direction, and language. The comparison measures
-/// what a consumer pays for a shaped glyph stream through each API.
+/// Both sides are handed one run whose direction is stated, so each does the same
+/// work: neither divides the text, and the comparison is of shaping alone.
 /// </remarks>
-[Config(typeof(Config.Short))]
+[Config(typeof(Config.Gate))]
 public class ShapeTextBenchmark : IDisposable
 {
     private string text = string.Empty;
-    private TextOptions textOptions = null!;
-    private TextShapingBuffer shapingBuffer = null!;
+    private TextDirection direction;
+    private Font? font;
+    private readonly TextShapingBuffer shapingBuffer = new();
     private Blob? blob;
     private HBFace? face;
     private HBFont? hbFont;
@@ -70,21 +69,22 @@ public class ShapeTextBenchmark : IDisposable
         {
             fontPath = GetFontPath("OpenSans-Regular.ttf");
             this.text = "The quick brown fox jumps over the lazy dog; fifty fluffy waffles.";
+            this.direction = TextDirection.LeftToRight;
         }
         else if (this.Scenario == ShapeTextBenchmarkScenario.Arabic)
         {
             fontPath = GetFontPath("Dubai-Regular.ttf");
             this.text = "سلام عليكم ورحمة الله وبركاته لا إله إلا الله";
+            this.direction = TextDirection.RightToLeft;
         }
         else
         {
             fontPath = GetFontPath("NotoSansDevanagari-Regular.ttf");
             this.text = "क्षत्रिय द्वारा प्रकृति की रक्षा कर्तव्य है";
+            this.direction = TextDirection.LeftToRight;
         }
 
-        Font font = new FontCollection().Add(fontPath).CreateFont(16);
-        this.textOptions = new TextOptions(font);
-        this.shapingBuffer = new TextShapingBuffer();
+        this.font = new FontCollection().Add(fontPath).CreateFont(16);
 
         this.blob = Blob.FromFile(fontPath);
         this.face = new HBFace(this.blob, 0);
@@ -101,7 +101,14 @@ public class ShapeTextBenchmark : IDisposable
     [Benchmark]
     public int ShapeSixLaborsFonts()
     {
-        TextShaper.Shape(this.text, this.textOptions, this.shapingBuffer);
+        // The bang stands in for a guard clause on purpose. BenchmarkDotNet runs
+        // [GlobalSetup] before any iteration, so the field is always assigned by the
+        // time this is measured; the compiler cannot see that, and a guard here would
+        // put a branch inside the measured region that the HarfBuzz side does not
+        // pay, leaving the two sides doing different work.
+        this.shapingBuffer.Add(this.text);
+        this.shapingBuffer.Direction = this.direction;
+        TextShaper.Shape(this.font!, this.shapingBuffer);
 
         ReadOnlySpan<ShapedGlyph> glyphs = this.shapingBuffer.Glyphs;
         int advanceSum = 0;

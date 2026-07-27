@@ -162,36 +162,8 @@ internal class GSubTable : Table
         {
             // Choose a shaper based on the script.
             // This determines which features to apply to which glyphs.
-            ScriptClass current = this.GetScriptClass(CodePoint.GetScriptClass(buffer[i].CodePoint));
-
             int index = i;
-            int count = 1;
-            while (i < buffer.Count - 1)
-            {
-                // We want to assign the same feature lookups to individual sections of the text rather
-                // than the text as a whole to ensure that different language shapers do not interfere
-                // with each other when the text contains multiple languages.
-                ScriptClass next = this.GetScriptClass(CodePoint.GetScriptClass(buffer[i + 1].CodePoint));
-                if (next != current &&
-                    current is not ScriptClass.Common and not ScriptClass.Unknown and not ScriptClass.Inherited &&
-                    next is not ScriptClass.Common and not ScriptClass.Unknown and not ScriptClass.Inherited)
-                {
-                    break;
-                }
-
-                if (current is ScriptClass.Common or ScriptClass.Unknown or ScriptClass.Inherited)
-                {
-                    current = next;
-                }
-
-                i++;
-                count++;
-
-                if (i >= maxCount)
-                {
-                    break;
-                }
-            }
+            ScriptClass current = ScriptItemizer.ReadRun(buffer, ref i, maxCount, out int count);
 
             Tag unicodeScriptTag = this.GetUnicodeScriptTag(current);
             ShapePlan shapePlan = buffer.GetOrCreatePlan(current, unicodeScriptTag, fontMetrics);
@@ -202,7 +174,7 @@ internal class GSubTable : Table
             // Shapers can adjust the count during initialization and feature processing so we must capture
             // the current count to allow resetting indexes and processing counts.
             int collectionCount = buffer.Count;
-            shaper.Plan(buffer, index, count);
+            shaper.Plan(fontMetrics, buffer, index, count);
             int delta = buffer.Count - collectionCount;
             i += delta;
             count += delta;
@@ -591,37 +563,5 @@ internal class GSubTable : Table
         }
 
         return featureList.FeatureTables[featureIndex];
-    }
-
-    /// <summary>
-    /// Maps a script class to an effective script class, checking whether the font supports it.
-    /// Falls back to <see cref="ScriptClass.Default"/> if the script is not present in the font.
-    /// </summary>
-    /// <param name="current">The script class to check.</param>
-    /// <returns>The effective script class.</returns>
-    private ScriptClass GetScriptClass(ScriptClass current)
-    {
-        if (current is ScriptClass.Common or ScriptClass.Unknown or ScriptClass.Inherited)
-        {
-            return current;
-        }
-
-        if (this.ScriptList is null)
-        {
-            return ScriptClass.Default;
-        }
-
-        Tag[] tags = UnicodeScriptTagMap.Instance[current];
-
-        for (int i = 0; i < tags.Length; i++)
-        {
-            if (this.ScriptList.TryGetValue(tags[i].Value, out ScriptListTable? _))
-            {
-                return current;
-            }
-        }
-
-        // Script for `current` not present in the font: use default shaper.
-        return ScriptClass.Default;
     }
 }

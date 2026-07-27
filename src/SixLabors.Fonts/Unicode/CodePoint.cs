@@ -15,7 +15,7 @@ namespace SixLabors.Fonts.Unicode;
 /// assuming that the underlying <see cref="CodePoint"/> instance is well-formed.
 /// </remarks>
 [DebuggerDisplay("{DebuggerDisplay,nq}")]
-public readonly struct CodePoint : IComparable, IComparable<CodePoint>, IEquatable<CodePoint>
+public readonly partial struct CodePoint : IComparable, IComparable<CodePoint>, IEquatable<CodePoint>
 {
     // Supplementary plane code points are encoded as 2 UTF-16 code units
     private const int MaxUtf16CharsPerCodePoint = 2;

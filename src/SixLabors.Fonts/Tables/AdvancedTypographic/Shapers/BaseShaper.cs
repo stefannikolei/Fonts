@@ -70,13 +70,64 @@ internal abstract class BaseShaper
     public MarkZeroingMode MarkZeroingMode { get; protected set; }
 
     /// <summary>
+    /// Gets or sets how far the text is taken apart and put back together before it
+    /// is shaped. Defaults to joining the marks the font offers joined forms for,
+    /// which is what a script without an engine of its own wants.
+    /// </summary>
+    public NormalizationMode NormalizationMode { get; protected set; } = NormalizationMode.ComposedDiacritics;
+
+    /// <summary>
+    /// Takes a character apart into the pair it is canonically equivalent to. A
+    /// script whose characters spell a sound the font draws in pieces overrides this
+    /// to hand those pieces back.
+    /// </summary>
+    /// <param name="codePoint">The character to take apart.</param>
+    /// <param name="first">When this method returns, contains the leading character.</param>
+    /// <param name="second">
+    /// When this method returns, contains the trailing character, or the default when
+    /// the character stands for a single other one.
+    /// </param>
+    /// <returns><see langword="true"/> when the character comes apart.</returns>
+    public virtual bool TryDecompose(CodePoint codePoint, out CodePoint first, out CodePoint second)
+        => CodePoint.TryDecompose(codePoint, out first, out second);
+
+    /// <summary>
+    /// Joins a pair of characters into the single character they are canonically
+    /// equivalent to. A script that must not have two of its marks joined back
+    /// together overrides this to refuse.
+    /// </summary>
+    /// <param name="first">The leading character.</param>
+    /// <param name="second">The trailing character.</param>
+    /// <param name="composed">When this method returns, contains the joined character.</param>
+    /// <returns><see langword="true"/> when the pair joins.</returns>
+    public virtual bool TryCompose(CodePoint first, CodePoint second, out CodePoint composed)
+        => CodePoint.TryCompose(first, second, out composed);
+
+    /// <summary>
     /// Assigns the features to each glyph within the buffer.
     /// </summary>
+    /// <param name="fontMetrics">The font metrics, which decide what the font can draw.</param>
     /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based index of the elements to assign.</param>
     /// <param name="count">The number of elements to assign.</param>
-    public void Plan(ShapingBuffer buffer, int index, int count)
+    public void Plan(FontMetrics fontMetrics, ShapingBuffer buffer, int index, int count)
     {
+        // The text is prepared before any feature is planned, so every later
+        // stage sees the records this step inserts. It reads the text alone, so
+        // it runs once, on the pass that substitutes.
+        if (buffer.Role == ShapingBufferRole.Substitution)
+        {
+            int preprocessCount = buffer.Count;
+
+            this.PreprocessText(buffer, index, count);
+
+            count += buffer.Count - preprocessCount;
+
+            // Normalizing settles which characters the run is spelled with, so it
+            // runs before any feature is planned against them, and once.
+            count += TextNormalizer.Normalize(this, fontMetrics, buffer, index, count);
+        }
+
         // Registration is deterministic for a plan's identity, so the first pass
         // collects it once: feature bits, stages, joiner flags, and the fold of
         // every whole-segment mask. Later passes replay the fold in one walk and
@@ -117,6 +168,18 @@ internal abstract class BaseShaper
         this.SetupMasks(buffer, index, count);
 
         this.AssignFeatures(buffer, index, count);
+    }
+
+    /// <summary>
+    /// Prepares the text of the segment before any feature is planned. A script
+    /// whose text can spell something it must not be read as separates the
+    /// characters here, where the records still stand as the text wrote them.
+    /// </summary>
+    /// <param name="buffer">The glyph shaping buffer.</param>
+    /// <param name="index">The zero-based index of the first record.</param>
+    /// <param name="count">The number of records.</param>
+    protected virtual void PreprocessText(ShapingBuffer buffer, int index, int count)
+    {
     }
 
     /// <summary>

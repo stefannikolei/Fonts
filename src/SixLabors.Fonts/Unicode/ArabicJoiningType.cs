@@ -41,5 +41,13 @@ public enum ArabicJoiningType
     /// <summary>
     /// Transparent (T): ignored when determining the joining relationship of surrounding characters.
     /// </summary>
-    Transparent
+    Transparent,
+
+    /// <summary>
+    /// Non_Joining_Unassigned (X): the character is not listed in the joining data.
+    /// Its behaviour follows from its general category, resolved where the joining
+    /// class is read: a mark or a format character is transparent, anything else
+    /// does not join.
+    /// </summary>
+    Unlisted
 }

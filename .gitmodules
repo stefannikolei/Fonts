@@ -1,3 +1,6 @@
 [submodule "shared-infrastructure"]
 	path = shared-infrastructure
 	url = https://github.com/SixLabors/SharedInfrastructure
+[submodule "tests/harfbuzz"]
+	path = tests/harfbuzz
+	url = https://github.com/harfbuzz/harfbuzz.git

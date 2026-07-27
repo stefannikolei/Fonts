@@ -462,15 +462,24 @@ public partial class GSubTableTests
         }
     }
 
-    // Verifies that the generated Indic shaping trie assigns the correct
-    // HarfBuzz-compatible categories to codepoints whose mappings were
-    // previously incorrect.
+    /// <summary>
+    /// Verifies the generated shaping categories for code points with source-defined mappings.
+    /// </summary>
+    /// <remarks>
+    /// The expected values are transcribed from HarfBuzz 14.2.1, <c>src/gen-indic-table.py</c>, symbols <c>category_map</c>, <c>category_overrides</c>, and <c>position_to_category</c>. These shaping categories are not derivable from the Unicode Character Database.
+    /// </remarks>
     [Theory]
-    [InlineData(0x0CF1, (int)Categories.CS)]   // KANNADA SIGN JIHVAMULIYA
-    [InlineData(0x0CF2, (int)Categories.CS)]   // KANNADA SIGN UPADHMANIYA
-    [InlineData(0x17CC, (int)Categories.CM)]   // KHMER SIGN ROBAT
-    [InlineData(0x09FE, (int)Categories.SM)]   // BENGALI SANDHI MARK
-    [InlineData(0x0A71, (int)Categories.SM)]   // GURMUKHI ADDAK
+    [InlineData(0x0CF1, (int)Categories.CS)] // KANNADA SIGN JIHVAMULIYA
+    [InlineData(0x0CF2, (int)Categories.CS)] // KANNADA SIGN UPADHMANIYA
+    [InlineData(0x17C6, (int)Categories.Xgroup)] // KHMER SIGN NIKAHIT
+    [InlineData(0x17C7, (int)Categories.Ygroup)] // KHMER SIGN REAHMUK
+    [InlineData(0x17C9, (int)Categories.Robatic)] // KHMER SIGN MUUSIKATOAN
+    [InlineData(0x17CA, (int)Categories.Robatic)] // KHMER SIGN TRIISAP
+    [InlineData(0x17CC, (int)Categories.Robatic)] // KHMER SIGN ROBAT
+    [InlineData(0x17D2, (int)Categories.H)] // KHMER SIGN COENG
+    [InlineData(0x17D9, (int)Categories.Placeholder)] // KHMER SIGN PHNAEK MUAN
+    [InlineData(0x09FE, (int)Categories.SM)] // BENGALI SANDHI MARK
+    [InlineData(0x0A71, (int)Categories.SM)] // GURMUKHI ADDAK
     [InlineData(0x0A40, (int)Categories.MPst)] // GURMUKHI VOWEL SIGN II
     public void IndicShapingCategoryIsCorrect(int codePoint, int expectedCategory)
     {
@@ -614,6 +623,12 @@ public partial class GSubTableTests
         }
     }
 
+    /// <summary>
+    /// Verifies Khmer syllable shaping and reordering.
+    /// </summary>
+    /// <remarks>
+    /// The expected ordering follows HarfBuzz 14.2.1, <c>src/hb-ot-shaper-khmer.cc</c>, symbols <c>reorder_khmer</c> and <c>reorder_consonant_syllable</c>. The reordering rule is shaping behavior and is not derivable from the Unicode Character Database.
+    /// </remarks>
     [Theory]
     [InlineData("\u1781\u17d2\u1798\u17c2", new int[] { 108, 45, 169 })]
     [InlineData("\u1787\u17b6", new int[] { 51, 96 })]
@@ -633,7 +648,7 @@ public partial class GSubTableTests
     [InlineData("\u1798\u200c\u17c9\u17d2\u179b\u17c1\u17c7", new int[] { 107, 68, 3, 115, 172, 113 })]
     [InlineData("\u1794\u17ca\u17d0", new int[] { 64, 116, 122 })]
     [InlineData("\u1793\u17c2\u17ce", new int[] { 108, 63, 120 })]
-    [InlineData("\u1780\u17c1\u17d2\u179a", new int[] { 107, 171, 44 })]
+    [InlineData("\u1780\u17c1\u17d2\u179a", new int[] { 171, 107, 44 })]
     [InlineData("\u1780\u17c0\u17d2\u179a", new int[] { 171, 107, 44, 106 })]
     [InlineData("\u1780\u17c4\u17d2\u179a", new int[] { 171, 107, 44, 110 })]
     [InlineData("\u1780\u17c5\u17d2\u179a", new int[] { 171, 107, 44, 111 })]

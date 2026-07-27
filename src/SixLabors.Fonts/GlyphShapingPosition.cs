@@ -22,6 +22,11 @@ internal struct GlyphShapingPosition
     /// </summary>
     private const byte KernedFlag = 1 << 1;
 
+    /// <summary>
+    /// The relative cursive attachment value that identifies an unattached glyph. A nonzero value is the signed distance to the parent glyph.
+    /// </summary>
+    public const int NoCursiveAttachment = 0;
+
 #pragma warning disable SA1401 // Fields exposed so positioning mutates embedded values in place.
     /// <summary>
     /// The shaping bounds. A field rather than a property so positioning lookups
@@ -35,7 +40,7 @@ internal struct GlyphShapingPosition
     public int MarkAttachment;
 
     /// <summary>
-    /// The offset of any cursive attachment, or <c>-1</c> when unattached.
+    /// The signed offset of any cursive attachment, or <see cref="NoCursiveAttachment"/> when unattached.
     /// </summary>
     public int CursiveAttachment;
 #pragma warning restore SA1401
@@ -55,7 +60,7 @@ internal struct GlyphShapingPosition
     {
         this.Bounds = bounds;
         this.MarkAttachment = -1;
-        this.CursiveAttachment = -1;
+        this.CursiveAttachment = NoCursiveAttachment;
         this.flags = 0;
     }
 

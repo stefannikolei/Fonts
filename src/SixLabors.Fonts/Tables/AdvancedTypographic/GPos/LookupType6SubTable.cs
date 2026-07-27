@@ -115,6 +115,9 @@ internal static class LookupType6SubTable
         public override void CollectDigest(ref GlyphSetDigest digest) => this.mark1Coverage.CollectDigest(ref digest);
 
         /// <inheritdoc/>
+        /// <remarks>
+        /// The backward search is transcribed from HarfBuzz 14.2.1, <c>src/OT/Layout/GPOS/MarkMarkPosFormat1.hh</c>, symbol <c>MarkMarkPosFormat1_2::apply</c>. Default-ignorable transparency is defined by <c>matcher_t::may_skip</c> in <c>src/hb-ot-layout-gsubgpos.hh</c>. These rules are shaping behavior and are not derivable from the Unicode Character Database.
+        /// </remarks>
         public override bool TryUpdatePosition(
             FontMetrics fontMetrics,
             GPosTable table,
@@ -137,12 +140,12 @@ internal static class LookupType6SubTable
                 return false;
             }
 
-            // Get the previous mark to attach to.
-            // HarfBuzz: search backwards for a suitable mark glyph until a non-mark glyph.
-            // It clears ignore flags when searching, but keeps mark attachment / filtering behavior.
+            // Clear the class-ignore flags while retaining mark attachment and
+            // filtering behavior for the preceding-mark search.
             LookupFlags searchFlags = this.LookupFlags & ~(LookupFlags.IgnoreMarks | LookupFlags.IgnoreBaseGlyphs | LookupFlags.IgnoreLigatures);
 
             SkippingGlyphIterator it = new(fontMetrics, buffer, index, searchFlags, this.MarkFilteringSet);
+            it.SetMatchContext(buffer.LookupMask, false);
 
             int j = it.Prev();
             if (j < 0)

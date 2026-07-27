@@ -116,6 +116,9 @@ internal static class LookupType5SubTable
         public override void CollectDigest(ref GlyphSetDigest digest) => this.markCoverage.CollectDigest(ref digest);
 
         /// <inheritdoc/>
+        /// <remarks>
+        /// The backward search and component selection are transcribed from HarfBuzz 14.2.1, <c>src/OT/Layout/GPOS/MarkLigPosFormat1.hh</c>, symbol <c>MarkLigPosFormat1_2::apply</c>. Default-ignorable transparency is defined by <c>matcher_t::may_skip</c> in <c>src/hb-ot-layout-gsubgpos.hh</c>. These rules are shaping behavior and are not derivable from the Unicode Character Database.
+        /// </remarks>
         public override bool TryUpdatePosition(
             FontMetrics fontMetrics,
             GPosTable table,
@@ -138,16 +141,10 @@ internal static class LookupType5SubTable
                 return false;
             }
 
-            // Search backward for a base glyph.
-            int baseGlyphIndex = index;
-            while (--baseGlyphIndex >= 0)
-            {
-                ref GlyphShapingData data = ref buffer[baseGlyphIndex];
-                if (!AdvancedTypographicUtils.IsMarkGlyph(fontMetrics, data.GlyphId, ref data))
-                {
-                    break;
-                }
-            }
+            SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, LookupFlags.IgnoreMarks, 0);
+            iterator.SetMatchContext(buffer.LookupMask, false);
+
+            int baseGlyphIndex = iterator.Prev();
 
             if (baseGlyphIndex < 0)
             {
@@ -166,11 +163,17 @@ internal static class LookupType5SubTable
             // If yes, we can directly use the component index. If not, we attach the mark
             // glyph to the last component of the ligature.
             LigatureAttachTable ligatureAttach = this.ligatureArrayTable.LigatureAttachTables[ligatureIndex];
+            int componentCount = ligatureAttach.ComponentRecords.Length;
+            if (componentCount == 0)
+            {
+                return false;
+            }
+
             ref GlyphShapingData markGlyph = ref buffer[index];
             ref GlyphShapingData ligGlyph = ref buffer[baseGlyphIndex];
             int compIndex = ligGlyph.LigatureId > 0 && ligGlyph.LigatureId == markGlyph.LigatureId && markGlyph.LigatureComponent > 0
-                ? Math.Min(markGlyph.LigatureComponent, ligGlyph.CodePointCount) - 1
-                : ligGlyph.CodePointCount - 1;
+                ? Math.Min(markGlyph.LigatureComponent, componentCount) - 1
+                : componentCount - 1;
 
             MarkRecord markRecord = this.markArrayTable.MarkRecords[markIndex];
             AnchorTable baseAnchor = ligatureAttach.ComponentRecords[compIndex].LigatureAnchorTables[markRecord.MarkClass];

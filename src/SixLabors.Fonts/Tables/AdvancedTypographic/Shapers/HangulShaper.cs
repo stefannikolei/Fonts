@@ -175,7 +175,16 @@ internal sealed class HangulShaper : DefaultShaper
     /// <param name="fontMetrics">The font metrics for glyph lookups.</param>
     public HangulShaper(ScriptClass script, TextOptions textOptions, FontMetrics fontMetrics)
         : base(script, MarkZeroingMode.None, textOptions)
-        => this.fontMetrics = fontMetrics;
+    {
+        this.fontMetrics = fontMetrics;
+
+        // The text is left exactly as it was written. This shaper composes and
+        // decomposes syllables itself, by the rules the script's own features
+        // describe, and a font of this script is not built to mix ready-made
+        // syllables with the letters they are built from. Taking the text apart
+        // beforehand would hand it text of both kinds at once.
+        this.NormalizationMode = NormalizationMode.None;
+    }
 
     /// <inheritdoc/>
     protected override void PlanFeatures(ShapingBuffer buffer, int index, int count)

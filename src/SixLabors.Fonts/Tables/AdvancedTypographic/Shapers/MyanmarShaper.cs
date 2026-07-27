@@ -131,6 +131,12 @@ internal sealed class MyanmarShaper : DefaultShaper
         this.fontMetrics = fontMetrics;
         this.setupSyllablesAction = this.SetupSyllables;
         this.initialReorderAction = this.InitialReorder;
+
+        // Every character comes apart first, even one the font already draws whole.
+        // This shaper divides a run into syllables and moves their pieces about, so a
+        // character standing for several pieces must be split before the division can
+        // see them.
+        this.NormalizationMode = NormalizationMode.ComposedDiacriticsNoShortCircuit;
     }
 
     /// <inheritdoc />

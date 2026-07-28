@@ -223,7 +223,25 @@ public class HarfBuzzCorpusTests
 
         string expected = Describe(buffer);
 
-        Font font = new FontCollection().Add(fontPath).CreateFont(shapingSize, variations);
+        FontCollection fontCollection = new();
+        string extension = Path.GetExtension(fontPath);
+        Font font;
+        if (extension.Equals(".ttc", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".otc", StringComparison.OrdinalIgnoreCase))
+        {
+            _ = fontCollection.AddCollection(fontPath, out ReadOnlyMemory<FontDescription> descriptions);
+            FontDescription description = descriptions.Span[0];
+
+            // HBFace above selects collection face zero. Select the same family
+            // and style instead of interpreting the TTC header as a font face.
+            FontFamily family = fontCollection.Get(description.FontFamilyInvariantCulture);
+            font = family.CreateFont(shapingSize, description.Style, variations);
+        }
+        else
+        {
+            font = fontCollection.Add(fontPath).CreateFont(shapingSize, variations);
+        }
+
         ShapingTag[] featureTags = features
             .Where(f => f.Value != 0)
             .Select(f => ShapingTag.Parse(f.Tag.ToString()))

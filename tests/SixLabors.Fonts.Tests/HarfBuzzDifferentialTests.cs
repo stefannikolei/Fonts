@@ -53,22 +53,27 @@ public class HarfBuzzDifferentialTests
     [MemberData(nameof(ShapingCases))]
     public void ShapesIdenticallyToHarfBuzz(string fontFile, string text, bool rightToLeft)
     {
-        // SixLabors side, font design units. The direction is stated, so the text is
-        // taken as one run, which is what the other engine is handed below.
-        Font font = new FontCollection().Add(fontFile).CreateFont(16);
-        TextShapingBuffer shapingBuffer = new();
-        shapingBuffer.Add(text);
-        shapingBuffer.Direction = rightToLeft ? TextDirection.RightToLeft : TextDirection.LeftToRight;
-        TextShaper.ShapeRun(font, shapingBuffer);
-
-        ReadOnlySpan<ShapedGlyph> glyphs = shapingBuffer.Glyphs;
-
-        // HarfBuzz side. Both engines hand back a run in the order it is read, so
-        // the two are compared position for position with nothing in between.
         using Blob blob = Blob.FromFile(fontFile);
         using HBFace face = new(blob, 0);
         using HBFont hbFont = new(face);
         hbFont.SetFunctionsOpenType();
+
+        // Using the em size keeps HarfBuzz's integer positions exact while exercising
+        // the public contract that shaping is scaled to the supplied font size.
+        int shapingSize = (int)face.UnitsPerEm;
+        hbFont.SetScale(shapingSize, shapingSize);
+
+        Font font = new FontCollection().Add(fontFile).CreateFont(shapingSize);
+        TextShapingBuffer shapingBuffer = new();
+        shapingBuffer.Add(text);
+        shapingBuffer.Direction = rightToLeft ? TextDirection.RightToLeft : TextDirection.LeftToRight;
+
+        TextShaper.ShapeRun(font, shapingBuffer);
+
+        ReadOnlySpan<ShapedGlyph> glyphs = shapingBuffer.Glyphs;
+
+        // Both engines hand back a run in the order it is read, so the two are
+        // compared position for position without transforming either result.
         using HBBuffer buffer = new();
         buffer.AddUtf16(text);
         buffer.GuessSegmentProperties();

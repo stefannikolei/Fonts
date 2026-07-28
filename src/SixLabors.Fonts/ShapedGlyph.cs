@@ -7,12 +7,11 @@ namespace SixLabors.Fonts;
 
 /// <summary>
 /// Represents a single shaped glyph: the result of substitution and positioning,
-/// before line breaking or scaling.
+/// before line breaking.
 /// </summary>
 /// <remarks>
-/// Advances and offsets are expressed in font design units for the font the run was
-/// shaped against; multiply by the font size over
-/// <see cref="FontMetrics.UnitsPerEm"/> to convert to pixel units.
+/// Advances and offsets are scaled to the size of the font the run was shaped
+/// against and preserve the shaper's Y-up coordinate system.
 /// </remarks>
 public readonly struct ShapedGlyph
 {
@@ -21,15 +20,10 @@ public readonly struct ShapedGlyph
     /// </summary>
     /// <param name="glyphId">The glyph identifier within the font.</param>
     /// <param name="codePointIndex">The index of the character the glyph came from.</param>
-    /// <param name="advanceWidth">The horizontal advance in font design units.</param>
-    /// <param name="advanceHeight">The vertical advance in font design units.</param>
-    /// <param name="offset">The placement offset in font design units.</param>
-    internal ShapedGlyph(
-        ushort glyphId,
-        int codePointIndex,
-        ushort advanceWidth,
-        ushort advanceHeight,
-        Vector2 offset)
+    /// <param name="advanceWidth">The scaled horizontal advance.</param>
+    /// <param name="advanceHeight">The scaled vertical advance.</param>
+    /// <param name="offset">The scaled placement offset.</param>
+    internal ShapedGlyph(ushort glyphId, int codePointIndex, float advanceWidth, float advanceHeight, Vector2 offset)
     {
         this.GlyphId = glyphId;
         this.CodePointIndex = codePointIndex;
@@ -57,21 +51,21 @@ public readonly struct ShapedGlyph
     public int CodePointIndex { get; }
 
     /// <summary>
-    /// Gets the horizontal advance in font design units, after positioning features
-    /// have been applied.
+    /// Gets the scaled horizontal advance after positioning features have been
+    /// applied.
     /// </summary>
-    public ushort AdvanceWidth { get; }
+    public float AdvanceWidth { get; }
 
     /// <summary>
-    /// Gets the vertical advance in font design units, after positioning features
-    /// have been applied.
+    /// Gets the scaled vertical advance after positioning features have been
+    /// applied.
     /// </summary>
-    public ushort AdvanceHeight { get; }
+    public float AdvanceHeight { get; }
 
     /// <summary>
-    /// Gets the placement offset in font design units, in Y-up font space. The
-    /// offset positions the glyph outline relative to its pen position and does not
-    /// contribute to the advance.
+    /// Gets the scaled placement offset in Y-up shaping space. The offset positions
+    /// the glyph outline relative to its pen position and does not contribute to the
+    /// advance.
     /// </summary>
     public Vector2 Offset { get; }
 }

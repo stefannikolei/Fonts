@@ -13,8 +13,8 @@ namespace SixLabors.Fonts;
 /// <para>
 /// The text and its properties are set on a <see cref="TextShapingBuffer"/>, the
 /// buffer is shaped against a font, and the glyphs are read back from it. Shaping
-/// applies the font's substitution and positioning features but does not wrap or
-/// scale the text.
+/// applies the font's substitution and positioning features but does not wrap the
+/// text.
 /// </para>
 /// <para>
 /// <see cref="Shape(Font, TextShapingBuffer)"/> treats the text as unwrapped
@@ -23,8 +23,7 @@ namespace SixLabors.Fonts;
 /// run that has already been selected by the caller.
 /// </para>
 /// <para>
-/// Advances and offsets are expressed in font design units; see
-/// <see cref="ShapedGlyph"/> for the conversion to pixel units.
+/// Advances and offsets are scaled to the supplied font's size.
 /// </para>
 /// </remarks>
 public static partial class TextShaper
@@ -103,7 +102,7 @@ public static partial class TextShaper
     {
         if (buffer.Text.IsEmpty)
         {
-            buffer.Reserve(0);
+            _ = buffer.Reserve(0);
             buffer.Commit(0);
             return;
         }
@@ -113,6 +112,7 @@ public static partial class TextShaper
         {
             TextOptions options = scratch.GetShapingOptions(font, buffer.Direction, buffer.Language, buffer.Script, features, bidiMode);
             ShapingBuffer shaped = ShapeCore(buffer.Text, options, scratch, null);
+            Span<int> lineEnds = default;
 
             if (bidiMode == TextBidiMode.Normal)
             {
@@ -121,6 +121,7 @@ public static partial class TextShaper
                 // API has no soft wrapping, so each newline function fixes a complete
                 // line on which the shared L2 transformation can run immediately.
                 ReadOnlySpan<int> paragraphEnds = scratch.BidiData.ParagraphEnds;
+                lineEnds = buffer.ReserveLineEnds(paragraphEnds.Length);
                 int glyphStart = 0;
                 for (int paragraph = 0; paragraph <= paragraphEnds.Length; paragraph++)
                 {
@@ -132,6 +133,11 @@ public static partial class TextShaper
                     }
 
                     BidiReordering.Reorder(shaped, scratch.BidiRuns, scratch.BidiMap, glyphStart, glyphEnd);
+                    if (paragraph < paragraphEnds.Length)
+                    {
+                        lineEnds[paragraph] = glyphEnd;
+                    }
+
                     glyphStart = glyphEnd;
                 }
             }
@@ -146,28 +152,20 @@ public static partial class TextShaper
 
             int count = shaped.Count;
             Span<ShapedGlyph> destination = buffer.Reserve(count);
-            int written = 0;
             for (int i = 0; i < count; i++)
             {
                 ref GlyphShapingData shaping = ref shaped[i];
-                if (shaping.IsPlaceholder)
-                {
-                    // Placeholder runs reserve layout space for inline objects; they
-                    // carry no glyph.
-                    continue;
-                }
-
                 ref ShapingBuffer.GlyphMetricsEntry entry = ref shaped.MetricsAt(i);
                 ref GlyphShapingPosition position = ref shaped.PositionAt(i);
-                destination[written++] = new ShapedGlyph(
-                    entry.Metrics.GlyphId,
-                    shaping.CodePointIndex,
-                    entry.GetAdvanceWidth(in position),
-                    entry.GetAdvanceHeight(in position),
-                    new Vector2(position.Bounds.X, position.Bounds.Y) + entry.Metrics.Offset);
+                float scale = font.Size / entry.Metrics.UnitsPerEm;
+                Vector2 offset = (new Vector2(position.Bounds.X, position.Bounds.Y) + entry.Metrics.Offset) * scale;
+                destination[i] = new ShapedGlyph(entry.Metrics.GlyphId, shaping.CodePointIndex, entry.GetAdvanceWidth(in position) * scale, entry.GetAdvanceHeight(in position) * scale, offset);
             }
 
-            buffer.Commit(written);
+            // Public shaping has no placeholder text runs, so the paragraph loop's
+            // shaped-buffer indices are also the published glyph indices.
+            buffer.Commit(count);
+            buffer.CommitLineEnds(lineEnds.Length);
         }
         finally
         {

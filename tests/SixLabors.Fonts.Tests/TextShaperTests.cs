@@ -65,19 +65,18 @@ public class TextShaperTests
     [Fact]
     public void Shape_AdvancesMatchMeasuredAdvance()
     {
-        // Design-unit advances scaled to pixel units must agree with the measured
-        // logical advance for a single unwrapped line.
+        // Public shaped advances must agree with the measured logical advance for a
+        // single unwrapped line.
         Font font = new FontCollection().Add(TestFonts.OpenSansFile).CreateFont(72);
         TextOptions options = new(font);
         const string text = "Hxplq";
 
         ShapedGlyph[] glyphs = Shape(font, text);
 
-        float scale = font.Size / font.FontMetrics.UnitsPerEm;
         float shapedAdvance = 0;
         foreach (ShapedGlyph glyph in glyphs)
         {
-            shapedAdvance += glyph.AdvanceWidth * scale;
+            shapedAdvance += glyph.AdvanceWidth;
         }
 
         FontRectangle measured = TextMeasurer.MeasureAdvance(text, options);

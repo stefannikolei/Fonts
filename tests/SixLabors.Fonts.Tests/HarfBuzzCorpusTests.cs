@@ -196,9 +196,13 @@ public class HarfBuzzCorpusTests
         using HBFont referenceFont = new(face);
         referenceFont.SetFunctionsOpenType();
 
+        // The corpus positions are expressed at the face's em scale. Giving both
+        // engines that size preserves direct, exact comparisons of their outputs.
+        int shapingSize = (int)face.UnitsPerEm;
+        referenceFont.SetScale(shapingSize, shapingSize);
+
         Assert.True(TryReadVariations(options, out HBVariation[] referenceVariations, out FontVariation[] variations));
         referenceFont.SetVariations(referenceVariations);
-
         using HBBuffer buffer = new();
         buffer.AddUtf16(text);
 
@@ -219,7 +223,7 @@ public class HarfBuzzCorpusTests
 
         string expected = Describe(buffer);
 
-        Font font = new FontCollection().Add(fontPath).CreateFont(16, variations);
+        Font font = new FontCollection().Add(fontPath).CreateFont(shapingSize, variations);
         ShapingTag[] featureTags = features
             .Where(f => f.Value != 0)
             .Select(f => ShapingTag.Parse(f.Tag.ToString()))
@@ -316,7 +320,7 @@ public class HarfBuzzCorpusTests
         for (int i = 0; i < glyphs.Length; i++)
         {
             ShapedGlyph glyph = glyphs[i];
-            Append(builder, glyph.GlyphId, (int)glyph.Offset.X, (int)glyph.Offset.Y, glyph.AdvanceWidth);
+            Append(builder, glyph.GlyphId, glyph.Offset.X, glyph.Offset.Y, glyph.AdvanceWidth);
         }
 
         return builder.ToString();
@@ -349,7 +353,7 @@ public class HarfBuzzCorpusTests
     /// <param name="xOffset">The horizontal offset.</param>
     /// <param name="yOffset">The vertical offset.</param>
     /// <param name="advance">The advance along the run's axis.</param>
-    private static void Append(StringBuilder builder, uint glyphId, int xOffset, int yOffset, int advance)
+    private static void Append(StringBuilder builder, uint glyphId, float xOffset, float yOffset, float advance)
     {
         if (builder.Length > 0)
         {

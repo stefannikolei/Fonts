@@ -86,6 +86,8 @@ public enum ShapeTextBenchmarkScenario
 [Config(typeof(Config.Gate))]
 public class ShapeTextBenchmark : IDisposable
 {
+    private const int FontSize = 16;
+
     private string text = string.Empty;
     private TextDirection direction;
     private Font? font;
@@ -167,12 +169,13 @@ public class ShapeTextBenchmark : IDisposable
                 throw new InvalidOperationException($"Unknown shaping benchmark scenario '{this.Scenario}'.");
         }
 
-        this.font = new FontCollection().Add(fontPath).CreateFont(16);
+        this.font = new FontCollection().Add(fontPath).CreateFont(FontSize);
 
         this.blob = Blob.FromFile(fontPath);
         this.face = new HBFace(this.blob, 0);
         this.hbFont = new HBFont(this.face);
         this.hbFont.SetFunctionsOpenType();
+        this.hbFont.SetScale(FontSize, FontSize);
         this.buffer = new HBBuffer();
     }
 
@@ -182,7 +185,7 @@ public class ShapeTextBenchmark : IDisposable
     /// </summary>
     /// <returns>The advance sum, returned so the shaped stream is fully consumed.</returns>
     [Benchmark]
-    public int ShapeSixLaborsFonts()
+    public float ShapeSixLaborsFonts()
     {
         // The bang stands in for a guard clause on purpose. BenchmarkDotNet runs
         // [GlobalSetup] before any iteration, so the field is always assigned by the
@@ -194,7 +197,7 @@ public class ShapeTextBenchmark : IDisposable
         TextShaper.ShapeRun(this.font!, this.shapingBuffer);
 
         ReadOnlySpan<ShapedGlyph> glyphs = this.shapingBuffer.Glyphs;
-        int advanceSum = 0;
+        float advanceSum = 0;
         for (int i = 0; i < glyphs.Length; i++)
         {
             advanceSum += glyphs[i].AdvanceWidth;
@@ -209,7 +212,7 @@ public class ShapeTextBenchmark : IDisposable
     /// </summary>
     /// <returns>The advance sum, returned so the shaped stream is fully consumed.</returns>
     [Benchmark(Baseline = true)]
-    public int ShapeHarfBuzz()
+    public float ShapeHarfBuzz()
     {
         this.buffer.Reset();
         this.buffer.AddUtf16(this.text);
@@ -225,7 +228,7 @@ public class ShapeTextBenchmark : IDisposable
 
         ReadOnlySpan<GlyphPosition> positions = this.buffer.GetGlyphPositionSpan();
 
-        int advanceSum = 0;
+        float advanceSum = 0;
         for (int i = 0; i < positions.Length; i++)
         {
             advanceSum += positions[i].XAdvance;

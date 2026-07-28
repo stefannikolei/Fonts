@@ -2,25 +2,21 @@
 // Licensed under the Six Labors Split License.
 
 using BenchmarkDotNet.Attributes;
-using SkiaSharp;
 
 namespace SixLabors.Fonts.Benchmarks;
 
 /// <summary>
-/// <para>
-/// This benchmark is not actually measuring the same operation as SkiSharp is
-/// not doing any layout or shaping operations. However it is useful as a marker to measure
-/// performance against.
-/// </para>
-/// <para>We should see if we can include the Skia HarfBuzz extensions to see how we compare.</para>
+/// Measures complete text bounds calculation, including shaping, segmentation, wrapping,
+/// line layout, and positioned glyph bounds.
 /// </summary>
+/// <remarks>
+/// SkiaSharp has no equivalent paragraph measurement operation. The comparable single-run
+/// shaping and bounds work is measured by <see cref="MeasureShapedRunBenchmark"/>.
+/// </remarks>
 [MediumRunJob]
-public class MeasureTextBenchmark : IDisposable
+public class MeasureTextBenchmark
 {
     private readonly TextOptions textOptions;
-    private readonly SKTypeface arialTypeface;
-    private readonly SKFont font;
-    private readonly SKPaint paint;
 
     private const string LoremIpsum = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. "
    + "Sed non risus. Suspendisse lectus tortor, dignissim sit amet, adipiscing nec, ultricies sed, dolor. "
@@ -58,26 +54,18 @@ public class MeasureTextBenchmark : IDisposable
         {
             WrappingLength = 400
         };
-
-        this.arialTypeface = SKTypeface.FromFamilyName(fontFamilyName, SKFontStyle.Normal);
-        this.font = new SKFont(this.arialTypeface, fontSize);
-        this.paint = new SKPaint(this.font);
     }
 
-    public void Dispose()
-    {
-        this.arialTypeface.Dispose();
-        this.font.Dispose();
-        this.paint.Dispose();
-        GC.SuppressFinalize(this);
-    }
-
+    /// <summary>
+    /// Gets or sets the text measured by the benchmark.
+    /// </summary>
     [Params("a", "Hello world", "The quick brown fox jumps over the lazy dog", LoremIpsum)]
     public string Text { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Measures the rendered bounds after complete text layout.
+    /// </summary>
+    /// <returns>The rendered bounds.</returns>
     [Benchmark]
-    public void SixLaborsFonts() => TextMeasurer.MeasureBounds(this.Text, this.textOptions);
-
-    // [Benchmark]
-    // public void SkiaSharp() => this.paint.MeasureText(this.Text);
+    public FontRectangle SixLaborsFonts() => TextMeasurer.MeasureBounds(this.Text, this.textOptions);
 }

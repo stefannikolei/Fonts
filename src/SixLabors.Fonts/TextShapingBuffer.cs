@@ -31,6 +31,12 @@ public sealed class TextShapingBuffer
     private ShapedGlyph[] glyphs = [];
 
     /// <summary>
+    /// Glyph-end indices for hard-delimited lines. Only the first
+    /// <see cref="lineEndCount"/> values are live.
+    /// </summary>
+    private int[] lineEnds = [];
+
+    /// <summary>
     /// The text storage, so a buffer that is refilled from a span does not allocate.
     /// </summary>
     private char[] text = [];
@@ -39,6 +45,11 @@ public sealed class TextShapingBuffer
     /// The number of characters of <see cref="text"/> that are live.
     /// </summary>
     private int textLength;
+
+    /// <summary>
+    /// The number of live hard-line boundary indices in <see cref="lineEnds"/>.
+    /// </summary>
+    private int lineEndCount;
 
     /// <summary>
     /// Gets the text of the run.
@@ -75,6 +86,12 @@ public sealed class TextShapingBuffer
     public ReadOnlySpan<ShapedGlyph> Glyphs => this.glyphs.AsSpan(0, this.Count);
 
     /// <summary>
+    /// Gets the glyph-end indices of hard-delimited lines. An empty span represents
+    /// one directional run or one logical line.
+    /// </summary>
+    internal ReadOnlySpan<int> LineEnds => this.lineEnds.AsSpan(0, this.lineEndCount);
+
+    /// <summary>
     /// Gets a read-only reference to the shaped glyph at the given index.
     /// </summary>
     /// <param name="index">The zero-based glyph index.</param>
@@ -101,6 +118,7 @@ public sealed class TextShapingBuffer
         value.CopyTo(this.text);
         this.textLength = value.Length;
         this.Count = 0;
+        this.lineEndCount = 0;
     }
 
     /// <inheritdoc cref="Add(ReadOnlySpan{char})"/>
@@ -118,6 +136,7 @@ public sealed class TextShapingBuffer
     {
         this.Count = 0;
         this.textLength = 0;
+        this.lineEndCount = 0;
     }
 
     /// <summary>
@@ -130,6 +149,7 @@ public sealed class TextShapingBuffer
     internal Span<ShapedGlyph> Reserve(int capacity)
     {
         this.Count = 0;
+        this.lineEndCount = 0;
         if (this.glyphs.Length < capacity)
         {
             this.glyphs = new ShapedGlyph[Math.Max(capacity, Math.Max(64, this.glyphs.Length * 2))];
@@ -139,8 +159,31 @@ public sealed class TextShapingBuffer
     }
 
     /// <summary>
+    /// Ensures capacity for hard-line boundary indices and returns their writable
+    /// storage.
+    /// </summary>
+    /// <param name="capacity">The boundary capacity to reserve.</param>
+    /// <returns>The writable boundary span.</returns>
+    internal Span<int> ReserveLineEnds(int capacity)
+    {
+        if (this.lineEnds.Length < capacity)
+        {
+            this.lineEnds = new int[Math.Max(capacity, Math.Max(4, this.lineEnds.Length * 2))];
+        }
+
+        return this.lineEnds.AsSpan(0, capacity);
+    }
+
+    /// <summary>
     /// Publishes the number of records written to the reserved storage.
     /// </summary>
     /// <param name="count">The record count.</param>
     internal void Commit(int count) => this.Count = count;
+
+    /// <summary>
+    /// Publishes the number of hard-line boundary indices written to the reserved
+    /// storage.
+    /// </summary>
+    /// <param name="count">The boundary count.</param>
+    internal void CommitLineEnds(int count) => this.lineEndCount = count;
 }

@@ -37,6 +37,11 @@ namespace SixLabors.Fonts.Tests;
 /// unresolvable reference in the corpus is an Apple system font named by absolute
 /// path, so a macOS run covers cases a Windows run cannot.
 /// </para>
+/// <para>
+/// The corpus also contains shaping-only fixtures that are not complete,
+/// renderable OpenType fonts. Those fixtures are listed explicitly in
+/// <see cref="UnsupportedFontFiles"/> and are not emitted as tests.
+/// </para>
 /// </remarks>
 public class HarfBuzzCorpusTests
 {
@@ -90,6 +95,34 @@ public class HarfBuzzCorpusTests
     ];
 
     /// <summary>
+    /// The shaping-only corpus fixtures that cannot be represented by a
+    /// renderable <see cref="Font"/>.
+    /// </summary>
+    private static readonly HashSet<string> UnsupportedFontFiles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // This minimal spacing fixture omits the required name, OS/2, and post tables.
+        "1c2c3fc37b2d4c3cb2ef726c6cdaaabd4b7f3eb9.ttf",
+
+        // This bitmap-only fixture has CBDT and CBLC data but no supported outline tables.
+        "3cf6f8ac6d647473a43a3100e7494b202b2cfafe.ttf",
+
+        // This Indic fixture omits the required name and OS/2 tables and has no outline tables.
+        "755160ddba002332349fda3eb999e629d63dccf6.ttf",
+
+        // This Indic fixture omits required metrics and naming tables and has no complete outline-table pair.
+        "932ad5132c2761297c74e9976fe25b08e5ffa10b.ttf",
+
+        // This OTTO fixture has neither a CFF nor CFF2 outline table.
+        "a59fd13f1525a91cbe529c882e93d9d1fbb80463.ttf",
+
+        // This bitmap-only fixture has CBDT and CBLC data but no supported outline tables.
+        "ee39587d13b2afa5499cc79e45780aa79293bbd4.ttf",
+
+        // This deliberately damaged fixture reaches truncated glyph data for some inputs.
+        "HarfBust.ttf"
+    };
+
+    /// <summary>
     /// Gets every corpus case this library is expected to match.
     /// </summary>
     /// <returns>The font, the options, and the characters of each case.</returns>
@@ -120,6 +153,13 @@ public class HarfBuzzCorpusTests
 
                 string fontPath = Path.GetFullPath(Path.Combine(CorpusRoot, "tests", parts[0]));
                 if (!File.Exists(fontPath))
+                {
+                    continue;
+                }
+
+                // Shaping-only and damaged fixtures cannot satisfy the Font contract,
+                // so they are excluded explicitly instead of hiding loader exceptions.
+                if (UnsupportedFontFiles.Contains(Path.GetFileName(fontPath)))
                 {
                     continue;
                 }

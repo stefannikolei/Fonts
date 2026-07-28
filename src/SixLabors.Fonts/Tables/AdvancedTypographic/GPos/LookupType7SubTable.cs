@@ -105,7 +105,7 @@ internal static class LookupType7SubTable
 
             // Slot zero holds the coverage-matched glyph; the input match fills the
             // rest, so nested lookups address the records the match consumed.
-            Span<int> matchPositions = stackalloc int[AdvancedTypographicUtils.MaxContextLength + 1];
+            Span<int> matchPositions = buffer.GetContextMatchPositions();
             matchPositions[0] = index;
             foreach (SequenceRuleTable ruleTable in ruleSetTable.SequenceRuleTables)
             {
@@ -221,7 +221,7 @@ internal static class LookupType7SubTable
 
             // Slot zero holds the coverage-matched glyph; the input match fills the
             // rest, so nested lookups address the records the match consumed.
-            Span<int> matchPositions = stackalloc int[AdvancedTypographicUtils.MaxContextLength + 1];
+            Span<int> matchPositions = buffer.GetContextMatchPositions();
             matchPositions[0] = index;
             foreach (ClassSequenceRuleTable ruleTable in ruleSetTable.SequenceRuleTables)
             {
@@ -328,7 +328,7 @@ internal static class LookupType7SubTable
             // first glyph, so the match fills every position nested lookups
             // address.
             SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
-            Span<int> matchPositions = stackalloc int[AdvancedTypographicUtils.MaxContextLength];
+            Span<int> matchPositions = buffer.GetContextMatchPositions()[..AdvancedTypographicUtils.MaxContextLength];
             if (!AdvancedTypographicUtils.MatchCoverageSequence(iterator, this.coverageTables, index, index + count, buffer.LookupMask, false, matchPositions, out _))
             {
                 return false;

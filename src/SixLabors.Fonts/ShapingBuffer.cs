@@ -237,6 +237,13 @@ internal sealed class ShapingBuffer
     private int nestedApplicationDepth;
 
     /// <summary>
+    /// Retained contextual-match positions, partitioned into one fixed-width slice
+    /// per nested lookup depth so a child lookup cannot overwrite its parent's
+    /// positions. The storage grows to the deepest level observed and is then reused.
+    /// </summary>
+    private int[] contextMatchPositions = [];
+
+    /// <summary>
     /// Whether the packed matcher flag bytes have been computed at least once;
     /// until then the stamped lookup state always rebuilds them.
     /// </summary>
@@ -755,10 +762,11 @@ internal sealed class ShapingBuffer
         this.glyphDigest.Add(data.GlyphId);
         this.HasDefaultIgnorables |= data.IsDefaultIgnorable;
         ref GlyphShapingData slot = ref this.Append();
-        slot = new(data, false)
-        {
-            CodePointIndex = offset
-        };
+
+        // This path preserves every shaping field, so a value copy is both the exact
+        // operation required and cheaper than replaying the struct through setters.
+        slot = data;
+        slot.CodePointIndex = offset;
     }
 
     /// <summary>
@@ -904,7 +912,8 @@ internal sealed class ShapingBuffer
 
         if (fromIndex > toIndex)
         {
-            // Move item to the right
+            // Moving the selected state left shifts the intervening states right.
+            // Restore each destination slot's offset after its state moves into it.
             for (int i = fromIndex; i > toIndex; i--)
             {
                 int keep = items[i].CodePointIndex;
@@ -914,7 +923,8 @@ internal sealed class ShapingBuffer
         }
         else
         {
-            // Move item to the left
+            // The inverse move shifts intervening states left under the same
+            // slot-owned offset rule.
             for (int i = fromIndex; i < toIndex; i++)
             {
                 int keep = items[i].CodePointIndex;
@@ -1192,10 +1202,9 @@ internal sealed class ShapingBuffer
             return;
         }
 
-        for (int i = count; i > 0; i--)
-        {
-            this.RemoveAt(index + i);
-        }
+        // The consumed records are contiguous, so close their gap with one tail
+        // move. Removing them individually would move the same tail once per record.
+        this.RemoveRange(index + 1, count);
 
         // Assign our new id at the index. The reference is taken after every removal
         // so it addresses the record's final slot.
@@ -1288,10 +1297,10 @@ internal sealed class ShapingBuffer
                 uint mask = ShapePlanFeatures.GetVerticalMask(feature);
                 for (int i = 1; i < glyphIds.Length; i++)
                 {
-                    GlyphShapingData appended = new(template, false)
-                    {
-                        GlyphId = glyphIds[i],
-                    };
+                    // The expansion starts as an exact value copy. Assigning the new
+                    // glyph through its property then invalidates only the class cache.
+                    GlyphShapingData appended = template;
+                    appended.GlyphId = glyphIds[i];
 
                     if (!preservesLigatureAttachment)
                     {
@@ -1323,28 +1332,47 @@ internal sealed class ShapingBuffer
             this.data[index].IsDecomposed = true;
 
             // Add additional glyphs from the rest of the sequence. Insertion can grow
-            // and shift the storage, so the mutated record is captured by value as the
-            // template for the additions rather than held by reference.
+            // the storage, so the mutated record is captured by value rather than held
+            // by reference.
             if (glyphIds.Length > 1)
             {
                 GlyphShapingData template = this.data[index];
                 uint mask = ShapePlanFeatures.GetVerticalMask(feature);
-                for (int i = 1; i < glyphIds.Length; i++)
+                int addedCount = glyphIds.Length - 1;
+                int insertionIndex = index + 1;
+                int tailCount = this.Count - insertionIndex;
+
+                this.EnsureCapacity(this.Count + addedCount);
+
+                // Open every output slot with one tail move. Repeated insertion would
+                // move the same suffix once for each decomposed glyph.
+                Array.Copy(this.data, insertionIndex, this.data, insertionIndex + addedCount, tailCount);
+                if (this.Role == ShapingBufferRole.Positioning)
                 {
-                    GlyphShapingData inserted = new(template, false)
-                    {
-                        GlyphId = glyphIds[i],
-                    };
+                    Array.Copy(this.metrics, insertionIndex, this.metrics, insertionIndex + addedCount, tailCount);
+                    Array.Copy(this.positions, insertionIndex, this.positions, insertionIndex + addedCount, tailCount);
+                    Array.Clear(this.metrics, insertionIndex, addedCount);
+                    Array.Clear(this.positions, insertionIndex, addedCount);
+                }
+
+                for (int i = 0; i < addedCount; i++)
+                {
+                    // Each opened slot starts from the complete first output. Assigning
+                    // the glyph through its property invalidates only the class cache.
+                    GlyphShapingData inserted = template;
+                    inserted.GlyphId = glyphIds[i + 1];
 
                     if (!preservesLigatureAttachment)
                     {
-                        inserted.LigatureComponent = i;
+                        inserted.LigatureComponent = i + 1;
                     }
 
                     inserted.AppliedFeatureMask |= mask;
-                    this.glyphDigest.Add(glyphIds[i]);
-                    this.InsertAt(++index, inserted);
+                    this.glyphDigest.Add(glyphIds[i + 1]);
+                    this.data[insertionIndex + i] = inserted;
                 }
+
+                this.Count += addedCount;
             }
         }
         else
@@ -1965,6 +1993,25 @@ internal sealed class ShapingBuffer
     }
 
     /// <summary>
+    /// Removes a contiguous range of records, shifting the remaining tail once and
+    /// keeping the parallel positioning streams aligned.
+    /// </summary>
+    /// <param name="index">The zero-based index of the first record to remove.</param>
+    /// <param name="count">The number of records to remove.</param>
+    private void RemoveRange(int index, int count)
+    {
+        int tailCount = this.Count - index - count;
+        Array.Copy(this.data, index + count, this.data, index, tailCount);
+        if (this.Role == ShapingBufferRole.Positioning)
+        {
+            Array.Copy(this.metrics, index + count, this.metrics, index, tailCount);
+            Array.Copy(this.positions, index + count, this.positions, index, tailCount);
+        }
+
+        this.Count -= count;
+    }
+
+    /// <summary>
     /// Deletes every record matching the filter in one forward compaction pass,
     /// keeping the parallel streams aligned. A deleted record's codepoint coverage
     /// folds into the preceding kept record, or into the next kept record when
@@ -2069,10 +2116,7 @@ internal sealed class ShapingBuffer
             return;
         }
 
-        while (this.ReadIndex < this.Count)
-        {
-            this.CopyGlyph();
-        }
+        this.CopyGlyphs(this.Count - this.ReadIndex);
 
         if (this.passDiverged)
         {
@@ -2107,6 +2151,25 @@ internal sealed class ShapingBuffer
     }
 
     /// <summary>
+    /// Copies the given number of consecutive records from the read cursor to the
+    /// output side and advances both cursors. An aligned pass adopts the range by
+    /// moving its cursors; a shifted pass moves the range as one block.
+    /// </summary>
+    /// <param name="count">The number of records to copy.</param>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void CopyGlyphs(int count)
+    {
+        if (!this.passDiverged && this.PassOutputCount == this.ReadIndex)
+        {
+            this.PassOutputCount += count;
+            this.ReadIndex += count;
+            return;
+        }
+
+        this.CopyGlyphsMoved(count);
+    }
+
+    /// <summary>
     /// Copies the record at the read cursor to the output side when the sides
     /// have shifted or diverged.
     /// </summary>
@@ -2128,6 +2191,28 @@ internal sealed class ShapingBuffer
     }
 
     /// <summary>
+    /// Copies consecutive records at the read cursor when the pass sides have
+    /// shifted or diverged.
+    /// </summary>
+    /// <param name="count">The number of records to copy.</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void CopyGlyphsMoved(int count)
+    {
+        if (this.passDiverged)
+        {
+            this.EnsureOutCapacity(this.PassOutputCount + count);
+            Array.Copy(this.data, this.ReadIndex, this.outData, this.PassOutputCount, count);
+        }
+        else
+        {
+            Array.Copy(this.data, this.ReadIndex, this.data, this.PassOutputCount, count);
+        }
+
+        this.PassOutputCount += count;
+        this.ReadIndex += count;
+    }
+
+    /// <summary>
     /// Consumes the record at the read cursor without producing output, deleting
     /// it from the pass result. The sides stay aliased: output only ever trails
     /// the cursor after a deletion.
@@ -2143,9 +2228,10 @@ internal sealed class ShapingBuffer
     /// <param name="outputPosition">The output-side record count to move to.</param>
     public void MoveTo(int outputPosition)
     {
-        while (this.PassOutputCount < outputPosition && this.ReadIndex < this.Count)
+        if (this.PassOutputCount < outputPosition && this.ReadIndex < this.Count)
         {
-            this.CopyGlyph();
+            int count = Math.Min(outputPosition - this.PassOutputCount, this.Count - this.ReadIndex);
+            this.CopyGlyphs(count);
         }
 
         if (outputPosition < this.PassOutputCount)
@@ -2246,6 +2332,29 @@ internal sealed class ShapingBuffer
         };
 
         this.glyphDigest.Add(glyphId);
+    }
+
+    /// <summary>
+    /// Gets the contextual-match position slice for the current lookup depth.
+    /// </summary>
+    /// <remarks>
+    /// Contextual subtables are entered from per-glyph lookup loops, so reserving
+    /// the maximum match array on the stack in each call creates avoidable stack
+    /// pressure. Depth partitioning preserves the parent match while a nested
+    /// contextual lookup uses the next slice.
+    /// </remarks>
+    /// <returns>A reusable span large enough for the maximum shaping context.</returns>
+    public Span<int> GetContextMatchPositions()
+    {
+        int stride = AdvancedTypographicUtils.MaxContextLength + 1;
+        int offset = this.nestedApplicationDepth * stride;
+        int required = offset + stride;
+        if (this.contextMatchPositions.Length < required)
+        {
+            Array.Resize(ref this.contextMatchPositions, required);
+        }
+
+        return this.contextMatchPositions.AsSpan(offset, stride);
     }
 
     /// <summary>

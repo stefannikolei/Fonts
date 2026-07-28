@@ -42,6 +42,7 @@ public ref struct SpanGraphemeEnumerator
         this.countOnly = false;
         this.sourceOffset = 0;
         this.Current = default;
+        this.CurrentSpan = default;
     }
 
     /// <summary>
@@ -61,12 +62,19 @@ public ref struct SpanGraphemeEnumerator
         this.countOnly = countOnly;
         this.sourceOffset = 0;
         this.Current = default;
+        this.CurrentSpan = default;
     }
 
     /// <summary>
     /// Gets the element in the collection at the current position of the enumerator.
     /// </summary>
     public GraphemeCluster Current { get; private set; }
+
+    /// <summary>
+    /// Gets the UTF-16 span of the grapheme at the current position without
+    /// requiring its terminal-width metadata to be produced.
+    /// </summary>
+    internal ReadOnlySpan<char> CurrentSpan { get; private set; }
 
     /// <summary>
     /// Returns an enumerator that iterates through the collection.
@@ -101,6 +109,8 @@ public ref struct SpanGraphemeEnumerator
         char first = this.source[0];
         if (first is >= ' ' and <= '~' && (this.source.Length == 1 || UnicodeUtility.IsAsciiCodePoint(this.source[1])))
         {
+            ReadOnlySpan<char> asciiGrapheme = this.source[..1];
+            this.CurrentSpan = asciiGrapheme;
             if (!this.countOnly)
             {
                 CodePoint codePoint = new(first);
@@ -110,7 +120,7 @@ public ref struct SpanGraphemeEnumerator
                     flags |= GraphemeClusterFlags.ContainsEmoji;
                 }
 
-                this.Current = new GraphemeCluster(this.source[..1], this.sourceOffset, 1, 1, flags, codePoint);
+                this.Current = new GraphemeCluster(asciiGrapheme, this.sourceOffset, 1, 1, flags, codePoint);
             }
 
             this.source = this.source[1..];
@@ -314,10 +324,11 @@ public ref struct SpanGraphemeEnumerator
 
         Return:
 
+        ReadOnlySpan<char> grapheme = this.source[..processor.CharsConsumed];
+        this.CurrentSpan = grapheme;
         if (!boundariesOnly)
         {
             terminalWidthState.Complete();
-            ReadOnlySpan<char> grapheme = this.source[..processor.CharsConsumed];
             this.Current = new GraphemeCluster(
                 grapheme,
                 utf16Offset,

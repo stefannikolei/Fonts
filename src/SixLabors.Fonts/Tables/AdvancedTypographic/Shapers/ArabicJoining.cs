@@ -185,30 +185,41 @@ internal static class ArabicJoining
             CarryFormsToVariationSelectors(buffer, index, count, actions);
         }
 
+        // Form selection uses the same small feature set for the complete run.
+        // Resolve the masks once because lookup in the plan's feature lists is
+        // otherwise repeated for every non-transparent character.
+        uint finaMask = features.GetMask(FinaTag);
+        uint fin2Mask = features.GetMask(Fin2Tag);
+        uint fin3Mask = features.GetMask(Fin3Tag);
+        uint isolMask = features.GetMask(IsolTag);
+        uint initMask = features.GetMask(InitTag);
+        uint mediMask = features.GetMask(MediTag);
+        uint med2Mask = features.GetMask(Med2Tag);
+
         for (int i = 0; i < count; i++)
         {
             switch (actions[i])
             {
                 case Fina:
-                    buffer.EnableShapingFeature(i + index, features.GetMask(FinaTag));
+                    buffer.EnableShapingFeature(i + index, finaMask);
                     break;
                 case Fin2:
-                    buffer.EnableShapingFeature(i + index, features.GetMask(Fin2Tag));
+                    buffer.EnableShapingFeature(i + index, fin2Mask);
                     break;
                 case Fin3:
-                    buffer.EnableShapingFeature(i + index, features.GetMask(Fin3Tag));
+                    buffer.EnableShapingFeature(i + index, fin3Mask);
                     break;
                 case Isol:
-                    buffer.EnableShapingFeature(i + index, features.GetMask(IsolTag));
+                    buffer.EnableShapingFeature(i + index, isolMask);
                     break;
                 case Init:
-                    buffer.EnableShapingFeature(i + index, features.GetMask(InitTag));
+                    buffer.EnableShapingFeature(i + index, initMask);
                     break;
                 case Medi:
-                    buffer.EnableShapingFeature(i + index, features.GetMask(MediTag));
+                    buffer.EnableShapingFeature(i + index, mediMask);
                     break;
                 case Med2:
-                    buffer.EnableShapingFeature(i + index, features.GetMask(Med2Tag));
+                    buffer.EnableShapingFeature(i + index, med2Mask);
                     break;
             }
         }

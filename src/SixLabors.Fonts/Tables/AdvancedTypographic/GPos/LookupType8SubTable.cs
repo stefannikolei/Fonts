@@ -121,7 +121,7 @@ internal static class LookupType8SubTable
             // Slot zero holds the coverage-matched glyph; the input match fills
             // the rest, so nested lookups address the records the match
             // consumed rather than a raw offset from the first.
-            Span<int> matchPositions = stackalloc int[AdvancedTypographicUtils.MaxContextLength + 1];
+            Span<int> matchPositions = buffer.GetContextMatchPositions();
             matchPositions[0] = index;
             for (int lookupIndex = 0; lookupIndex < rules.Length; lookupIndex++)
             {
@@ -258,22 +258,26 @@ internal static class LookupType8SubTable
 
             // Search in the class definition table to find the class value assigned to the currently glyph.
             int classId = this.inputClassDefinitionTable.ClassIndexOf(glyphId);
-            ChainedClassSequenceRuleTable[]? rules = classId >= 0 && classId < this.sequenceRuleSetTables.Length
-                ? this.sequenceRuleSetTables[classId].SubRules
+            ChainedClassSequenceRuleSetTable? ruleSet = classId >= 0 && classId < this.sequenceRuleSetTables.Length
+                ? this.sequenceRuleSetTables[classId]
                 : null;
 
-            if (rules is null)
+            if (ruleSet is null)
             {
                 return false;
             }
+
+            ChainedClassSequenceRuleTable[] rules = ruleSet.SubRules;
 
             // Apply ruleset for the given glyph class id.
             SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
 
             // Slot zero holds the coverage-matched glyph; the input match fills
             // the rest, so nested lookups address the records the match
-            // consumed rather than a raw offset from the first.
-            Span<int> matchPositions = stackalloc int[AdvancedTypographicUtils.MaxContextLength + 1];
+            // consumed rather than a raw offset from the first. Match storage is
+            // retained by the buffer because this method is entered from the
+            // per-glyph lookup loop.
+            Span<int> matchPositions = buffer.GetContextMatchPositions();
             matchPositions[0] = index;
             for (int lookupIndex = 0; lookupIndex < rules.Length; lookupIndex++)
             {
@@ -409,7 +413,7 @@ internal static class LookupType8SubTable
             // The input coverage array covers the whole input including its
             // first glyph, so the match fills every position nested lookups
             // address.
-            Span<int> matchPositions = stackalloc int[AdvancedTypographicUtils.MaxContextLength];
+            Span<int> matchPositions = buffer.GetContextMatchPositions()[..AdvancedTypographicUtils.MaxContextLength];
             if (!AdvancedTypographicUtils.CheckAllCoverages(fontMetrics, this.LookupFlags, this.MarkFilteringSet, buffer, index, count, this.inputCoverageTables, this.backtrackCoverageTables, this.lookaheadCoverageTables, buffer.LookupMask, matchPositions, out _))
             {
                 return false;

@@ -189,49 +189,33 @@ public static partial class TextShaper
         // Analyse the text for bidi directional runs.
         BidiAlgorithm bidi = scratch.BidiAlgorithm;
         BidiData bidiData = scratch.BidiData;
-        bidiData.Init(text, (sbyte)options.TextDirection);
-
-        if (options.TextBidiMode == TextBidiMode.Override)
+        int codePointCount;
+        if (options.TextBidiMode == TextBidiMode.Override && options.TextDirection != TextDirection.Auto)
         {
-            BidiCharacterType overrideType = options.TextDirection == TextDirection.Auto
-                ? (bidi.ResolveEmbeddingLevel(bidiData.Types) == 1 ? BidiCharacterType.RightToLeft : BidiCharacterType.LeftToRight)
-                : (options.TextDirection == TextDirection.RightToLeft ? BidiCharacterType.RightToLeft : BidiCharacterType.LeftToRight);
-
-            // The way the whole run reads is settled here, including when the caller
-            // left it to the text to say, so the shaping API can hand the run back in
-            // the order it is read.
-            scratch.RunReadsRightToLeft = overrideType == BidiCharacterType.RightToLeft;
-
-            for (int i = 0; i < bidiData.Types.Length; i++)
-            {
-                // Bidi override is a higher-level protocol override: real text behaves as the requested
-                // strong direction, while separators and explicit bidi controls keep their structural role.
-                bidiData.Types[i] = bidiData.Types[i] switch
-                {
-                    BidiCharacterType.ParagraphSeparator
-                    or BidiCharacterType.SegmentSeparator
-                    or BidiCharacterType.BoundaryNeutral
-                    or BidiCharacterType.LeftToRightEmbedding
-                    or BidiCharacterType.RightToLeftEmbedding
-                    or BidiCharacterType.LeftToRightOverride
-                    or BidiCharacterType.RightToLeftOverride
-                    or BidiCharacterType.PopDirectionalFormat
-                    or BidiCharacterType.LeftToRightIsolate
-                    or BidiCharacterType.RightToLeftIsolate
-                    or BidiCharacterType.FirstStrongIsolate
-                    or BidiCharacterType.PopDirectionalIsolate => bidiData.Types[i],
-                    _ => overrideType,
-                };
-            }
+            // An explicitly directed run cannot split into internal bidi runs. Only
+            // its extent is needed; character classes, brackets, and paragraph
+            // boundaries would be populated and then discarded.
+            codePointCount = CodePoint.GetCodePointCount(text);
+        }
+        else
+        {
+            bidiData.Init(text, (sbyte)options.TextDirection);
+            codePointCount = bidiData.Types.Length;
         }
 
         scratch.ClearBidiRuns();
         if (options.TextBidiMode == TextBidiMode.Override)
         {
-            // A directional-run request is one higher-level protocol unit even if
-            // its text contains separator characters.
-            bidi.Process(bidiData);
-            AppendBidiRuns(scratch, bidi.ResolvedLevels, 0);
+            sbyte runLevel = options.TextDirection == TextDirection.Auto
+                ? bidi.ResolveEmbeddingLevel(bidiData.Types)
+                : (sbyte)options.TextDirection;
+            BidiCharacterType runDirection = runLevel == 1 ? BidiCharacterType.RightToLeft : BidiCharacterType.LeftToRight;
+
+            // A directional-run request is already one higher-level protocol unit.
+            // Its contents cannot create internal bidi runs, including separators
+            // and explicit controls, so only Auto direction requires inspection.
+            scratch.RunReadsRightToLeft = runDirection == BidiCharacterType.RightToLeft;
+            scratch.AddBidiRun(new BidiRun(runDirection, runLevel, 0, codePointCount));
         }
         else
         {
@@ -272,15 +256,16 @@ public static partial class TextShaper
         }
 
         BidiRun[] bidiRuns = scratch.BidiRuns;
-        int[] bidiMap = scratch.GetBidiMap(bidiData.Types.Length);
+        int[] bidiMap = scratch.GetBidiMap(codePointCount);
 
         // Incrementally build out buffer of glyphs. Both buffers share the run list so
         // per-glyph run indices agree when records are seeded across them. Callers
         // retaining run references beyond the scratch scope supply their own runs;
         // otherwise the synthesized whole-text run reuses scratch state.
+        bool usesDefaultTextRun = prebuiltRuns is null && !(options.TextRuns?.Count > 0);
         IReadOnlyList<TextRun> textRuns = prebuiltRuns ?? ((options.TextRuns?.Count > 0)
             ? BuildTextRuns(text, options)
-            : scratch.GetDefaultTextRuns(text.GetGraphemeCount(), options));
+            : scratch.GetDefaultTextRuns(options));
         substitutions.SetTextRuns(textRuns);
         positionings.SetTextRuns(textRuns);
 
@@ -298,7 +283,7 @@ public static partial class TextShaper
         if (textRuns.Count == 1 && !textRuns[0].Placeholder.HasValue)
         {
             TextRun onlyRun = textRuns[0];
-            PopulateAndSubstitute(
+            int graphemeEnd = PopulateAndSubstitute(
                 text,
                 onlyRun.Start,
                 textRuns,
@@ -309,6 +294,13 @@ public static partial class TextShaper
                 bidiRuns,
                 bidiMap,
                 substitutions);
+
+            if (usesDefaultTextRun)
+            {
+                // Population has already visited every grapheme, so its final index
+                // is the exact exclusive end without a separate counting pass.
+                onlyRun.End = graphemeEnd;
+            }
 
             complete = substitutions.SeedMetricsInPlace(onlyRun.ResolvedFont);
 
@@ -668,7 +660,7 @@ public static partial class TextShaper
         ShapingBuffer substitutions,
         ShapingBuffer positionings)
     {
-        PopulateAndSubstitute(
+        _ = PopulateAndSubstitute(
             text,
             start,
             textRuns,
@@ -701,7 +693,8 @@ public static partial class TextShaper
     /// <param name="bidiRuns">The resolved bidi runs covering the whole input.</param>
     /// <param name="bidiMap">A codepoint → bidi-run mapping accumulated across shaping passes.</param>
     /// <param name="substitutions">The GSUB substitution buffer to write into.</param>
-    private static void PopulateAndSubstitute(
+    /// <returns>The exclusive grapheme index reached after consuming the text.</returns>
+    private static int PopulateAndSubstitute(
         ReadOnlySpan<char> text,
         int start,
         IReadOnlyList<TextRun> textRuns,
@@ -721,12 +714,14 @@ public static partial class TextShaper
         // during glyph lookup, so the per-codepoint lookahead decode is skipped.
         bool hasVariationSequences = font.FontMetrics.HasUnicodeVariationSequences;
 
-        // Enumerate through each grapheme in the text.
+        // Shaping needs each grapheme's boundary and source slice, but not terminal
+        // width, emoji, or display flags. The boundary-only mode avoids deriving
+        // metadata that no shaping operation consumes.
         int graphemeIndex = start;
-        SpanGraphemeEnumerator graphemeEnumerator = new(text);
+        SpanGraphemeEnumerator graphemeEnumerator = new(text, true);
         while (graphemeEnumerator.MoveNext())
         {
-            ReadOnlySpan<char> grapheme = graphemeEnumerator.Current.Span;
+            ReadOnlySpan<char> grapheme = graphemeEnumerator.CurrentSpan;
             int graphemeMax = grapheme.Length - 1;
             int graphemeCodePointIndex = 0;
             int charIndex = 0;
@@ -784,6 +779,7 @@ public static partial class TextShaper
         SubstituteBidiMirrors(font.FontMetrics, substitutions);
 
         font.FontMetrics.ApplySubstitution(substitutions);
+        return graphemeIndex;
     }
 
     /// <summary>

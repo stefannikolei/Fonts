@@ -68,6 +68,21 @@ internal static class AdvancedTypographicUtils
     }
 
     /// <summary>
+    /// Supplies a compile-time glyph comparison to the shared sequence walks.
+    /// </summary>
+    /// <typeparam name="T">The type of sequence element to compare.</typeparam>
+    private interface ISequenceMatcher<T>
+    {
+        /// <summary>
+        /// Determines whether one sequence element matches the current glyph record.
+        /// </summary>
+        /// <param name="element">The sequence element.</param>
+        /// <param name="data">The glyph record.</param>
+        /// <returns><see langword="true"/> when the element matches; otherwise, <see langword="false"/>.</returns>
+        static abstract bool Matches(T element, ref GlyphShapingData data);
+    }
+
+    /// <summary>
     /// Gets a value indicating whether the glyph represented by the codepoint should be interpreted vertically.
     /// </summary>
     /// <param name="codePoint">The codepoint represented by the glyph.</param>
@@ -312,12 +327,7 @@ internal static class AdvancedTypographicUtils
     public static bool MatchInputSequence(SkippingGlyphIterator iterator, uint featureMask, ushort increment, ushort[] sequence, Span<int> matches)
     {
         iterator.SetMatchContext(featureMask, false);
-        return Match(
-            increment,
-            sequence,
-            iterator,
-            static (component, data) => component == data.GlyphId,
-            matches);
+        return Match<ushort, GlyphIdSequenceMatcher>(increment, sequence, iterator, matches);
     }
 
     /// <summary>
@@ -362,13 +372,7 @@ internal static class AdvancedTypographicUtils
     public static bool MatchSequence(SkippingGlyphIterator iterator, int increment, ushort[] sequence, uint mask, bool contextMatch, Span<int> matches, out int matchEnd)
     {
         iterator.SetMatchContext(mask, contextMatch);
-        return Match(
-            increment,
-            sequence,
-            iterator,
-            static (component, data) => component == data.GlyphId,
-            matches,
-            out matchEnd);
+        return Match<ushort, GlyphIdSequenceMatcher>(increment, sequence, iterator, matches, out matchEnd);
     }
 
     /// <summary>
@@ -438,18 +442,97 @@ internal static class AdvancedTypographicUtils
         out int matchEnd)
     {
         iterator.SetMatchContext(mask, contextMatch);
+        int position = iterator.Index;
+        ShapingBuffer buffer = iterator.Collection;
+        matchEnd = position + 1;
+        int i = 0;
 
-        // The class table travels as match state so the lambda stays static: a
-        // capturing lambda here would allocate a closure and delegate on every
-        // contextual rule attempt.
-        return Match(
-            increment,
-            sequence,
-            iterator,
-            classDefinitionTable,
-            static (component, data, table) => component == table.ClassIndexOf(data.GlyphId),
-            matches,
-            out matchEnd);
+        // Class-context matching is one of the hottest complex-script paths.
+        // Keep its class lookup directly in the loop so every matched element
+        // avoids a delegate dispatch while retaining the same iterator gates.
+        if (!iterator.MatchTransparencyActive)
+        {
+            int solidOffset = iterator.Increment(increment);
+            if (solidOffset < 0)
+            {
+                return false;
+            }
+
+            while (i < sequence.Length && i < MaxContextLength && solidOffset < buffer.Count)
+            {
+                ref GlyphShapingData solidData = ref buffer[solidOffset];
+                if (!iterator.MayMatch(ref solidData) || sequence[i] != classDefinitionTable.ClassIndexOf(solidData.GlyphId))
+                {
+                    break;
+                }
+
+                if (!matches.IsEmpty)
+                {
+                    matches[i] = solidOffset;
+                }
+
+                i++;
+                matchEnd = solidOffset + 1;
+                solidOffset = iterator.Next();
+            }
+
+            iterator.Index = position;
+            return i == sequence.Length;
+        }
+
+        // A single forward step must test the immediately following transparent
+        // record against the first class before deciding whether to skip it.
+        int offset;
+        if (increment == 1)
+        {
+            offset = position + 1;
+            iterator.Index = offset;
+        }
+        else
+        {
+            offset = iterator.Increment(increment);
+        }
+
+        if (offset < 0)
+        {
+            return false;
+        }
+
+        // Property-skipped records never participate. A transparent record can
+        // match its named class; otherwise it is stepped over, while a solid
+        // class mismatch refuses the rule.
+        while (i < sequence.Length && i < MaxContextLength && offset < buffer.Count)
+        {
+            if (iterator.IsPropertySkipped(offset))
+            {
+                offset = ++iterator.Index;
+                continue;
+            }
+
+            ref GlyphShapingData data = ref buffer[offset];
+            if (iterator.MayMatch(ref data) && sequence[i] == classDefinitionTable.ClassIndexOf(data.GlyphId))
+            {
+                if (!matches.IsEmpty)
+                {
+                    matches[i] = offset;
+                }
+
+                i++;
+                matchEnd = offset + 1;
+                offset = ++iterator.Index;
+                continue;
+            }
+
+            if (!iterator.IsTransparent(ref data))
+            {
+                break;
+            }
+
+            offset = ++iterator.Index;
+        }
+
+        iterator.Index = position;
+        return i == sequence.Length;
     }
 
     /// <summary>
@@ -519,15 +602,7 @@ internal static class AdvancedTypographicUtils
         out int matchEnd)
     {
         iterator.SetMatchContext(mask, contextMatch);
-        return Match(
-            iterator,
-            startIndex,
-            coverageTable,
-            MatchDirection.Forward,
-            endExclusive,
-            static (component, data) => component.CoverageIndexOf(data.GlyphId) >= 0,
-            matches,
-            out matchEnd);
+        return Match<CoverageTable, CoverageSequenceMatcher>(iterator, startIndex, coverageTable, MatchDirection.Forward, endExclusive, matches, out matchEnd);
     }
 
     /// <summary>
@@ -546,15 +621,7 @@ internal static class AdvancedTypographicUtils
         int startIndex,
         int endExclusive)
     {
-        return Match(
-            iterator,
-            startIndex,
-            backtrack,
-            MatchDirection.Backward,
-            endExclusive,
-            static (component, data) => component.CoverageIndexOf(data.GlyphId) >= 0,
-            default,
-            out _);
+        return Match<CoverageTable, CoverageSequenceMatcher>(iterator, startIndex, backtrack, MatchDirection.Backward, endExclusive, default, out _);
     }
 
     /// <summary>
@@ -649,15 +716,7 @@ internal static class AdvancedTypographicUtils
         {
             SkippingGlyphIterator backIt = iterator;
             int backtrackStart = backIt.StartBacktrack();
-            if (!Match(
-                backIt,
-                backtrackStart,
-                rule.BacktrackSequence,
-                MatchDirection.Backward,
-                int.MaxValue,
-                static (component, data) => component == data.GlyphId,
-                default,
-                out _))
+            if (!Match<ushort, GlyphIdSequenceMatcher>(backIt, backtrackStart, rule.BacktrackSequence, MatchDirection.Backward, int.MaxValue, default, out _))
             {
                 return false;
             }
@@ -1103,162 +1162,18 @@ internal static class AdvancedTypographicUtils
         => fontMetrics.IsInMarkFilteringSet(markFilteringSet, glyphId);
 
     /// <summary>
-    /// Matches a sequence of elements against glyphs using an increment-based approach,
-    /// threading caller state through to the condition so callers can use static lambdas
-    /// instead of allocating closures.
-    /// </summary>
-    /// <typeparam name="T">The type of sequence elements to match.</typeparam>
-    /// <typeparam name="TState">The type of the state passed to the condition.</typeparam>
-    /// <param name="increment">The initial increment from the iterator's current position.</param>
-    /// <param name="sequence">The array of elements to match.</param>
-    /// <param name="iterator">The skipping glyph iterator.</param>
-    /// <param name="state">The caller state passed to each condition invocation.</param>
-    /// <param name="condition">The condition function to test each element against glyph data.</param>
-    /// <param name="matches">A span to store matched glyph indices, or default if not needed.</param>
-    /// <returns><see langword="true"/> if all elements in the sequence were matched; otherwise, <see langword="false"/>.</returns>
-    private static bool Match<T, TState>(
-        int increment,
-        T[] sequence,
-        SkippingGlyphIterator iterator,
-        TState state,
-        Func<T, GlyphShapingData, TState, bool> condition,
-        Span<int> matches)
-        => Match(increment, sequence, iterator, state, condition, matches, out _);
-
-    /// <summary>
-    /// Matches a sequence of elements against glyphs using an increment-based
-    /// approach with match state, reporting the position one past the final
-    /// matched element so lookahead can start exactly where the input ended.
-    /// </summary>
-    /// <typeparam name="T">The type of sequence elements to match.</typeparam>
-    /// <typeparam name="TState">The type of state passed to the condition.</typeparam>
-    /// <param name="increment">The initial increment from the iterator's current position.</param>
-    /// <param name="sequence">The array of elements to match.</param>
-    /// <param name="iterator">The skipping glyph iterator.</param>
-    /// <param name="state">The state passed to the condition.</param>
-    /// <param name="condition">The condition function to test each element against glyph data.</param>
-    /// <param name="matches">A span to store matched glyph indices, or default if not needed.</param>
-    /// <param name="matchEnd">The position one past the final matched element.</param>
-    /// <returns><see langword="true"/> if all elements in the sequence were matched; otherwise, <see langword="false"/>.</returns>
-    private static bool Match<T, TState>(
-        int increment,
-        T[] sequence,
-        SkippingGlyphIterator iterator,
-        TState state,
-        Func<T, GlyphShapingData, TState, bool> condition,
-        Span<int> matches,
-        out int matchEnd)
-    {
-        int position = iterator.Index;
-        ShapingBuffer buffer = iterator.Collection;
-        matchEnd = position + 1;
-        int i = 0;
-
-        // A buffer without a transparent record in reach keeps the solid-glyph
-        // walk: every stepped-to record must match or the rule is refused.
-        if (!iterator.MatchTransparencyActive)
-        {
-            int solidOffset = iterator.Increment(increment);
-            if (solidOffset < 0)
-            {
-                return false;
-            }
-
-            while (i < sequence.Length && i < MaxContextLength && solidOffset < buffer.Count)
-            {
-                ref GlyphShapingData solidData = ref buffer[solidOffset];
-                if (!iterator.MayMatch(ref solidData) || !condition(sequence[i], solidData, state))
-                {
-                    break;
-                }
-
-                if (matches.Length == MaxContextLength)
-                {
-                    matches[i] = solidOffset;
-                }
-
-                i++;
-                matchEnd = solidOffset + 1;
-                solidOffset = iterator.Next();
-            }
-
-            iterator.Index = position;
-            return i == sequence.Length;
-        }
-
-        // A single forward step enters the walk directly so a transparent record
-        // at the next position still gets its chance to match the first sequence
-        // element; larger jumps step over positions other matchers consumed.
-        int offset;
-        if (increment == 1)
-        {
-            offset = position + 1;
-            iterator.Index = offset;
-        }
-        else
-        {
-            offset = iterator.Increment(increment);
-        }
-
-        if (offset < 0)
-        {
-            return false;
-        }
-
-        // A transparent record is stepped over unless it matches the sequence
-        // position itself; a solid record that fails the shape test refuses the
-        // whole match.
-        while (i < sequence.Length && i < MaxContextLength && offset < buffer.Count)
-        {
-            if (iterator.IsPropertySkipped(offset))
-            {
-                offset = ++iterator.Index;
-                continue;
-            }
-
-            ref GlyphShapingData data = ref buffer[offset];
-            if (iterator.MayMatch(ref data) && condition(sequence[i], data, state))
-            {
-                if (matches.Length == MaxContextLength)
-                {
-                    matches[i] = offset;
-                }
-
-                i++;
-                matchEnd = offset + 1;
-                offset = ++iterator.Index;
-                continue;
-            }
-
-            if (!iterator.IsTransparent(ref data))
-            {
-                break;
-            }
-
-            offset = ++iterator.Index;
-        }
-
-        iterator.Index = position;
-        return i == sequence.Length;
-    }
-
-    /// <summary>
     /// Matches a sequence of elements against glyphs using an increment-based approach.
     /// </summary>
     /// <typeparam name="T">The type of sequence elements to match.</typeparam>
+    /// <typeparam name="TMatcher">The compile-time comparison used for each sequence element.</typeparam>
     /// <param name="increment">The initial increment from the iterator's current position.</param>
     /// <param name="sequence">The array of elements to match.</param>
     /// <param name="iterator">The skipping glyph iterator.</param>
-    /// <param name="condition">The condition function to test each element against glyph data.</param>
     /// <param name="matches">A span to store matched glyph indices, or default if not needed.</param>
     /// <returns><see langword="true"/> if all elements in the sequence were matched; otherwise, <see langword="false"/>.</returns>
-    private static bool Match<T>(
-        int increment,
-        T[] sequence,
-        SkippingGlyphIterator iterator,
-        Func<T, GlyphShapingData, bool> condition,
-        Span<int> matches)
-        => Match(increment, sequence, iterator, condition, matches, out _);
+    private static bool Match<T, TMatcher>(int increment, T[] sequence, SkippingGlyphIterator iterator, Span<int> matches)
+        where TMatcher : ISequenceMatcher<T>
+        => Match<T, TMatcher>(increment, sequence, iterator, matches, out _);
 
     /// <summary>
     /// Matches a sequence of elements against glyphs using an increment-based
@@ -1266,20 +1181,15 @@ internal static class AdvancedTypographicUtils
     /// lookahead can start exactly where the input ended.
     /// </summary>
     /// <typeparam name="T">The type of sequence elements to match.</typeparam>
+    /// <typeparam name="TMatcher">The compile-time comparison used for each sequence element.</typeparam>
     /// <param name="increment">The initial increment from the iterator's current position.</param>
     /// <param name="sequence">The array of elements to match.</param>
     /// <param name="iterator">The skipping glyph iterator.</param>
-    /// <param name="condition">The condition function to test each element against glyph data.</param>
     /// <param name="matches">A span to store matched glyph indices, or default if not needed.</param>
     /// <param name="matchEnd">The position one past the final matched element.</param>
     /// <returns><see langword="true"/> if all elements in the sequence were matched; otherwise, <see langword="false"/>.</returns>
-    private static bool Match<T>(
-        int increment,
-        T[] sequence,
-        SkippingGlyphIterator iterator,
-        Func<T, GlyphShapingData, bool> condition,
-        Span<int> matches,
-        out int matchEnd)
+    private static bool Match<T, TMatcher>(int increment, T[] sequence, SkippingGlyphIterator iterator, Span<int> matches, out int matchEnd)
+        where TMatcher : ISequenceMatcher<T>
     {
         int position = iterator.Index;
         ShapingBuffer buffer = iterator.Collection;
@@ -1299,7 +1209,7 @@ internal static class AdvancedTypographicUtils
             while (i < sequence.Length && i < MaxContextLength && solidOffset < buffer.Count)
             {
                 ref GlyphShapingData solidData = ref buffer[solidOffset];
-                if (!iterator.MayMatch(ref solidData) || !condition(sequence[i], solidData))
+                if (!iterator.MayMatch(ref solidData) || !TMatcher.Matches(sequence[i], ref solidData))
                 {
                     break;
                 }
@@ -1349,7 +1259,7 @@ internal static class AdvancedTypographicUtils
             }
 
             ref GlyphShapingData data = ref buffer[offset];
-            if (iterator.MayMatch(ref data) && condition(sequence[i], data))
+            if (iterator.MayMatch(ref data) && TMatcher.Matches(sequence[i], ref data))
             {
                 if (matches.Length == MaxContextLength)
                 {
@@ -1378,24 +1288,17 @@ internal static class AdvancedTypographicUtils
     /// Matches a sequence of elements against glyphs using a directional (forward/backward) approach.
     /// </summary>
     /// <typeparam name="T">The type of sequence elements to match.</typeparam>
+    /// <typeparam name="TMatcher">The compile-time comparison used for each sequence element.</typeparam>
     /// <param name="iterator">The skipping glyph iterator.</param>
     /// <param name="startIndex">The starting index in the buffer.</param>
     /// <param name="sequence">The array of elements to match.</param>
     /// <param name="direction">The direction to iterate (forward or backward).</param>
     /// <param name="endExclusive">The exclusive end index in the buffer.</param>
-    /// <param name="condition">The condition function to test each element against glyph data.</param>
     /// <param name="matches">A span to store matched glyph indices, or default if not needed.</param>
     /// <param name="matchEnd">The position one past the final matched element; meaningful for forward matching.</param>
     /// <returns><see langword="true"/> if all elements in the sequence were matched; otherwise, <see langword="false"/>.</returns>
-    private static bool Match<T>(
-        SkippingGlyphIterator iterator,
-        int startIndex,
-        T[] sequence,
-        MatchDirection direction,
-        int endExclusive,
-        Func<T, GlyphShapingData, bool> condition,
-        Span<int> matches,
-        out int matchEnd)
+    private static bool Match<T, TMatcher>(SkippingGlyphIterator iterator, int startIndex, T[] sequence, MatchDirection direction, int endExclusive, Span<int> matches, out int matchEnd)
+        where TMatcher : ISequenceMatcher<T>
     {
         matchEnd = startIndex;
         if (sequence.Length == 0)
@@ -1429,7 +1332,7 @@ internal static class AdvancedTypographicUtils
             }
 
             ref GlyphShapingData data = ref iterator.RecordAt(offset);
-            if (iterator.MayMatch(ref data) && condition(sequence[i], data))
+            if (iterator.MayMatch(ref data) && TMatcher.Matches(sequence[i], ref data))
             {
                 if (matches.Length == MaxContextLength)
                 {
@@ -1453,5 +1356,23 @@ internal static class AdvancedTypographicUtils
 
         iterator.Index = saved;
         return true;
+    }
+
+    /// <summary>
+    /// Compares a sequence glyph identifier with the current glyph record.
+    /// </summary>
+    private readonly struct GlyphIdSequenceMatcher : ISequenceMatcher<ushort>
+    {
+        /// <inheritdoc/>
+        public static bool Matches(ushort element, ref GlyphShapingData data) => element == data.GlyphId;
+    }
+
+    /// <summary>
+    /// Tests the current glyph record against a sequence coverage table.
+    /// </summary>
+    private readonly struct CoverageSequenceMatcher : ISequenceMatcher<CoverageTable>
+    {
+        /// <inheritdoc/>
+        public static bool Matches(CoverageTable element, ref GlyphShapingData data) => element.CoverageIndexOf(data.GlyphId) >= 0;
     }
 }

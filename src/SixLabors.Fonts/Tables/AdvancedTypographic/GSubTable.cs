@@ -323,7 +323,35 @@ internal class GSubTable : Table
             int segmentEnd = index + count;
             while (buffer.ReadIndex < segmentEnd && buffer.ReadIndex < buffer.Count)
             {
-                if (buffer.Count >= maxCount || currentOperations++ >= maxOperationsCount)
+                // The digest cheaply rejects glyphs no subtable of this lookup can
+                // affect; a maybe falls through to the exact coverage test inside.
+                // Masked and ignored records still stream to the output unchanged,
+                // preserving every record. Consecutive rejections are adopted as
+                // one range so the output pass moves its cursors once.
+                int position = buffer.ReadIndex;
+                bool operationsLimitReached = false;
+                while (position < segmentEnd && position < buffer.Count)
+                {
+                    if (buffer.Count >= maxCount || currentOperations++ >= maxOperationsCount)
+                    {
+                        operationsLimitReached = true;
+                        break;
+                    }
+
+                    ref GlyphShapingData candidate = ref buffer[position];
+                    if ((candidate.FeatureMask & featureMask) != 0
+                        && featureLookupTable.Digest.MightContain(candidate.GlyphId)
+                        && !iterator.IsIgnored(position))
+                    {
+                        break;
+                    }
+
+                    position++;
+                }
+
+                buffer.CopyGlyphs(position - buffer.ReadIndex);
+
+                if (operationsLimitReached)
                 {
                     // The pass must always close: stream the remainder and
                     // reconcile the segment bookkeeping before bailing out.
@@ -334,20 +362,12 @@ internal class GSubTable : Table
                     return;
                 }
 
-                // The digest cheaply rejects glyphs no subtable of this lookup can
-                // affect; a maybe falls through to the exact coverage test inside.
-                // Ignored records stream through untouched rather than being
-                // stepped over, so the output side always receives every record.
-                int position = buffer.ReadIndex;
-                ref GlyphShapingData glyphData = ref buffer[position];
-                if ((glyphData.FeatureMask & featureMask) == 0
-                    || !featureLookupTable.Digest.MightContain(glyphData.GlyphId)
-                    || iterator.IsIgnored(position))
+                if (buffer.ReadIndex >= segmentEnd || buffer.ReadIndex >= buffer.Count)
                 {
-                    buffer.CopyGlyph();
-                    continue;
+                    break;
                 }
 
+                position = buffer.ReadIndex;
                 int lengthBefore = buffer.Count;
                 featureLookupTable.TrySubstitution(fontMetrics, this, buffer, feature, featureMask, position, segmentEnd - position);
 

@@ -175,7 +175,7 @@ internal sealed class LookupType4Format1SubTable : LookupSubTable
 
         LigatureSetTable ligatureSetTable = this.ligatureSetTables[offset];
         SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
-        Span<int> matchBuffer = stackalloc int[AdvancedTypographicUtils.MaxContextLength];
+        Span<int> matchBuffer = buffer.GetContextMatchPositions()[..AdvancedTypographicUtils.MaxContextLength];
         for (int i = 0; i < ligatureSetTable.Ligatures.Length; i++)
         {
             LigatureTable ligatureTable = ligatureSetTable.Ligatures[i];

@@ -211,7 +211,7 @@ internal sealed class ArabicFallbackSubstitutions
     private static int ApplyLigatures(FontMetrics fontMetrics, ShapingBuffer buffer, int index, int count, Tag feature, uint featureMask, FallbackLigature[] ligatures, LookupFlags lookupFlags)
     {
         int end = index + count;
-        Span<int> matchBuffer = stackalloc int[AdvancedTypographicUtils.MaxContextLength];
+        Span<int> matchBuffer = buffer.GetContextMatchPositions()[..AdvancedTypographicUtils.MaxContextLength];
         for (int position = index; position < end; position++)
         {
             ref GlyphShapingData data = ref buffer[position];

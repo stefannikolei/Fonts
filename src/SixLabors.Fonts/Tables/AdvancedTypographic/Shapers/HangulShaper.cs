@@ -216,7 +216,8 @@ internal sealed class HangulShaper : DefaultShaper
         // Apply the state machine to map glyphs to features.
         if (buffer.Role == ShapingBufferRole.Substitution)
         {
-            // Allocate a small buffer for composition operations.
+            // Hangul composition and decomposition use at most three jamo. Keep one
+            // fixed scratch span outside the state-machine loop for every syllable.
             Span<ushort> compositionBuffer = stackalloc ushort[3];
 
             // GSub
@@ -235,7 +236,6 @@ internal sealed class HangulShaper : DefaultShaper
                 byte action = actionsWithState[0];
                 state = actionsWithState[1];
 
-                // TODO: Do not stackalloc in the loop.
                 switch (action)
                 {
                     case Decompose:
@@ -273,6 +273,12 @@ internal sealed class HangulShaper : DefaultShaper
             // GPos
             // Simply loop and enable based on type.
             // Glyph substitution has handled [de]composition.
+            // The three Jamo masks are invariant for the run, so resolving them
+            // before the loop avoids searching the plan for every glyph.
+            uint ljmoMask = this.Features.GetMask(LjmoTag);
+            uint vjmoMask = this.Features.GetMask(VjmoTag);
+            uint tjmoMask = this.Features.GetMask(TjmoTag);
+
             for (int i = 0; i < count; i++)
             {
                 if (i + index >= buffer.Count)
@@ -285,22 +291,22 @@ internal sealed class HangulShaper : DefaultShaper
                 switch (GetSyllableType(codePoint))
                 {
                     case L:
-                        buffer.EnableShapingFeature(i, this.Features.GetMask(LjmoTag));
+                        buffer.EnableShapingFeature(i, ljmoMask);
                         break;
                     case V:
-                        buffer.EnableShapingFeature(i, this.Features.GetMask(VjmoTag));
+                        buffer.EnableShapingFeature(i, vjmoMask);
                         break;
                     case T:
-                        buffer.EnableShapingFeature(i, this.Features.GetMask(TjmoTag));
+                        buffer.EnableShapingFeature(i, tjmoMask);
                         break;
                     case LV:
-                        buffer.EnableShapingFeature(i, this.Features.GetMask(LjmoTag));
-                        buffer.EnableShapingFeature(i, this.Features.GetMask(VjmoTag));
+                        buffer.EnableShapingFeature(i, ljmoMask);
+                        buffer.EnableShapingFeature(i, vjmoMask);
                         break;
                     case LVT:
-                        buffer.EnableShapingFeature(i, this.Features.GetMask(LjmoTag));
-                        buffer.EnableShapingFeature(i, this.Features.GetMask(VjmoTag));
-                        buffer.EnableShapingFeature(i, this.Features.GetMask(TjmoTag));
+                        buffer.EnableShapingFeature(i, ljmoMask);
+                        buffer.EnableShapingFeature(i, vjmoMask);
+                        buffer.EnableShapingFeature(i, tjmoMask);
                         break;
                 }
             }
@@ -312,12 +318,16 @@ internal sealed class HangulShaper : DefaultShaper
         // hide behind it can never fire on the jamo themselves.
         count += buffer.Count - entryCount;
         int end = index + count;
+
+        // The contextual-alternates mask is likewise invariant while this run is
+        // scanned for decomposed Jamo.
+        uint caltMask = this.Features.GetMask(CaltTag);
         for (int i = index; i < end && i < buffer.Count; i++)
         {
             int type = GetSyllableType(buffer[i].CodePoint);
             if (type is L or V or T)
             {
-                buffer.DisableShapingFeature(i, this.Features.GetMask(CaltTag));
+                buffer.DisableShapingFeature(i, caltMask);
             }
         }
     }

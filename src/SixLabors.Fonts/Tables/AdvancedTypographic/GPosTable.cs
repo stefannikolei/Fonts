@@ -318,6 +318,7 @@ internal class GPosTable : Table
         List<ShapePlanStageGroup<LookupTable>> groups = shapePlan.GetOrBuildGPosStageGroups(this);
         List<ShapingStage> shapingStages = shapePlan.Stages;
         SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, default, 0);
+        int segmentEnd = index + count;
         for (int g = 0; g < groups.Count; g++)
         {
             ShapePlanStageGroup<LookupTable> group = groups[g];
@@ -328,7 +329,6 @@ internal class GPosTable : Table
             for (int m = 0; m < merged.Count; m++)
             {
                 (Tag feature, ushort _, LookupTable featureLookupTable, uint featureMask, bool autoZwnj, bool autoZwj, bool random, bool perSyllable) = merged[m];
-                buffer.SetLookupMatchState(featureMask, autoZwnj, autoZwj, random, perSyllable);
 
                 // Skip the whole lookup when its mask reaches no record, or when
                 // its coverage cannot intersect any glyph id the buffer has ever
@@ -340,9 +340,13 @@ internal class GPosTable : Table
                     continue;
                 }
 
+                // Matcher state is observable only while this lookup is attempted.
+                // Stamp it after the whole-lookup gates so rejected entries do not
+                // rewrite the buffer's state.
+                buffer.SetLookupMatchState(featureMask, autoZwnj, autoZwj, random, perSyllable);
                 iterator.Reset(index, featureLookupTable.LookupFlags, featureLookupTable.MarkFilteringSet);
 
-                while (iterator.Index < index + count)
+                while (iterator.Index < segmentEnd)
                 {
                     if (currentOperations++ >= maxOperationsCount)
                     {
@@ -360,7 +364,7 @@ internal class GPosTable : Table
                         continue;
                     }
 
-                    bool success = featureLookupTable.TryUpdatePosition(fontMetrics, this, buffer, feature, iterator.Index, count - (iterator.Index - index));
+                    bool success = featureLookupTable.TryUpdatePosition(fontMetrics, this, buffer, feature, iterator.Index, segmentEnd - iterator.Index);
                     kerned |= success && (feature == KernTag || feature == VKernTag);
                     updated |= success;
                     iterator.Next();

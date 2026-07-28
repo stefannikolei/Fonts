@@ -221,17 +221,16 @@ internal sealed class ShapingScratch
     }
 
     /// <summary>
-    /// Gets the reusable single-run list covering the whole text, configured for
-    /// the given options.
+    /// Gets the reusable single-run list configured for the given options. The
+    /// shaping pass sets its exclusive end after enumerating the text.
     /// </summary>
-    /// <param name="end">The grapheme count of the text.</param>
     /// <param name="options">The text options supplying the font.</param>
     /// <returns>The run list.</returns>
-    public IReadOnlyList<TextRun> GetDefaultTextRuns(int end, TextOptions options)
+    public IReadOnlyList<TextRun> GetDefaultTextRuns(TextOptions options)
     {
         TextRun run = this.defaultRun[0];
         run.Start = 0;
-        run.End = end;
+        run.End = 0;
         run.Font = options.Font;
         run.ResolveFontWeight(options.FontWeight);
         return this.defaultRun;

@@ -164,7 +164,7 @@ internal struct GlyphShapingData
     /// </summary>
     /// <param name="data">The data to copy properties from.</param>
     /// <param name="clearFeatures">Whether to clear features.</param>
-    public GlyphShapingData(GlyphShapingData data, bool clearFeatures = false)
+    public GlyphShapingData(GlyphShapingData data, bool clearFeatures)
     {
         this.GlyphId = data.GlyphId;
         this.CodePointIndex = data.CodePointIndex;

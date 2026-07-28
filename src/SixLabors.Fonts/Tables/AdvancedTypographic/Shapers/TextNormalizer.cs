@@ -2,6 +2,7 @@
 // Licensed under the Six Labors Split License.
 
 using SixLabors.Fonts.Unicode;
+using SixLabors.Fonts.Unicode.Resources;
 
 namespace SixLabors.Fonts.Tables.AdvancedTypographic.Shapers;
 
@@ -69,6 +70,21 @@ internal static class TextNormalizer
             return 0;
         }
 
+        int end = index + count;
+        int candidate = index;
+        while (candidate < end && (uint)buffer[candidate].CodePoint.Value < NormalizationData.FirstDecompositionCodePoint)
+        {
+            candidate++;
+        }
+
+        if (candidate == end)
+        {
+            // The generated lower bound precedes every canonical decomposition,
+            // combining mark, and shaping control handled below. A run entirely
+            // below it cannot change in any of the normalization rounds.
+            return 0;
+        }
+
         int before = buffer.Count;
 
         // A character standing on its own that the font already draws is left
@@ -86,7 +102,7 @@ internal static class TextNormalizer
             }
         }
 
-        int end = index + count;
+        end = index + count;
         for (int i = index + 1; i + 1 < end; i++)
         {
             ref GlyphShapingData data = ref buffer[i];

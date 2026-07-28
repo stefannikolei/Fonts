@@ -38,6 +38,16 @@ public readonly partial struct CodePoint
     private const int NormalizationEntrySize = sizeof(ulong);
 
     /// <summary>
+    /// The number of low code-point bits covered by one decomposition index page.
+    /// </summary>
+    private const int DecompositionPageShift = 7;
+
+    /// <summary>
+    /// The number of bytes occupied by one decomposition page boundary.
+    /// </summary>
+    private const int DecompositionPageBoundarySize = sizeof(ushort);
+
+    /// <summary>
     /// The first Hangul leading consonant.
     /// </summary>
     private const uint HangulLeadBase = 0x1100;
@@ -156,12 +166,39 @@ public readonly partial struct CodePoint
             return true;
         }
 
+        if (value < NormalizationData.FirstDecompositionCodePoint || value > NormalizationData.LastDecompositionCodePoint)
+        {
+            // The generated bounds reject the overwhelmingly common ASCII path
+            // before it constructs spans or reads a page boundary.
+            first = default;
+            second = default;
+            return false;
+        }
+
         // Every other character is looked up. The table is ordered by the character
         // that decomposes, which the packing puts in the high bits, so the entries
         // are searched as the plain integers they are.
         ReadOnlySpan<byte> entries = NormalizationData.Decompositions;
-        int low = 0;
-        int high = (entries.Length / NormalizationEntrySize) - 1;
+        int low;
+        int high;
+        if (value <= char.MaxValue)
+        {
+            // The generated boundaries narrow a Basic Multilingual Plane lookup to
+            // one 128-code-point page. Empty pages have equal boundaries and fail
+            // immediately; populated pages search only their handful of entries.
+            ReadOnlySpan<byte> pageStarts = NormalizationData.DecompositionPageStarts;
+            int pageOffset = (int)(value >> DecompositionPageShift) * DecompositionPageBoundarySize;
+            low = BinaryPrimitives.ReadUInt16LittleEndian(pageStarts[pageOffset..]);
+            high = BinaryPrimitives.ReadUInt16LittleEndian(pageStarts[(pageOffset + DecompositionPageBoundarySize)..]) - 1;
+        }
+        else
+        {
+            // Supplementary decompositions are sparse enough that the complete
+            // table remains smaller than a page index covering every Unicode plane.
+            low = 0;
+            high = (entries.Length / NormalizationEntrySize) - 1;
+        }
+
         while (low <= high)
         {
             // The midpoint is computed on unsigned values so that a large table

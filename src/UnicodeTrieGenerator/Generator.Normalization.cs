@@ -37,6 +37,16 @@ public static partial class Generator
     private const int NormalizationEntryShift = 21;
 
     /// <summary>
+    /// The number of low bits covered by one decomposition index page.
+    /// </summary>
+    private const int DecompositionPageShift = 7;
+
+    /// <summary>
+    /// The number of pages in the Basic Multilingual Plane.
+    /// </summary>
+    private const int BmpPageCount = 1 << (16 - DecompositionPageShift);
+
+    /// <summary>
     /// The first Hangul syllable. Syllables decompose and compose by arithmetic
     /// rather than by table, so they are left out of the tables entirely.
     /// </summary>
@@ -190,7 +200,25 @@ public static partial class Generator
         decompositions.Sort();
         compositions.Sort();
 
-        WriteNormalizationTables(decompositions, compositions);
+        ushort[] decompositionPageStarts = new ushort[BmpPageCount + 1];
+        int decompositionIndex = 0;
+        for (int page = 0; page <= BmpPageCount; page++)
+        {
+            uint pageStart = (uint)page << DecompositionPageShift;
+
+            // Each boundary records the first packed entry whose key belongs to
+            // this or a later page. Equal adjacent boundaries make empty pages
+            // reject a lookup without touching the larger decomposition table.
+            while (decompositionIndex < decompositions.Count
+                && decompositions[decompositionIndex] >> (NormalizationEntryShift * 2) < pageStart)
+            {
+                decompositionIndex++;
+            }
+
+            decompositionPageStarts[page] = checked((ushort)decompositionIndex);
+        }
+
+        WriteNormalizationTables(decompositionPageStarts, decompositions, compositions);
     }
 
     /// <summary>
@@ -209,9 +237,10 @@ public static partial class Generator
     /// <summary>
     /// Writes the canonical decomposition and composition tables.
     /// </summary>
+    /// <param name="decompositionPageStarts">The entry boundaries for each Basic Multilingual Plane page.</param>
     /// <param name="decompositions">The decompositions, ordered by composite.</param>
     /// <param name="compositions">The compositions, ordered by the pair they join.</param>
-    private static void WriteNormalizationTables(List<ulong> decompositions, List<ulong> compositions)
+    private static void WriteNormalizationTables(ushort[] decompositionPageStarts, List<ulong> decompositions, List<ulong> compositions)
     {
         using FileStream fileStream = GetStreamWriter("NormalizationData.Generated.cs");
         using StreamWriter writer = new(fileStream);
@@ -230,6 +259,41 @@ public static partial class Generator
         writer.WriteLine("    /// </summary>");
         writer.WriteLine("    internal static class NormalizationData");
         writer.WriteLine("    {");
+        uint firstDecomposition = (uint)(decompositions[0] >> (NormalizationEntryShift * 2));
+        uint lastDecomposition = (uint)(decompositions[^1] >> (NormalizationEntryShift * 2));
+
+        writer.WriteLine("        /// <summary>");
+        writer.WriteLine("        /// The first code point represented by the canonical decomposition table.");
+        writer.WriteLine("        /// </summary>");
+        writer.WriteLine($"        public const uint FirstDecompositionCodePoint = 0x{firstDecomposition:X};");
+        writer.WriteLine();
+        writer.WriteLine("        /// <summary>");
+        writer.WriteLine("        /// The last code point represented by the canonical decomposition table.");
+        writer.WriteLine("        /// </summary>");
+        writer.WriteLine($"        public const uint LastDecompositionCodePoint = 0x{lastDecomposition:X};");
+        writer.WriteLine();
+        writer.WriteLine("        /// <summary>");
+        writer.WriteLine("        /// Gets the entry boundaries that divide the canonical decompositions by Basic Multilingual Plane page.");
+        writer.WriteLine("        /// <para>");
+        writer.WriteLine("        /// The value at each page is the first decomposition entry in that page, and the following value is its");
+        writer.WriteLine("        /// exclusive end. Equal values identify a page containing no decompositions.");
+        writer.WriteLine("        /// </para>");
+        writer.WriteLine("        /// <para>");
+        writer.WriteLine("        /// Each value occupies two bytes, least significant first, and is read with");
+        writer.WriteLine("        /// <see cref=\"System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian\"/>.");
+        writer.WriteLine("        /// </para>");
+        writer.WriteLine("        /// </summary>");
+        writer.WriteLine("        public static ReadOnlySpan<byte> DecompositionPageStarts => new byte[]");
+        writer.WriteLine("        {");
+
+        for (int page = 0; page < decompositionPageStarts.Length; page++)
+        {
+            ushort value = decompositionPageStarts[page];
+            writer.WriteLine($"            0x{(byte)value:X2}, 0x{(byte)(value >> 8):X2},  // U+{page << DecompositionPageShift:X4}");
+        }
+
+        writer.WriteLine("        };");
+        writer.WriteLine();
 
         WriteEntries(writer, "Decompositions", decompositions, DecompositionsSummary);
 

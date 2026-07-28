@@ -38,9 +38,10 @@ namespace SixLabors.Fonts.Tests;
 /// path, so a macOS run covers cases a Windows run cannot.
 /// </para>
 /// <para>
-/// The corpus also contains shaping-only fixtures that are not complete,
-/// renderable OpenType fonts. Those fixtures are listed explicitly in
-/// <see cref="UnsupportedFontFiles"/> and are not emitted as tests.
+/// The corpus also contains fonts this harness cannot compare: shaping-only
+/// fixtures that are not complete, renderable OpenType fonts, and fonts whose
+/// expected output uses unsupported Apple layout tables. Those fonts are listed
+/// explicitly in <see cref="UnsupportedFontFiles"/> and are not emitted as tests.
 /// </para>
 /// </remarks>
 public class HarfBuzzCorpusTests
@@ -62,10 +63,7 @@ public class HarfBuzzCorpusTests
     private const int LastSurrogate = 0xDFFF;
 
     /// <summary>
-    /// The reference implementation is pinned to its OpenType shaper. A font
-    /// carrying Apple's <c>morx</c> or <c>kerx</c> tables would otherwise be shaped
-    /// by machinery this library deliberately does not implement, so the comparison
-    /// would be against a different engine than the one being matched.
+    /// The reference implementation is invoked through its OpenType shaper.
     /// </summary>
     private static readonly string[] OpenTypeShaper = ["ot"];
 
@@ -95,8 +93,7 @@ public class HarfBuzzCorpusTests
     ];
 
     /// <summary>
-    /// The shaping-only corpus fixtures that cannot be represented by a
-    /// renderable <see cref="Font"/>.
+    /// The font files this harness cannot compare.
     /// </summary>
     private static readonly HashSet<string> UnsupportedFontFiles = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -119,7 +116,11 @@ public class HarfBuzzCorpusTests
         "ee39587d13b2afa5499cc79e45780aa79293bbd4.ttf",
 
         // This deliberately damaged fixture reaches truncated glyph data for some inputs.
-        "HarfBust.ttf"
+        "HarfBust.ttf",
+
+        // HarfBuzz's "ot" shaper applies this font's Apple morx and kerx tables,
+        // while this library does not implement Apple Advanced Typography.
+        "LucidaGrande.ttc"
     };
 
     /// <summary>
@@ -229,13 +230,12 @@ public class HarfBuzzCorpusTests
         if (extension.Equals(".ttc", StringComparison.OrdinalIgnoreCase)
             || extension.Equals(".otc", StringComparison.OrdinalIgnoreCase))
         {
-            _ = fontCollection.AddCollection(fontPath, out ReadOnlyMemory<FontDescription> descriptions);
-            FontDescription description = descriptions.Span[0];
+            FileFontMetrics metrics = FileFontMetrics.LoadFontCollection(fontPath).Span[0];
 
-            // HBFace above selects collection face zero. Select the same family
-            // and style instead of interpreting the TTC header as a font face.
-            FontFamily family = fontCollection.Get(description.FontFamilyInvariantCulture);
-            font = family.CreateFont(shapingSize, description.Style, variations);
+            // HBFace above selects collection face zero. Adding only that face prevents
+            // family/style resolution from selecting another face in the collection.
+            FontFamily family = ((IFontMetricsCollection)fontCollection).AddMetrics(metrics, CultureInfo.InvariantCulture);
+            font = family.CreateFont(shapingSize, metrics.Description.Style, variations);
         }
         else
         {

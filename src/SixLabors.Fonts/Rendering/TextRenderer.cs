@@ -67,7 +67,7 @@ public class TextRenderer
     /// </summary>
     /// <param name="renderer">The target renderer.</param>
     /// <param name="buffer">The buffer containing the shaped glyphs.</param>
-    /// <param name="options">The glyph options supplying the resolution and baseline origin.</param>
+    /// <param name="options">The glyph options supplying the shaping font, resolution, and baseline origin.</param>
     public static void RenderTo(IGlyphRenderer renderer, TextShapingBuffer buffer, GlyphOptions options)
         => new TextRenderer(renderer).Render(buffer, options);
 
@@ -212,7 +212,7 @@ public class TextRenderer
     /// Renders shaped glyphs to the configured renderer.
     /// </summary>
     /// <param name="buffer">The buffer containing the shaped glyphs.</param>
-    /// <param name="options">The glyph options supplying the resolution and baseline origin.</param>
+    /// <param name="options">The glyph options supplying the shaping font, resolution, and baseline origin.</param>
     public void Render(TextShapingBuffer buffer, GlyphOptions options)
     {
         Guard.NotNull(buffer, nameof(buffer));

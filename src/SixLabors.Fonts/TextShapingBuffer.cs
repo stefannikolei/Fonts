@@ -21,6 +21,11 @@ namespace SixLabors.Fonts;
 /// <see cref="TextShaper.ShapeRun(Font, TextShapingBuffer)"/> treats the text as
 /// one directional run. An instance is not thread safe.
 /// </para>
+/// <para>
+/// Glyph identifiers and positions are specific to the <see cref="Font"/> supplied
+/// when shaping. Pass that same font in <see cref="GlyphOptions.Font"/> when
+/// measuring or rendering the shaped buffer.
+/// </para>
 /// </remarks>
 public sealed class TextShapingBuffer
 {

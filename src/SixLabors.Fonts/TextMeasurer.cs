@@ -197,7 +197,7 @@ public static class TextMeasurer
     /// Measures the logical advance of shaped glyphs in pixel units.
     /// </summary>
     /// <param name="buffer">The buffer containing the shaped glyphs.</param>
-    /// <param name="options">The glyph options supplying the resolution and baseline origin.</param>
+    /// <param name="options">The glyph options supplying the shaping font, resolution, and baseline origin.</param>
     /// <returns>
     /// The zero-based logical advance extent of the glyphs if they were to be rendered, or
     /// <see cref="FontRectangle.Empty"/> when no glyph participates in rendering.
@@ -233,7 +233,7 @@ public static class TextMeasurer
     /// Measures the union of rendered bounds for shaped glyphs in pixel units.
     /// </summary>
     /// <param name="buffer">The buffer containing the shaped glyphs.</param>
-    /// <param name="options">The glyph options supplying the resolution and baseline origin.</param>
+    /// <param name="options">The glyph options supplying the shaping font, resolution, and baseline origin.</param>
     /// <returns>
     /// The union of the rendered glyph bounds if they were to be rendered, or
     /// <see cref="FontRectangle.Empty"/> when no glyph participates in rendering.
@@ -258,7 +258,7 @@ public static class TextMeasurer
     /// Measures the full renderable bounds of shaped glyphs in pixel units.
     /// </summary>
     /// <param name="buffer">The buffer containing the shaped glyphs.</param>
-    /// <param name="options">The glyph options supplying the resolution and baseline origin.</param>
+    /// <param name="options">The glyph options supplying the shaping font, resolution, and baseline origin.</param>
     /// <returns>
     /// The union of the positioned advances and rendered glyph bounds, or
     /// <see cref="FontRectangle.Empty"/> when no glyph participates in rendering.
@@ -361,7 +361,7 @@ public static class TextMeasurer
     /// Gets the positioned metrics of shaped glyphs in pixel units.
     /// </summary>
     /// <param name="buffer">The buffer containing the shaped glyphs.</param>
-    /// <param name="options">The glyph options supplying the resolution and baseline origin.</param>
+    /// <param name="options">The glyph options supplying the shaping font, resolution, and baseline origin.</param>
     /// <returns>A read-only memory region containing one positioned metrics entry per shaped glyph.</returns>
     public static ReadOnlyMemory<GlyphMetrics> GetGlyphMetrics(TextShapingBuffer buffer, GlyphOptions options)
     {
@@ -537,7 +537,7 @@ public static class TextMeasurer
     /// in pixel units.
     /// </summary>
     /// <param name="buffer">The buffer containing the shaped glyphs.</param>
-    /// <param name="options">The glyph options supplying the resolution and baseline origin.</param>
+    /// <param name="options">The glyph options supplying the shaping font, resolution, and baseline origin.</param>
     /// <param name="lowerLimit">One edge of the horizontal band.</param>
     /// <param name="upperLimit">The other edge of the horizontal band.</param>
     /// <returns>
@@ -686,7 +686,7 @@ public static class TextMeasurer
     /// Measures shaped glyphs at their DPI-scaled output positions and unions the results.
     /// </summary>
     /// <param name="buffer">The buffer containing the shaped glyphs.</param>
-    /// <param name="options">The glyph options supplying the resolution and baseline origin.</param>
+    /// <param name="options">The glyph options supplying the shaping font, resolution, and baseline origin.</param>
     /// <param name="measure">The per-glyph measurement to union.</param>
     /// <returns>The union of the per-glyph measurements, or <see cref="FontRectangle.Empty"/>.</returns>
     private static FontRectangle MeasureGlyphs(TextShapingBuffer buffer, GlyphOptions options, Func<FontGlyphMetrics, GlyphOptions, FontRectangle> measure)
@@ -748,7 +748,7 @@ public static class TextMeasurer
     /// </summary>
     /// <param name="glyphs">The shaped glyphs in visual line order.</param>
     /// <param name="lineEnds">The exclusive glyph-end index of each hard-delimited line.</param>
-    /// <param name="options">The glyph options supplying the resolution and baseline origin.</param>
+    /// <param name="options">The glyph options supplying the shaping font, resolution, and baseline origin.</param>
     /// <param name="measure">The per-glyph measurement to union.</param>
     /// <returns>The union of the per-glyph measurements, or <see cref="FontRectangle.Empty"/>.</returns>
     [MethodImpl(MethodImplOptions.NoInlining)]

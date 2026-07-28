@@ -3,9 +3,11 @@
 
 using BenchmarkDotNet.Attributes;
 using HarfBuzzSharp;
+using SixLabors.Fonts.Unicode;
 using HBBuffer = HarfBuzzSharp.Buffer;
 using HBFace = HarfBuzzSharp.Face;
 using HBFont = HarfBuzzSharp.Font;
+using HBScript = HarfBuzzSharp.Script;
 
 namespace SixLabors.Fonts.Benchmarks;
 
@@ -25,10 +27,51 @@ public enum ShapeTextBenchmarkScenario
     Arabic,
 
     /// <summary>
+    /// Hebrew text exercising presentation forms and mark positioning, shaped with
+    /// Noto Sans Hebrew.
+    /// </summary>
+    Hebrew,
+
+    /// <summary>
+    /// Thai text exercising mark ordering and Sara Am decomposition, shaped with Sarabun.
+    /// </summary>
+    Thai,
+
+    /// <summary>
+    /// Hangul text exercising precomposed syllables and conjoining Jamo, shaped with
+    /// Nanum Gothic Coding.
+    /// </summary>
+    Hangul,
+
+    /// <summary>
     /// Devanagari text exercising conjuncts, matras, and reordering, shaped with
     /// Noto Sans Devanagari.
     /// </summary>
-    Devanagari
+    Devanagari,
+
+    /// <summary>
+    /// Khmer text exercising split vowels, coeng sequences, and reordering, shaped
+    /// with Noto Sans Khmer.
+    /// </summary>
+    Khmer,
+
+    /// <summary>
+    /// Myanmar text exercising medial forms and kinzi sequences, shaped with Noto
+    /// Sans Myanmar.
+    /// </summary>
+    Myanmar,
+
+    /// <summary>
+    /// Zawgyi text exercising the explicit Qaag script override, shaped with the
+    /// corpus Zawgyi font.
+    /// </summary>
+    MyanmarZawgyi,
+
+    /// <summary>
+    /// Balinese text exercising the universal shaping engine's syllable analysis
+    /// and reordering, shaped with Noto Sans Balinese.
+    /// </summary>
+    Balinese
 }
 
 /// <summary>
@@ -51,11 +94,12 @@ public class ShapeTextBenchmark : IDisposable
     private HBFace? face;
     private HBFont? hbFont;
     private HBBuffer buffer = null!;
+    private HBScript? hbScriptOverride;
 
     /// <summary>
     /// Gets or sets the text scenario used by the benchmark.
     /// </summary>
-    [Params(ShapeTextBenchmarkScenario.Latin, ShapeTextBenchmarkScenario.Arabic, ShapeTextBenchmarkScenario.Devanagari)]
+    [ParamsAllValues]
     public ShapeTextBenchmarkScenario Scenario { get; set; }
 
     /// <summary>
@@ -65,23 +109,62 @@ public class ShapeTextBenchmark : IDisposable
     public void SetUp()
     {
         string fontPath;
-        if (this.Scenario == ShapeTextBenchmarkScenario.Latin)
+        switch (this.Scenario)
         {
-            fontPath = GetFontPath("OpenSans-Regular.ttf");
-            this.text = "The quick brown fox jumps over the lazy dog; fifty fluffy waffles.";
-            this.direction = TextDirection.LeftToRight;
-        }
-        else if (this.Scenario == ShapeTextBenchmarkScenario.Arabic)
-        {
-            fontPath = GetFontPath("Dubai-Regular.ttf");
-            this.text = "سلام عليكم ورحمة الله وبركاته لا إله إلا الله";
-            this.direction = TextDirection.RightToLeft;
-        }
-        else
-        {
-            fontPath = GetFontPath("NotoSansDevanagari-Regular.ttf");
-            this.text = "क्षत्रिय द्वारा प्रकृति की रक्षा कर्तव्य है";
-            this.direction = TextDirection.LeftToRight;
+            case ShapeTextBenchmarkScenario.Latin:
+                fontPath = GetRepositoryPath("tests/Fonts/OpenSans-Regular.ttf");
+                this.text = "The quick brown fox jumps over the lazy dog; fifty fluffy waffles.";
+                this.direction = TextDirection.LeftToRight;
+                break;
+            case ShapeTextBenchmarkScenario.Arabic:
+                fontPath = GetRepositoryPath("tests/Fonts/Dubai-Regular.ttf");
+                this.text = "سلام عليكم ورحمة الله وبركاته لا إله إلا الله";
+                this.direction = TextDirection.RightToLeft;
+                break;
+            case ShapeTextBenchmarkScenario.Hebrew:
+                fontPath = GetRepositoryPath("tests/Fonts/NotoSansHebrew-Regular.ttf");
+                this.text = "שָׁלוֹם עוֹלָם; בְּרֵאשִׁית בָּרָא אֱלֹהִים";
+                this.direction = TextDirection.RightToLeft;
+                break;
+            case ShapeTextBenchmarkScenario.Thai:
+                fontPath = GetRepositoryPath("tests/Fonts/Sarabun-Regular.ttf");
+                this.text = "ภาษาไทยเป็นภาษาที่มีวรรณยุกต์และสระกำกับ";
+                this.direction = TextDirection.LeftToRight;
+                break;
+            case ShapeTextBenchmarkScenario.Hangul:
+                fontPath = GetRepositoryPath("tests/Fonts/NanumGothicCoding-Regular.ttf");
+                this.text = "한글을 사랑합니다 대한민국 한글";
+                this.direction = TextDirection.LeftToRight;
+                break;
+            case ShapeTextBenchmarkScenario.Devanagari:
+                fontPath = GetRepositoryPath("tests/Fonts/NotoSansDevanagari-Regular.ttf");
+                this.text = "क्षत्रिय द्वारा प्रकृति की रक्षा कर्तव्य है";
+                this.direction = TextDirection.LeftToRight;
+                break;
+            case ShapeTextBenchmarkScenario.Khmer:
+                fontPath = GetRepositoryPath("tests/Fonts/NotoSansKhmer-Regular.ttf");
+                this.text = "ភាសាខ្មែរមានស្រៈ និងជើងព្យញ្ជនៈច្រើន";
+                this.direction = TextDirection.LeftToRight;
+                break;
+            case ShapeTextBenchmarkScenario.Myanmar:
+                fontPath = GetRepositoryPath("tests/Fonts/NotoSansMyanmar-Regular.ttf");
+                this.text = "မြန်မာစာ စမ်းသပ်မှု။ ဗျည်းပေါင်းစုံ က ခ ဂ ဃ င စ ဆ ည့် န့်";
+                this.direction = TextDirection.LeftToRight;
+                break;
+            case ShapeTextBenchmarkScenario.MyanmarZawgyi:
+                fontPath = GetRepositoryPath("tests/harfbuzz/test/shape/data/in-house/fonts/ab14b4eb9d7a67e293f51d30d719add06c9d6e06.ttf");
+                this.text = "\u1000\u103A\u1004\u1037\u1039\u1041 \u1000\u103A\u1004\u1037\u1039\u1041 \u1000\u103A\u1004\u1037\u1039\u1041 \u1000\u103A\u1004\u1037\u1039\u1041";
+                this.direction = TextDirection.LeftToRight;
+                this.shapingBuffer.Script = ScriptClass.MyanmarZawgyi;
+                this.hbScriptOverride = HBScript.Parse("Qaag");
+                break;
+            case ShapeTextBenchmarkScenario.Balinese:
+                fontPath = GetRepositoryPath("tests/Fonts/NotoSansBalinese-Regular.ttf");
+                this.text = "\u1B13\u1B44\u1B13\u1B3C \u1B1B\u1B44\u1B13\u1B38\u1B00 \u1B13\u1B44\u1B31\u1B3A \u1B13\u1B36\u1B3E";
+                this.direction = TextDirection.LeftToRight;
+                break;
+            default:
+                throw new InvalidOperationException($"Unknown shaping benchmark scenario '{this.Scenario}'.");
         }
 
         this.font = new FontCollection().Add(fontPath).CreateFont(16);
@@ -130,6 +213,13 @@ public class ShapeTextBenchmark : IDisposable
     {
         this.buffer.Reset();
         this.buffer.AddUtf16(this.text);
+        if (this.hbScriptOverride.HasValue)
+        {
+            // Zawgyi and ordinary Myanmar use the same Unicode characters, so the
+            // explicit Qaag property is the only way to select the Zawgyi shaper.
+            this.buffer.Script = this.hbScriptOverride.Value;
+        }
+
         this.buffer.GuessSegmentProperties();
         this.hbFont!.Shape(this.buffer);
 
@@ -155,12 +245,12 @@ public class ShapeTextBenchmark : IDisposable
     }
 
     /// <summary>
-    /// Resolves a test font path by walking up from the benchmark output directory to
-    /// the repository root.
+    /// Resolves a repository-relative path by walking up from the benchmark output
+    /// directory to the repository root.
     /// </summary>
-    /// <param name="fileName">The font file name within tests/Fonts.</param>
+    /// <param name="relativePath">The path relative to the repository root.</param>
     /// <returns>The full font path.</returns>
-    private static string GetFontPath(string fileName)
+    private static string GetRepositoryPath(string relativePath)
     {
         DirectoryInfo? directory = new(AppContext.BaseDirectory);
         while (directory != null && !File.Exists(Path.Combine(directory.FullName, "SixLabors.Fonts.sln")))
@@ -173,6 +263,6 @@ public class ShapeTextBenchmark : IDisposable
             throw new IOException("Unable to locate the repository root.");
         }
 
-        return Path.Combine(directory.FullName, "tests", "Fonts", fileName);
+        return Path.Combine(directory.FullName, relativePath);
     }
 }

@@ -140,7 +140,7 @@ public class TextRenderer
             // scaled region. Inflating by the scaled line height for the glyph's orientation
             // gives em-box anchored decorations the same tolerance culled text receives, and
             // rejecting here also skips creating the per-glyph text run below.
-            FontRectangle box = metrics.GetBoundingBox(glyphLayoutMode, origin, options.Font.Size, null, Vector2.Zero);
+            FontRectangle box = metrics.GetBoundingBox(glyphLayoutMode, origin, options.Font.Size, null, Vector2.Zero, new Vector2(metrics.AdvanceWidth, metrics.AdvanceHeight));
             IMetricsHeader metricsHeader = glyphLayoutMode == GlyphLayoutMode.Vertical
                 ? fontMetrics.VerticalMetrics
                 : fontMetrics.HorizontalMetrics;
@@ -167,6 +167,7 @@ public class TextRenderer
             glyphLayoutMode,
             textRun,
             Vector2.Zero,
+            new Vector2(metrics.AdvanceWidth, metrics.AdvanceHeight),
             options.Font.Size,
             options.Dpi,
             options.HintingMode,
@@ -222,6 +223,9 @@ public class TextRenderer
         ReadOnlySpan<int> lineEnds = buffer.LineEnds;
         Vector2 baselineOrigin = options.Origin;
         int originalGraphemeIndex = options.GraphemeIndex;
+
+        // Shaped values are already scaled by Font.Size and remain in point units.
+        // Convert points to device pixels here exactly once.
         float scale = options.Dpi / 72F;
 
         try
@@ -240,7 +244,9 @@ public class TextRenderer
                         baselineOrigin.X + ((penX + glyph.Offset.X) * scale),
                         baselineOrigin.Y - ((penY + glyph.Offset.Y) * scale));
 
-                    options.GraphemeIndex = originalGraphemeIndex + glyph.CodePointIndex;
+                    // Every glyph produced by one grapheme repeats its grapheme
+                    // index, preserving cluster identity through renderer callbacks.
+                    options.GraphemeIndex = originalGraphemeIndex + glyph.GraphemeIndex;
                     this.Render(glyph.GlyphId, options);
 
                     penX += glyph.AdvanceWidth;
@@ -250,6 +256,9 @@ public class TextRenderer
             else
             {
                 FontMetrics fontMetrics = options.Font.FontMetrics;
+
+                // Hard line breaks reset the shaping pen. Baseline progression is
+                // a rendering concern, so derive it here from the supplied font and DPI.
                 float lineAdvance = fontMetrics.HorizontalMetrics.LineHeight * options.Font.Size * options.Dpi / fontMetrics.ScaleFactor;
                 float baselineY = baselineOrigin.Y;
                 int glyphStart = 0;
@@ -268,7 +277,7 @@ public class TextRenderer
                             baselineOrigin.X + ((penX + glyph.Offset.X) * scale),
                             baselineY - ((penY + glyph.Offset.Y) * scale));
 
-                        options.GraphemeIndex = originalGraphemeIndex + glyph.CodePointIndex;
+                        options.GraphemeIndex = originalGraphemeIndex + glyph.GraphemeIndex;
                         this.Render(glyph.GlyphId, options);
 
                         penX += glyph.AdvanceWidth;
@@ -282,6 +291,8 @@ public class TextRenderer
         }
         finally
         {
+            // GlyphOptions is caller-owned and temporarily reused to avoid creating
+            // one options object per glyph. Restore every mutated value on all exits.
             options.Origin = baselineOrigin;
             options.GraphemeIndex = originalGraphemeIndex;
         }

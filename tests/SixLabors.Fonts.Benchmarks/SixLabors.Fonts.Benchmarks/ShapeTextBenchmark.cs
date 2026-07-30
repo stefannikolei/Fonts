@@ -193,7 +193,7 @@ public class ShapeTextBenchmark : IDisposable
         // put a branch inside the measured region that the HarfBuzz side does not
         // pay, leaving the two sides doing different work.
         this.shapingBuffer.Add(this.text);
-        this.shapingBuffer.Direction = this.direction;
+        this.shapingBuffer.TextDirection = this.direction;
         TextShaper.ShapeRun(this.font!, this.shapingBuffer);
 
         ReadOnlySpan<ShapedGlyph> glyphs = this.shapingBuffer.Glyphs;

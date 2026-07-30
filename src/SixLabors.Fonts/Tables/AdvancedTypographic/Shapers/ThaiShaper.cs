@@ -297,6 +297,9 @@ internal class ThaiShaper : DefaultShaper
                 buffer.MoveGlyph(i, target);
             }
 
+            int sourceStart = target > index ? target - 1 : target;
+            buffer.CombineInputStarts(sourceStart, i + 2);
+
             // Skip past SARA AA.
             i++;
         }

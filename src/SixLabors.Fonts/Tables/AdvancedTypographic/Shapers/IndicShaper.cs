@@ -607,6 +607,7 @@ internal sealed class IndicShaper : DefaultShaper
                 && !buffer[start + 2].IsLigated
                 && buffer[start + 2].Syllable.IndicCategory == Categories.ZWJ)
             {
+                buffer.CombineInputStarts(start + 1, start + 3);
                 buffer.MoveGlyph(start + 2, start + 1);
             }
 
@@ -844,10 +845,15 @@ internal sealed class IndicShaper : DefaultShaper
                             }
                         }
 
-                        if (j > i && buffer[j].Syllable.IndicCategory != Categories.H)
+                        if (j > i)
                         {
-                            // Move Halant to after last consonant.
-                            buffer.MoveGlyph(i, j);
+                            // The old-spec sequence is one shaping input range even
+                            // when Kannada retains a final halant to avoid doubling it.
+                            buffer.CombineInputStarts(i, j + 1);
+                            if (buffer[j].Syllable.IndicCategory != Categories.H)
+                            {
+                                buffer.MoveGlyph(i, j);
+                            }
                         }
 
                         break;
@@ -1425,7 +1431,19 @@ internal sealed class IndicShaper : DefaultShaper
                             }
 
                             buffer.MoveGlyph(oldPos, newPos);
+                            buffer.CombineInputStarts(newPos, Math.Min(end, basePosition + 1));
                             newPos--;
+                        }
+                    }
+                }
+                else
+                {
+                    for (int i = start; i < basePosition; i++)
+                    {
+                        if (buffer[i].Syllable.IndicPosition == Positions.Pre_M)
+                        {
+                            buffer.CombineInputStarts(i, Math.Min(end, basePosition + 1));
+                            break;
                         }
                     }
                 }
@@ -1575,6 +1593,7 @@ internal sealed class IndicShaper : DefaultShaper
 
                 if (newRephPos != start)
                 {
+                    buffer.CombineInputStarts(start, newRephPos + 1);
                     buffer.MoveGlyph(start, newRephPos);
                 }
 
@@ -1648,6 +1667,7 @@ internal sealed class IndicShaper : DefaultShaper
                                 }
                             }
 
+                            buffer.CombineInputStarts(newPos, i + 1);
                             buffer.MoveGlyph(i, newPos);
 
                             if (newPos <= basePosition && basePosition < i)

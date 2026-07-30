@@ -81,6 +81,7 @@ public partial class TrueTypeGlyphMetrics : FontGlyphMetrics
         GlyphLayoutMode mode,
         TextRun? textRun,
         Vector2 positionOffset,
+        Vector2 positionedAdvance,
         float scaledPPEM,
         HintingMode hintingMode)
     {

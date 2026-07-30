@@ -20,6 +20,12 @@ internal abstract class BaseShaper
     public ShapePlanFeatures Features { get; } = new();
 
     /// <summary>
+    /// Gets or sets the user-specified feature tags for the shaping segments
+    /// owned by this plan.
+    /// </summary>
+    public IReadOnlyList<Tag> FeatureTags { get; set; } = Array.Empty<Tag>();
+
+    /// <summary>
     /// Gets a value indicating whether the first planning pass has collected the
     /// plan's feature registrations. Registration is deterministic for a plan's
     /// identity, so later passes replay the collected masks instead of

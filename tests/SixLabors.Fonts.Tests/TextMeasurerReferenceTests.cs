@@ -168,12 +168,20 @@ public class TextMeasurerReferenceTests
     public void GetGlyphMetrics_Hi_Pinned()
     {
         const string text = "Hi!";
+
+        // Resolve identity independently through the font cmap so the pinned
+        // metrics verify the glyph selected for each source character.
+        Assert.True(Font.TryGetGlyphId(new CodePoint('H'), out ushort hGlyphId));
+        Assert.True(Font.TryGetGlyphId(new CodePoint('i'), out ushort iGlyphId));
+        Assert.True(Font.TryGetGlyphId(new CodePoint('!'), out ushort exclamationGlyphId));
+
         ReadOnlySpan<GlyphMetrics> metrics = TextMeasurer.GetGlyphMetrics(text, Options()).Span;
 
         GlyphMetrics[] expected =
         [
             new(
                 new CodePoint('H'),
+                hGlyphId,
                 new FontRectangle(0, 0, 8.8477f, 12f),
                 new FontRectangle(1.1719f, 2.0889f, 6.4922f, 8.5664f),
                 new FontRectangle(0f, 0f, 8.8477f, 12f),
@@ -182,6 +190,7 @@ public class TextMeasurerReferenceTests
                 0),
             new(
                 new CodePoint('i'),
+                iGlyphId,
                 new FontRectangle(8.8477f, 0, 3.0293f, 12f),
                 new FontRectangle(9.7852f, 1.8311f, 1.1719f, 8.8242f),
                 new FontRectangle(8.8477f, 0f, 3.0293f, 12f),
@@ -190,6 +199,7 @@ public class TextMeasurerReferenceTests
                 1),
             new(
                 new CodePoint('!'),
+                exclamationGlyphId,
                 new FontRectangle(11.877f, 0, 3.1699f, 12f),
                 new FontRectangle(12.7559f, 2.0889f, 1.3945f, 8.7305f),
                 new FontRectangle(11.877f, 0f, 3.1699f, 12f),
@@ -417,6 +427,7 @@ public class TextMeasurerReferenceTests
             GlyphMetrics e = expected[i];
             GlyphMetrics a = actual[i];
             Assert.Equal(e.CodePoint, a.CodePoint);
+            Assert.Equal(e.GlyphId, a.GlyphId);
             Assert.Equal(e.GraphemeIndex, a.GraphemeIndex);
             Assert.Equal(e.StringIndex, a.StringIndex);
             Assert.Equal(e.Advance, a.Advance, Comparer);

@@ -248,7 +248,7 @@ internal class GPosTable : Table
             }
 
             Tag unicodeScriptTag = this.GetUnicodeScriptTag(run.Script);
-            ShapePlan shapePlan = buffer.GetOrCreatePlan(run.Script, unicodeScriptTag, fontMetrics, run.Culture);
+            ShapePlan shapePlan = buffer.GetOrCreatePlan(run.Script, unicodeScriptTag, fontMetrics, run.Culture, run.FeatureTags);
 
             // Plan positioning features for each glyph. Records seeded across buffers
             // had their feature registrations cleared, so this pass re-plans.
@@ -664,7 +664,8 @@ internal class GPosTable : Table
         int end = index + count;
         int currentIndex = index;
         int increment = 1;
-        if (buffer[index].Direction == TextDirection.RightToLeft)
+        if (!buffer.TextOptions.LayoutMode.IsVertical()
+            && buffer[index].Direction == TextDirection.RightToLeft)
         {
             currentIndex = end - 1;
             end = index - 1;
@@ -736,10 +737,37 @@ internal class GPosTable : Table
             if (position.MarkAttachment != -1)
             {
                 int j = position.MarkAttachment;
+                bool isVertical = AdvancedTypographicUtils.IsVerticalGlyph(buffer[currentIndex].CodePoint, buffer.TextOptions.LayoutMode);
+                if (isVertical)
+                {
+                    GetVerticalOrigin(buffer.MetricsAt(currentIndex).Metrics, buffer.UseShapingVerticalOrigin, out int markOriginX, out int markOriginY);
+                    GetVerticalOrigin(buffer.MetricsAt(j).Metrics, buffer.UseShapingVerticalOrigin, out int baseOriginX, out int baseOriginY);
+
+                    // OpenType mark attachment replaces the mark offset with its
+                    // anchor delta. Origins are applied only when the result is
+                    // consumed, so exchange the child origin for the parent's here.
+                    // The pass policy keeps public shaping aligned with shaping
+                    // engines while layout retains the browser fallback.
+                    position.Bounds.X += markOriginX - baseOriginX;
+                    position.Bounds.Y += markOriginY - baseOriginY;
+                }
+
                 position.Bounds.X += buffer.PositionAt(j).Bounds.X;
                 position.Bounds.Y += buffer.PositionAt(j).Bounds.Y;
 
-                if (buffer[currentIndex].Direction == TextDirection.LeftToRight)
+                if (isVertical)
+                {
+                    for (int k = j; k < currentIndex; k++)
+                    {
+                        // Vertical positions store the magnitude of the downward
+                        // advance, while the shaping coordinate system publishes its
+                        // Y-up equivalent as a negative value. Subtracting that signed
+                        // advance therefore adds the stored height.
+                        position.Bounds.X -= buffer.PositionAt(k).Bounds.Width;
+                        position.Bounds.Y += buffer.PositionAt(k).Bounds.Height;
+                    }
+                }
+                else if (buffer[currentIndex].Direction == TextDirection.LeftToRight)
                 {
                     for (int k = j; k < currentIndex; k++)
                     {
@@ -757,6 +785,35 @@ internal class GPosTable : Table
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Gets the vertical origin for a glyph in font design units.
+    /// </summary>
+    /// <param name="metrics">The glyph metrics.</param>
+    /// <param name="useShapingVerticalOrigin">Whether to use the public shaping fallback when the font has no authored vertical origin.</param>
+    /// <param name="x">The horizontal origin.</param>
+    /// <param name="y">The vertical origin.</param>
+    private static void GetVerticalOrigin(FontGlyphMetrics metrics, bool useShapingVerticalOrigin, out int x, out int y)
+    {
+        // OpenType vertical origins are horizontally centered on the glyph's
+        // nominal horizontal advance, using integer division in font units.
+        x = metrics.AdvanceWidth / 2;
+
+        VerticalMetrics verticalMetrics = metrics.FontMetrics.VerticalMetrics;
+        if (verticalMetrics.Synthesized && useShapingVerticalOrigin)
+        {
+            // Public shaping follows the shaping-engine fallback by centering each
+            // glyph's extents within the font's ascender-to-descender height.
+            float fontAdvance = verticalMetrics.Ascender - verticalMetrics.Descender;
+            y = (int)(metrics.Bounds.Max.Y + MathF.Floor((fontAdvance - metrics.Height) * .5F));
+            return;
+        }
+
+        // Authored origins are shared by both contracts. When tables are absent,
+        // synthesized TopSideBearing resolves to the font-ascent origin used by
+        // browsers for layout and painting.
+        y = (int)(metrics.Bounds.Max.Y + metrics.TopSideBearing);
     }
 
     /// <summary>

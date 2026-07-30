@@ -472,7 +472,7 @@ public static partial class Generator
         Dictionary<int, Codepoint> byCode = new(codePoints.Length);
         foreach (Codepoint codePoint in codePoints)
         {
-            byCode.TryAdd(codePoint.Code, codePoint);
+            _ = byCode.TryAdd(codePoint.Code, codePoint);
         }
 
         Regex regex = IndicPropertyRowRegex();

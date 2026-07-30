@@ -604,6 +604,7 @@ internal sealed class UniversalShaper : DefaultShaper
                             i--;
                         }
 
+                        buffer.CombineInputStarts(start, i + 1);
                         buffer.MoveGlyph(start, i);
                         break;
                     }
@@ -629,6 +630,7 @@ internal sealed class UniversalShaper : DefaultShaper
                     && current.LigatureComponent <= 0
                     && j < i)
                 {
+                    buffer.CombineInputStarts(j, i + 1);
                     buffer.MoveGlyph(i, j);
                 }
             }

@@ -462,12 +462,25 @@ internal sealed class MyanmarShaper : DefaultShaper
             }
         }
 
-        buffer.Sort(start, end, (a, b) =>
+        // HarfBuzz's Myanmar stable sort merges the complete source range crossed
+        // by each moved char. Keep that merge beside the movement: the general
+        // ShapingBuffer sort deliberately preserves separate codepoint identities
+        // for shapers whose reordering rules do not merge every moved range.
+        for (int i = start + 1; i < end; i++)
         {
-            int pa = (int)a.Syllable.IndicPosition;
-            int pb = (int)b.Syllable.IndicPosition;
-            return pa - pb;
-        });
+            int j = i;
+            Positions position = buffer[i].Syllable.IndicPosition;
+            while (j > start && buffer[j - 1].Syllable.IndicPosition > position)
+            {
+                j--;
+            }
+
+            if (i != j)
+            {
+                buffer.CombineInputStarts(j, i + 1);
+                buffer.MoveGlyph(i, j);
+            }
+        }
 
         // Flip left-matra sequence.
         int firstLeftMatra = end;

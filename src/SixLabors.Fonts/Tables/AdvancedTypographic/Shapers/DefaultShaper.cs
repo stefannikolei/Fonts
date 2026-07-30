@@ -155,9 +155,11 @@ internal class DefaultShaper : BaseShaper
     private readonly KerningMode kerningMode;
 
     /// <summary>
-    /// The user-specified feature tags from the text options.
+    /// Whether layout will add tracking after shaping. Optional ligatures and
+    /// contextual alternates must stay off so spacing can be applied at every
+    /// grapheme boundary.
     /// </summary>
-    private readonly IReadOnlyList<Tag> featureTags;
+    private readonly bool hasTracking;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DefaultShaper"/> class with PostGpos mark zeroing.
@@ -181,7 +183,7 @@ internal class DefaultShaper : BaseShaper
         this.MarkZeroingMode = markZeroingMode;
         this.FallbackMarkPositioning = true;
         this.kerningMode = textOptions.KerningMode;
-        this.featureTags = textOptions.FeatureTags;
+        this.hasTracking = textOptions.Tracking != 0;
     }
 
     /// <inheritdoc />
@@ -340,9 +342,17 @@ internal class DefaultShaper : BaseShaper
         if (!isVerticalLayout)
         {
             // Add horizontal features.
-            this.EnableFeature(buffer, index, count, CaltTag);
-            this.EnableFeature(buffer, index, count, CligTag);
-            this.EnableFeature(buffer, index, count, LigaTag);
+            if (!this.hasTracking)
+            {
+                // Browsers disable these optional substitutions for non-zero letter
+                // spacing because they can erase boundaries where spacing is applied.
+                // Mandatory script shaping stays enabled, and an explicit feature
+                // below can opt an optional substitution in.
+                this.EnableFeature(buffer, index, count, CaltTag);
+                this.EnableFeature(buffer, index, count, CligTag);
+                this.EnableFeature(buffer, index, count, LigaTag);
+            }
+
             this.EnableFeature(buffer, index, count, RcltTag);
             this.EnableFeature(buffer, index, count, CursTag);
             this.EnableFeature(buffer, index, count, DistTag);
@@ -369,8 +379,9 @@ internal class DefaultShaper : BaseShaper
         this.AddFeature(buffer, index, count, NumrTag, false);
         this.AddFeature(buffer, index, count, DnomTag, false);
 
-        // Add user defined features.
-        foreach (Tag feature in this.featureTags)
+        // Apply user features after defaults so an explicit tag can restore an
+        // optional feature that tracking disabled above.
+        foreach (Tag feature in this.FeatureTags)
         {
             if (feature == FracTag || feature == NumrTag || feature == DnomTag)
             {

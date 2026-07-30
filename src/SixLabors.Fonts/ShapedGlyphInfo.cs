@@ -35,6 +35,11 @@ internal enum ShapedGlyphFlags : byte
     /// A vertical alternate feature changed the glyph.
     /// </summary>
     VerticalSubstituted = 8,
+
+    /// <summary>
+    /// Tracking must preserve the glyph's cursive shaping run.
+    /// </summary>
+    CursiveScript = 16,
 }
 
 /// <summary>
@@ -118,4 +123,9 @@ internal readonly struct ShapedGlyphInfo
     /// Gets a value indicating whether a vertical alternate feature changed the glyph.
     /// </summary>
     public bool IsVerticalSubstituted => (this.Flags & ShapedGlyphFlags.VerticalSubstituted) != 0;
+
+    /// <summary>
+    /// Gets a value indicating whether tracking must preserve the glyph's cursive shaping run.
+    /// </summary>
+    public bool IsCursiveScript => (this.Flags & ShapedGlyphFlags.CursiveScript) != 0;
 }

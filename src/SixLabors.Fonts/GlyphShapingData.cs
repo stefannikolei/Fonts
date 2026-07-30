@@ -4,7 +4,6 @@
 using System.Diagnostics;
 using SixLabors.Fonts.Tables.AdvancedTypographic;
 using SixLabors.Fonts.Unicode;
-using static SixLabors.Fonts.Unicode.Resources.IndicShapingData;
 
 namespace SixLabors.Fonts;
 
@@ -16,14 +15,12 @@ namespace SixLabors.Fonts;
 [DebuggerDisplay("{DebuggerDisplay,nq}")]
 internal struct GlyphShapingData
 {
-#pragma warning disable SA1401 // Fields exposed so shaping mutates embedded values in place.
     /// <summary>
     /// The syllable classification assigned by the complex-script shapers, stored by
     /// value so classification never allocates. A <see cref="SyllableInfo.Type"/> of
     /// <see cref="SyllableType.None"/> means no classification has been assigned.
     /// </summary>
     public SyllableInfo Syllable;
-#pragma warning restore SA1401
 
     /// <summary>
     /// The <see cref="flags"/> bit recording <see cref="IsLigated"/>.
@@ -91,6 +88,12 @@ internal struct GlyphShapingData
     private const ushort RepeatingStretchFlag = 1 << 13;
 
     /// <summary>
+    /// The <see cref="flags"/> bit recording that tracking must preserve this
+    /// glyph's cursive shaping run.
+    /// </summary>
+    private const ushort CursiveScriptFlag = 1 << 14;
+
+    /// <summary>
     /// The <see cref="flags"/> bits reserved for the script-specific mark-order override.
     /// </summary>
     private const ushort MarkOrderFlags = MarkOrder22Flag | MarkOrder26Flag;
@@ -155,8 +158,8 @@ internal struct GlyphShapingData
     public GlyphShapingData(ushort textRunIndex)
     {
         this.TextRunIndex = textRunIndex;
-        this.RegisteredFeatureMask = Tables.AdvancedTypographic.ShapePlanFeatures.GlobalFeatureMask;
-        this.FeatureMask = Tables.AdvancedTypographic.ShapePlanFeatures.GlobalFeatureMask;
+        this.RegisteredFeatureMask = ShapePlanFeatures.GlobalFeatureMask;
+        this.FeatureMask = ShapePlanFeatures.GlobalFeatureMask;
     }
 
     /// <summary>
@@ -168,6 +171,7 @@ internal struct GlyphShapingData
     {
         this.GlyphId = data.GlyphId;
         this.CodePointIndex = data.CodePointIndex;
+        this.StringIndex = data.StringIndex;
         this.GraphemeIndex = data.GraphemeIndex;
         this.CodePoint = data.CodePoint;
         this.CodePointCount = data.CodePointCount;
@@ -188,6 +192,7 @@ internal struct GlyphShapingData
         this.MarkOrderOverride = data.MarkOrderOverride;
         this.IsFixedStretch = data.IsFixedStretch;
         this.IsRepeatingStretch = data.IsRepeatingStretch;
+        this.IsCursiveScript = data.IsCursiveScript;
 
         this.Syllable = data.Syllable;
 
@@ -198,8 +203,8 @@ internal struct GlyphShapingData
         }
         else
         {
-            this.RegisteredFeatureMask = Tables.AdvancedTypographic.ShapePlanFeatures.GlobalFeatureMask;
-            this.FeatureMask = Tables.AdvancedTypographic.ShapePlanFeatures.GlobalFeatureMask;
+            this.RegisteredFeatureMask = ShapePlanFeatures.GlobalFeatureMask;
+            this.FeatureMask = ShapePlanFeatures.GlobalFeatureMask;
         }
 
         this.AppliedFeatureMask = data.AppliedFeatureMask;
@@ -213,7 +218,7 @@ internal struct GlyphShapingData
     /// </summary>
     public ushort GlyphId
     {
-        get => this.glyphId;
+        readonly get => this.glyphId;
         set
         {
             if (this.glyphId != value)
@@ -255,6 +260,12 @@ internal struct GlyphShapingData
     /// leading codepoint this glyph represents.
     /// </summary>
     public int CodePointIndex { get; set; }
+
+    /// <summary>
+    /// Gets or sets the zero-based char index in the original text represented by
+    /// this glyph.
+    /// </summary>
+    public int StringIndex { get; set; }
 
     /// <summary>
     /// Gets or sets the zero-based index of the grapheme this glyph belongs to. The
@@ -335,7 +346,7 @@ internal struct GlyphShapingData
     /// <summary>
     /// Gets or sets the mask of features a shaper has registered for this glyph, enabled
     /// or not. Bits are assigned by the owning plan's
-    /// <see cref="Tables.AdvancedTypographic.ShapePlanFeatures"/>. Enabling a feature
+    /// <see cref="ShapePlanFeatures"/>. Enabling a feature
     /// only ever reveals a registered bit; a feature that was never registered for the
     /// glyph cannot be enabled.
     /// </summary>
@@ -396,8 +407,18 @@ internal struct GlyphShapingData
     }
 
     /// <summary>
+    /// Gets or sets a value indicating whether tracking must preserve the glyph's
+    /// cursive shaping run.
+    /// </summary>
+    public bool IsCursiveScript
+    {
+        readonly get => (this.flags & CursiveScriptFlag) != 0;
+        set => this.flags = value ? (ushort)(this.flags | CursiveScriptFlag) : (ushort)(this.flags & ~CursiveScriptFlag);
+    }
+
+    /// <summary>
     /// Gets or sets a value indicating whether this glyph represents an inline placeholder.
-    /// A placeholder's bidi run lives on the buffer, keyed by codepoint offset.
+    /// A placeholder's bidi run lives on the buffer, keyed by codepoint index.
     /// </summary>
     public bool IsPlaceholder
     {
@@ -485,7 +506,7 @@ internal struct GlyphShapingData
     public readonly int MarkOrderingClass
         => this.MarkOrderOverride is int order and not 0 ? order : CodePoint.GetMarkOrderingClass(this.CodePoint);
 
-    private string DebuggerDisplay
+    private readonly string DebuggerDisplay
         => FormattableString
         .Invariant($" {this.GlyphId} : {this.CodePoint.ToDebuggerDisplay()} : {CodePoint.GetScriptClass(this.CodePoint)} : {this.Direction} : run {this.TextRunIndex} : {this.LigatureId} : {this.LigatureComponent} : {this.IsDecomposed}");
 
@@ -498,9 +519,9 @@ internal struct GlyphShapingData
     /// </summary>
     public void ClearFeatures()
     {
-        this.RegisteredFeatureMask = Tables.AdvancedTypographic.ShapePlanFeatures.GlobalFeatureMask;
-        this.FeatureMask = Tables.AdvancedTypographic.ShapePlanFeatures.GlobalFeatureMask;
+        this.RegisteredFeatureMask = ShapePlanFeatures.GlobalFeatureMask;
+        this.FeatureMask = ShapePlanFeatures.GlobalFeatureMask;
     }
 
-    public string ToDebuggerDisplay() => this.DebuggerDisplay;
+    public readonly string ToDebuggerDisplay() => this.DebuggerDisplay;
 }

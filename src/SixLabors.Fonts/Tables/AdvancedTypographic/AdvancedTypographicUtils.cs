@@ -1138,10 +1138,13 @@ internal static class AdvancedTypographicUtils
             }
 
             ref GlyphShapingPosition position = ref buffer.PositionAt(i);
-            if (adjustOffsets && data.Direction == TextDirection.LeftToRight)
+            if (adjustOffsets
+                && (data.Direction == TextDirection.LeftToRight || buffer.TextOptions.LayoutMode.IsVertical()))
             {
-                // With no positioning table, a forward-flowing mark hangs over
-                // the preceding glyph after its advance is removed.
+                // With no positioning table, a forward-flowing mark hangs over the
+                // preceding glyph after its advance is removed. Browsers normalize
+                // bottom-to-top runs to forward top-to-bottom shaping, so pure
+                // vertical layout follows the same offset adjustment.
                 position.Bounds.X -= position.Bounds.Width;
                 position.Bounds.Y -= position.Bounds.Height;
             }

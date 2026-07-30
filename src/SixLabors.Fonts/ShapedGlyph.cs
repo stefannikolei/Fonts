@@ -19,14 +19,16 @@ public readonly struct ShapedGlyph
     /// Initializes a new instance of the <see cref="ShapedGlyph"/> struct.
     /// </summary>
     /// <param name="glyphId">The glyph identifier within the font.</param>
-    /// <param name="codePointIndex">The index of the character the glyph came from.</param>
+    /// <param name="stringIndex">The index of the first input <see cref="char"/> represented by the glyph.</param>
+    /// <param name="graphemeIndex">The grapheme index represented by the glyph.</param>
     /// <param name="advanceWidth">The scaled horizontal advance.</param>
     /// <param name="advanceHeight">The scaled vertical advance.</param>
     /// <param name="offset">The scaled placement offset.</param>
-    internal ShapedGlyph(ushort glyphId, int codePointIndex, float advanceWidth, float advanceHeight, Vector2 offset)
+    internal ShapedGlyph(ushort glyphId, int stringIndex, int graphemeIndex, float advanceWidth, float advanceHeight, Vector2 offset)
     {
         this.GlyphId = glyphId;
-        this.CodePointIndex = codePointIndex;
+        this.StringIndex = stringIndex;
+        this.GraphemeIndex = graphemeIndex;
         this.AdvanceWidth = advanceWidth;
         this.AdvanceHeight = advanceHeight;
         this.Offset = offset;
@@ -40,15 +42,18 @@ public readonly struct ShapedGlyph
     public ushort GlyphId { get; }
 
     /// <summary>
-    /// Gets the index into the run's text of the first character this glyph came
-    /// from.
+    /// Gets the zero-based index of the first input <see cref="char"/> represented
+    /// by this glyph.
     /// </summary>
     /// <remarks>
-    /// Glyphs that came from the same characters carry the same value: several
-    /// characters that merged into one glyph, and several glyphs that came from one
-    /// character, are both read from the values repeating.
+    /// Glyphs produced from the same input chars share this value.
     /// </remarks>
-    public int CodePointIndex { get; }
+    public int StringIndex { get; }
+
+    /// <summary>
+    /// Gets the zero-based grapheme index in the input text.
+    /// </summary>
+    public int GraphemeIndex { get; }
 
     /// <summary>
     /// Gets the scaled horizontal advance after positioning features have been

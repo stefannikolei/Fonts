@@ -140,16 +140,16 @@ internal sealed class ShapePlan
     /// <param name="script">The script class the plan shapes.</param>
     /// <param name="scriptTag">The resolved OpenType script tag.</param>
     /// <param name="textOptions">The options whose values the shaper captures.</param>
+    /// <param name="featureTags">The additional feature tags for the plan's shaping runs.</param>
     /// <param name="languageTags">The language system candidates to resolve under.</param>
     /// <returns>The built <see cref="ShapePlan"/>.</returns>
-    public static ShapePlan Build(
-        FontMetrics fontMetrics,
-        ScriptClass script,
-        Tag scriptTag,
-        TextOptions textOptions,
-        Tag[] languageTags)
+    public static ShapePlan Build(FontMetrics fontMetrics, ScriptClass script, Tag scriptTag, TextOptions textOptions, IReadOnlyList<Tag> featureTags, Tag[] languageTags)
     {
         BaseShaper shaper = ShaperFactory.Create(script, scriptTag, fontMetrics, textOptions, languageTags);
+
+        // A TextRun list replaces the whole-text feature list. Assign the already
+        // resolved list before planning so GSUB and GPOS use the same features.
+        shaper.FeatureTags = featureTags;
         List<ShapingStage> stages = shaper.GetShapingStages();
 
         _ = fontMetrics.TryGetGSubTable(out GSubTable? gsubTable);

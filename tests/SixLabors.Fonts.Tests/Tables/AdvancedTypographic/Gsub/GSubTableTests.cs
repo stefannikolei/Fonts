@@ -466,6 +466,48 @@ public partial class GSubTableTests
         }
     }
 
+    /// <summary>
+    /// Verifies that an explicit run feature list replaces the whole-text list
+    /// without affecting adjacent text.
+    /// </summary>
+    [Fact]
+    public void TextRunFeatureTags_OverrideTextOptionsFeatureTags()
+    {
+        Font font = TestFonts.GetFont(TestFonts.EbGaramond, 12);
+        const string text = "123456";
+
+        ColorGlyphRenderer oldStyle = new();
+        TextRenderer.RenderTo(oldStyle, text, new TextOptions(font)
+        {
+            FeatureTags = [KnownFeatureTags.OldstyleFigures]
+        });
+
+        ColorGlyphRenderer normal = new();
+        TextRenderer.RenderTo(normal, text, new TextOptions(font));
+
+        ColorGlyphRenderer mixed = new();
+        TextRenderer.RenderTo(mixed, text, new TextOptions(font)
+        {
+            FeatureTags = [KnownFeatureTags.OldstyleFigures],
+            TextRuns =
+            [
+                new TextRun
+                {
+                    Start = 3,
+                    End = 6,
+                    FeatureTags = []
+                }
+            ]
+        });
+
+        Assert.Equal(text.Length, mixed.GlyphKeys.Count);
+        for (int i = 0; i < mixed.GlyphKeys.Count; i++)
+        {
+            ushort expected = i < 3 ? oldStyle.GlyphKeys[i].GlyphId : normal.GlyphKeys[i].GlyphId;
+            Assert.Equal(expected, mixed.GlyphKeys[i].GlyphId);
+        }
+    }
+
     [Fact]
     public void BillionLaughsAttackDoesNotThrowException()
     {

@@ -156,6 +156,7 @@ public class TextMetricsTests
             GlyphMetrics e = expected[i];
             GlyphMetrics a = actual[i];
             Assert.Equal(e.CodePoint, a.CodePoint);
+            Assert.Equal(e.GlyphId, a.GlyphId);
             Assert.Equal(e.GraphemeIndex, a.GraphemeIndex);
             Assert.Equal(e.StringIndex, a.StringIndex);
             Assert.Equal(e.Advance, a.Advance, Comparer);

@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using SixLabors.Fonts.Tables.AdvancedTypographic;
 using SixLabors.Fonts.Unicode;
 
 namespace SixLabors.Fonts;
@@ -47,6 +48,13 @@ public class TextRun
     /// text options.
     /// </summary>
     public CultureInfo? Culture { get; set; }
+
+    /// <summary>
+    /// Gets or sets the additional shaping features for this run, or
+    /// <see langword="null"/> to use those supplied by the owning text options.
+    /// A non-null empty collection applies no additional features to the run.
+    /// </summary>
+    public IReadOnlyList<Tag>? FeatureTags { get; set; }
 
     /// <summary>
     /// Gets or sets the text attributes applied to this run.

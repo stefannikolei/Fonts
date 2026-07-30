@@ -14,6 +14,7 @@ public readonly struct GlyphMetrics
     /// Initializes a new instance of the <see cref="GlyphMetrics"/> struct.
     /// </summary>
     /// <param name="codePoint">The Unicode code point represented by the glyph entry.</param>
+    /// <param name="glyphId">The glyph identifier within the entry's font.</param>
     /// <param name="advance">The positioned logical advance rectangle for the glyph entry in pixel units.</param>
     /// <param name="bounds">The rendered rectangle for the glyph entry in pixel units.</param>
     /// <param name="renderableBounds">The union of the positioned logical advance rectangle and rendered rectangle in pixel units.</param>
@@ -22,6 +23,7 @@ public readonly struct GlyphMetrics
     /// <param name="stringIndex">The UTF-16 index in the original text where the glyph entry begins.</param>
     internal GlyphMetrics(
         CodePoint codePoint,
+        ushort glyphId,
         in FontRectangle advance,
         in FontRectangle bounds,
         in FontRectangle renderableBounds,
@@ -30,6 +32,7 @@ public readonly struct GlyphMetrics
         int stringIndex)
     {
         this.CodePoint = codePoint;
+        this.GlyphId = glyphId;
         this.Advance = advance;
         this.Bounds = bounds;
         this.RenderableBounds = renderableBounds;
@@ -42,6 +45,11 @@ public readonly struct GlyphMetrics
     /// Gets the Unicode code point represented by the glyph entry.
     /// </summary>
     public CodePoint CodePoint { get; }
+
+    /// <summary>
+    /// Gets the glyph identifier within <see cref="Font"/>.
+    /// </summary>
+    public ushort GlyphId { get; }
 
     /// <summary>
     /// Gets the positioned logical advance rectangle for the glyph entry in pixel units.
@@ -75,5 +83,5 @@ public readonly struct GlyphMetrics
 
     /// <inheritdoc/>
     public override string ToString()
-        => $"CodePoint: {this.CodePoint}, Advance: {this.Advance}, Bounds: {this.Bounds}, RenderableBounds: {this.RenderableBounds}.";
+        => $"CodePoint: {this.CodePoint}, GlyphId: {this.GlyphId}, Advance: {this.Advance}, Bounds: {this.Bounds}, RenderableBounds: {this.RenderableBounds}.";
 }

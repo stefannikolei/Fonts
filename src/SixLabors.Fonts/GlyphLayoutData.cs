@@ -20,7 +20,7 @@ internal struct GlyphLayoutData
     /// <summary>
     /// Initializes a new instance of the <see cref="GlyphLayoutData"/> struct.
     /// </summary>
-    /// <param name="metrics">The shaped glyph metrics for this codepoint.</param>
+    /// <param name="metrics">The entry's contiguous slice of the line's shaped glyph storage.</param>
     /// <param name="font">The font used to shape and render this entry.</param>
     /// <param name="pointSize">The point size at which the glyph is rendered.</param>
     /// <param name="scaledAdvance">The scaled advance of this entry.</param>
@@ -39,7 +39,7 @@ internal struct GlyphLayoutData
     /// <param name="stringIndex">The UTF-16 character index in the source string.</param>
     /// <param name="hyphenationMarkerIndex">The marker index to use if this entry becomes a selected soft-hyphen break.</param>
     public GlyphLayoutData(
-        IReadOnlyList<PositionedGlyphMetrics> metrics,
+        ReadOnlyMemory<PositionedGlyphMetrics> metrics,
         Font font,
         float pointSize,
         float scaledAdvance,
@@ -81,12 +81,16 @@ internal struct GlyphLayoutData
     /// <summary>
     /// Gets the source codepoint for this entry.
     /// </summary>
-    public readonly CodePoint CodePoint => this.Metrics[0].Metrics.CodePoint;
+    public readonly CodePoint CodePoint => this.Metrics.Span[0].Metrics.CodePoint;
 
     /// <summary>
-    /// Gets the shaped glyph metrics produced for this codepoint (one codepoint may map to several glyphs).
+    /// Gets the entry's positioned glyphs as a contiguous slice of the line's shaped
+    /// glyph storage. The slice preserves the stored per-run visual glyph order the
+    /// shaper produced, so line composition and reordering move entries as whole
+    /// units and never rearrange the glyphs inside one. Generated entries such as
+    /// placeholders and markers reference their own single-glyph storage.
     /// </summary>
-    public IReadOnlyList<PositionedGlyphMetrics> Metrics { get; }
+    public ReadOnlyMemory<PositionedGlyphMetrics> Metrics { get; }
 
     /// <summary>
     /// Gets the font used to shape and render this entry.

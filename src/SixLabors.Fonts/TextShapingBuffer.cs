@@ -22,9 +22,9 @@ namespace SixLabors.Fonts;
 /// one directional run. An instance is not thread safe.
 /// </para>
 /// <para>
-/// Glyph identifiers and positions are specific to the <see cref="Font"/> supplied
-/// when shaping. Pass that same font in <see cref="GlyphOptions.Font"/> when
-/// measuring or rendering the shaped buffer.
+/// Glyph identifiers and positions are specific to the <see cref="Font"/> and
+/// <see cref="LayoutMode"/> used while shaping. Pass that same font and layout mode
+/// in the <see cref="GlyphOptions"/> used to measure or render the shaped buffer.
 /// </para>
 /// </remarks>
 public sealed class TextShapingBuffer
@@ -63,9 +63,9 @@ public sealed class TextShapingBuffer
 
     /// <summary>
     /// Gets or sets the base direction of a logical line, or the direction of a
-    /// directional run.
+    /// directional run. Defaults to <see cref="Fonts.TextDirection.Auto"/>.
     /// </summary>
-    public TextDirection Direction { get; set; } = TextDirection.LeftToRight;
+    public TextDirection TextDirection { get; set; } = TextDirection.Auto;
 
     /// <summary>
     /// Gets or sets the language the run is written in, which selects the language
@@ -78,6 +78,18 @@ public sealed class TextShapingBuffer
     /// <see langword="null"/> to infer scripts from the text.
     /// </summary>
     public ScriptClass? Script { get; set; }
+
+    /// <summary>
+    /// Gets or sets the layout mode used to select horizontal or vertical shaping.
+    /// Defaults to <see cref="Fonts.LayoutMode.HorizontalTopBottom"/>.
+    /// </summary>
+    public LayoutMode LayoutMode { get; set; }
+
+    /// <summary>
+    /// Gets or sets the kerning mode used while positioning glyphs.
+    /// Defaults to <see cref="Fonts.KerningMode.Standard"/>.
+    /// </summary>
+    public KerningMode KerningMode { get; set; }
 
     /// <summary>
     /// Gets the number of shaped glyphs the last shaping call produced.
@@ -94,7 +106,7 @@ public sealed class TextShapingBuffer
     /// Gets the glyph-end indices of hard-delimited lines. An empty span represents
     /// one directional run or one logical line.
     /// </summary>
-    internal ReadOnlySpan<int> LineEnds => this.lineEnds.AsSpan(0, this.lineEndCount);
+    public ReadOnlySpan<int> LineEnds => this.lineEnds.AsSpan(0, this.lineEndCount);
 
     /// <summary>
     /// Gets a read-only reference to the shaped glyph at the given index.

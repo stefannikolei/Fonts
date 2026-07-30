@@ -322,6 +322,7 @@ public class TextMeasurerGlyphIdTests
         Assert.Equal(TextMeasurer.MeasureBounds(glyphId, options), metrics.Bounds);
         Assert.Equal(TextMeasurer.MeasureRenderableBounds(glyphId, options), metrics.RenderableBounds);
         Assert.Equal(new CodePoint('g'), metrics.CodePoint);
+        Assert.Equal(glyphId, metrics.GlyphId);
         Assert.Equal(7, metrics.GraphemeIndex);
         Assert.Equal(0, metrics.StringIndex);
         Assert.Equal(font, metrics.Font);
@@ -348,6 +349,7 @@ public class TextMeasurerGlyphIdTests
             Assert.Equal(TextMeasurer.MeasureAdvance(glyphId, positioned), entries[i].Advance);
             Assert.Equal(TextMeasurer.MeasureBounds(glyphId, positioned), entries[i].Bounds);
             Assert.Equal(TextMeasurer.MeasureRenderableBounds(glyphId, positioned), entries[i].RenderableBounds);
+            Assert.Equal(glyphId, entries[i].GlyphId);
             Assert.Equal(i, entries[i].GraphemeIndex);
             Assert.Equal(i, entries[i].StringIndex);
         }
@@ -371,6 +373,7 @@ public class TextMeasurerGlyphIdTests
         Assert.Equal(FontRectangle.Empty, entries[1].Advance);
         Assert.Equal(FontRectangle.Empty, entries[1].Bounds);
         Assert.Equal(FontRectangle.Empty, entries[1].RenderableBounds);
+        Assert.Equal(ushort.MaxValue, entries[1].GlyphId);
         Assert.NotEqual(FontRectangle.Empty, entries[2].Bounds);
     }
 

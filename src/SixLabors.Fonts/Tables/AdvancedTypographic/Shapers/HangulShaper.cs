@@ -498,6 +498,7 @@ internal sealed class HangulShaper : DefaultShaper
         // Didn't compose (either a non-combining component or unsupported by font).
         if (ljmo >= 0)
         {
+            buffer.CombineInputStarts(ljmo, (tjmo >= 0 ? tjmo : vjmo) + 1);
             buffer.EnableShapingFeature(ljmo, this.Features.GetMask(LjmoTag));
         }
 
@@ -552,7 +553,10 @@ internal sealed class HangulShaper : DefaultShaper
 
         ref GlyphShapingData prev = ref buffer[index - 1];
         int len = GetSyllableLength(prev.CodePoint);
-        buffer.MoveGlyph(index, index - len);
+        int syllableStart = index - len;
+
+        buffer.CombineInputStarts(syllableStart, index + 1);
+        buffer.MoveGlyph(index, syllableStart);
     }
 
     /// <summary>

@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Font tracking browser comparison</title>
+  <style>
+    @font-face {
+      font-family: "Tracking Open Sans";
+      src: url("../Fonts/OpenSans-Regular.ttf") format("truetype");
+      font-style: normal;
+      font-weight: 400;
+    }
+
+    @font-face {
+      font-family: "Tracking Devanagari";
+      src: url("../Fonts/NotoSansDevanagari-Regular.ttf") format("truetype");
+      font-style: normal;
+      font-weight: 400;
+    }
+
+    @font-face {
+      font-family: "Tracking Arabic";
+      src: url("../Fonts/NotoSansArabic-Regular.ttf") format("truetype");
+      font-style: normal;
+      font-weight: 400;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: #111;
+      background: #fff;
+      font-family: Arial, sans-serif;
+    }
+
+    header,
+    section {
+      padding: 16px 20px;
+      border-bottom: 1px solid #ccc;
+    }
+
+    h1,
+    h2 {
+      margin: 0 0 12px;
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    p {
+      margin: 0 0 12px;
+      color: #555;
+      font-size: 13px;
+    }
+
+    .comparison {
+      display: grid;
+      grid-template-columns: 110px max-content max-content;
+      gap: 12px 24px;
+      align-items: start;
+    }
+
+    .horizontal-comparison {
+      grid-template-columns: 110px max-content;
+      row-gap: 6px;
+    }
+
+    .horizontal-comparison .direction-label {
+      grid-row: span 4;
+    }
+
+    .horizontal-comparison .actual-output {
+      margin-bottom: 18px;
+    }
+
+    .column-heading,
+    .direction-label {
+      color: #555;
+      font-size: 13px;
+    }
+
+    .sample {
+      margin: 0;
+      color: #000;
+      background: #fff;
+      /*
+       * CSS resolves 30pt at 96 CSS pixels per inch, matching the test's 30pt
+       * font at Dpi = 96. Unit line height and 0.1em letter spacing mirror the
+       * TextOptions values without a browser-only scale adjustment.
+       */
+      font: 30pt/1 "Tracking Open Sans", "Tracking Devanagari", "Tracking Arabic";
+      font-kerning: normal;
+      letter-spacing: 0.1em;
+      white-space: pre;
+    }
+
+    .actual-output {
+      display: block;
+      max-width: none;
+    }
+
+    .assertion-results {
+      display: grid;
+      grid-template-columns: max-content max-content;
+      gap: 6px 18px;
+      font-size: 13px;
+    }
+
+    .assertion-pass {
+      color: #067d17;
+    }
+
+    .assertion-fail {
+      color: #b00020;
+      font-weight: 600;
+    }
+
+    .measurement-host {
+      /*
+       * Keep measurement nodes in layout while moving them outside the viewport.
+       * display:none would prevent getBoundingClientRect() from exposing advances.
+       */
+      position: absolute;
+      left: -100000px;
+      top: 0;
+      visibility: hidden;
+    }
+
+    .measurement-sample {
+      display: inline-block;
+      font: 30pt/1 "Tracking Arabic";
+      font-kerning: normal;
+      white-space: pre;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Browser font tracking comparison</h1>
+  </header>
+
+  <section>
+    <h2>Horizontal top-to-bottom</h2>
+    <div class="comparison horizontal-comparison" id="horizontal-top-bottom"></div>
+  </section>
+
+  <section>
+    <h2>Horizontal bottom-to-top</h2>
+    <p>CSS has no horizontal bottom-to-top writing mode, so the browser equivalent reverses the logical lines explicitly.</p>
+    <div class="comparison horizontal-comparison" id="horizontal-bottom-top"></div>
+  </section>
+
+  <section>
+    <h2>Vertical left-to-right, upright</h2>
+    <div class="comparison" id="vertical-left-right">
+      <div></div>
+      <div class="column-heading">Browser</div>
+      <div class="column-heading">SixLabors.Fonts actual output</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Vertical right-to-left, upright</h2>
+    <div class="comparison" id="vertical-right-left">
+      <div></div>
+      <div class="column-heading">Browser</div>
+      <div class="column-heading">SixLabors.Fonts actual output</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Vertical left-to-right, mixed</h2>
+    <div class="comparison" id="vertical-mixed-left-right">
+      <div></div>
+      <div class="column-heading">Browser</div>
+      <div class="column-heading">SixLabors.Fonts actual output</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Vertical right-to-left, mixed</h2>
+    <div class="comparison" id="vertical-mixed-right-left">
+      <div></div>
+      <div class="column-heading">Browser</div>
+      <div class="column-heading">SixLabors.Fonts actual output</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Browser cursive tracking assertions</h2>
+    <p>A continuous Arabic word and punctuation boundary keep their advance; the single word separator receives exactly one 0.1em spacing increment.</p>
+    <div class="assertion-results" id="assertion-results"></div>
+    <div class="measurement-host" id="measurement-host"></div>
+  </section>
+
+  <script>
+    // Must match FontTracking_BrowserComparison in TextLayoutTests exactly.
+    const text = "a\u0308 office र्किर्कि\nخَطِّيَّة\nخَطِّيَّة،النَّصِّيَّة\nخَطِّيَّة النَّصِّيَّة";
+    const cursiveWord = "خَطِّيَّة";
+    const cursivePunctuatedPhrase = "خَطِّيَّة،النَّصِّيَّة";
+    const cursivePhrase = "خَطِّيَّة النَّصِّيَّة";
+    const directions = [
+      ["LeftToRight", "ltr"],
+      ["RightToLeft", "rtl"]
+    ];
+
+    // Each row maps the library layout name to the equivalent CSS writing mode
+    // and text orientation. The final flag handles the one mode CSS cannot express.
+    const modes = [
+      ["horizontal-top-bottom", "HorizontalTopBottom", "horizontal-tb", "mixed", false],
+      ["horizontal-bottom-top", "HorizontalBottomTop", "horizontal-tb", "mixed", true],
+      ["vertical-left-right", "VerticalLeftRight", "vertical-lr", "upright", false],
+      ["vertical-right-left", "VerticalRightLeft", "vertical-rl", "upright", false],
+      ["vertical-mixed-left-right", "VerticalMixedLeftRight", "vertical-lr", "mixed", false],
+      ["vertical-mixed-right-left", "VerticalMixedRightLeft", "vertical-rl", "mixed", false]
+    ];
+
+    // Visual tests overwrite stable ActualOutput filenames. Use one cache key for this page load
+    // so reloading the comparison always displays the latest generated images for every row.
+    const actualOutputCacheKey = Date.now();
+
+    for (const [containerId, layoutMode, writingMode, orientation, reverseLines] of modes) {
+      const container = document.getElementById(containerId);
+
+      for (const [directionName, direction] of directions) {
+        const label = document.createElement("div");
+        label.className = "direction-label";
+        label.textContent = directionName;
+
+        const browser = document.createElement("p");
+        browser.className = "sample";
+        browser.style.direction = direction;
+        browser.style.writingMode = writingMode;
+        browser.style.textOrientation = orientation;
+
+        if (reverseLines) {
+          // CSS has no horizontal bottom-to-top block flow. Reverse logical lines
+          // only, preserving each line's inline direction and shaping.
+          const lines = text.split("\n").reverse();
+          for (let i = 0; i < lines.length; i++) {
+            browser.append(document.createTextNode(lines[i]));
+            if (i + 1 < lines.length) {
+              browser.append(document.createElement("br"));
+            }
+          }
+        } else {
+          browser.textContent = text;
+        }
+
+        const actual = document.createElement("img");
+        actual.className = "actual-output";
+
+        // The test pins these files against repository references before this page
+        // displays them, so the manual browser comparison cannot hide a regression.
+        actual.src = `../Images/ActualOutput/FontTracking_BrowserComparison_${layoutMode}-${directionName}.png?v=${actualOutputCacheKey}`;
+        actual.alt = `SixLabors.Fonts ${layoutMode} ${directionName} tracking output`;
+
+        if (writingMode === "horizontal-tb") {
+          // Stack horizontal samples on the same x-origin so increasing advance
+          // differences are as visible as vertical drift in the side-by-side modes.
+          const browserHeading = document.createElement("div");
+          browserHeading.className = "column-heading";
+          browserHeading.textContent = "Browser";
+
+          const actualHeading = document.createElement("div");
+          actualHeading.className = "column-heading";
+          actualHeading.textContent = "SixLabors.Fonts actual output";
+
+          container.append(label, browserHeading, browser, actualHeading, actual);
+        } else {
+          container.append(label, browser, actual);
+        }
+      }
+    }
+
+    /**
+     * Measures the logical inline dimension of one browser-shaped sample.
+     * Horizontal writing advances through width; vertical writing advances through height.
+     */
+    function measureInlineSize(text, writingMode, orientation, direction, tracked) {
+      const sample = document.createElement("span");
+      sample.className = "measurement-sample";
+      sample.textContent = text;
+      sample.style.direction = direction;
+      sample.style.writingMode = writingMode;
+      sample.style.textOrientation = orientation;
+      sample.style.letterSpacing = tracked ? "0.1em" : "normal";
+      document.getElementById("measurement-host").append(sample);
+
+      const bounds = sample.getBoundingClientRect();
+      const inlineSize = writingMode === "horizontal-tb" ? bounds.width : bounds.height;
+      sample.remove();
+      return inlineSize;
+    }
+
+    /**
+     * Appends one explicit browser assertion result instead of relying on visual
+     * inspection alone. The page-level data attribute is available to browser automation.
+     */
+    function appendAssertion(label, passed, details) {
+      const name = document.createElement("div");
+      name.textContent = label;
+
+      const result = document.createElement("div");
+      result.className = passed ? "assertion-pass" : "assertion-fail";
+      result.textContent = `${passed ? "PASS" : "FAIL"} — ${details}`;
+
+      document.getElementById("assertion-results").append(name, result);
+      return passed;
+    }
+
+    document.fonts.ready.then(() => {
+      /*
+       * 30pt resolves to 40 CSS pixels, so 0.1em is exactly 4px. CSS Text §8.2.1
+       * suppresses that spacing inside cursive runs but applies it to the separator:
+       * https://www.w3.org/TR/css-text-4/#cursive-tracking
+       */
+      const expectedSeparatorSpacing = 4;
+      const tolerance = 0.05;
+      let allPassed = true;
+
+      for (const [, layoutMode, writingMode, orientation] of modes) {
+        for (const [directionName, direction] of directions) {
+          const wordUntracked = measureInlineSize(cursiveWord, writingMode, orientation, direction, false);
+          const wordTracked = measureInlineSize(cursiveWord, writingMode, orientation, direction, true);
+          const punctuationUntracked = measureInlineSize(cursivePunctuatedPhrase, writingMode, orientation, direction, false);
+          const punctuationTracked = measureInlineSize(cursivePunctuatedPhrase, writingMode, orientation, direction, true);
+          const phraseUntracked = measureInlineSize(cursivePhrase, writingMode, orientation, direction, false);
+          const phraseTracked = measureInlineSize(cursivePhrase, writingMode, orientation, direction, true);
+
+          const wordDelta = wordTracked - wordUntracked;
+          const punctuationDelta = punctuationTracked - punctuationUntracked;
+          const phraseDelta = phraseTracked - phraseUntracked;
+          const passed = Math.abs(wordDelta) <= tolerance
+            && Math.abs(punctuationDelta) <= tolerance
+            && Math.abs(phraseDelta - expectedSeparatorSpacing) <= tolerance;
+
+          allPassed = appendAssertion(
+            `${layoutMode} ${directionName}`,
+            passed,
+            `word ${wordDelta.toFixed(3)}px, punctuation ${punctuationDelta.toFixed(3)}px, separator ${phraseDelta.toFixed(3)}px`) && allPassed;
+        }
+      }
+
+      document.documentElement.dataset.trackingAssertions = allPassed ? "passed" : "failed";
+    });
+  </script>
+</body>
+</html>

@@ -29,7 +29,7 @@ internal static class BidiReordering
         /// <param name="state">The reordered storage.</param>
         /// <param name="index">The glyph index.</param>
         /// <returns>The resolved embedding level.</returns>
-        static abstract int GetLevel(TState state, int index);
+        public static abstract int GetLevel(TState state, int index);
 
         /// <summary>
         /// Reverses one half-open range while keeping each glyph record intact.
@@ -37,15 +37,140 @@ internal static class BidiReordering
         /// <param name="state">The reordered storage.</param>
         /// <param name="start">The first glyph index.</param>
         /// <param name="end">The index after the final glyph.</param>
-        static abstract void Reverse(TState state, int start, int end);
+        public static abstract void Reverse(TState state, int start, int end);
     }
 
     /// <summary>
-    /// Reorders layout entries for one line.
+    /// Reorders layout run fragments for one line after its final source boundary
+    /// is known.
     /// </summary>
     /// <param name="glyphs">The logically ordered layout entries.</param>
-    public static void Reorder(List<GlyphLayoutData> glyphs)
-        => Reorder<List<GlyphLayoutData>, LayoutGlyphOperations>(glyphs, 0, glyphs.Count);
+    /// <param name="layoutMode">The orientation used to finalize each directional run.</param>
+    public static void Reorder(List<GlyphLayoutData> glyphs, LayoutMode layoutMode)
+    {
+        // Browsers slice each already-visual shaped run by source range before
+        // line items are reordered. Composition keeps
+        // source-codepoint containers logical for line breaking, so first arrange
+        // those complete containers in the same visual order as their shaped run.
+        // The positioned glyphs inside each container already retain projected
+        // visual order and are never reversed here.
+        int fragmentStart = 0;
+        while (fragmentStart < glyphs.Count)
+        {
+            int fragmentEnd = FindFragmentEnd(glyphs, fragmentStart, glyphs.Count);
+            if ((glyphs[fragmentStart].BidiRun.Level & 1) != 0)
+            {
+                if (layoutMode.IsVertical())
+                {
+                    // The public ShapeRun contract is HarfBuzz-verified for upright
+                    // bottom-to-top runs: graphemes reverse, while positioned glyph
+                    // order inside each grapheme remains unchanged.
+                    glyphs.Reverse(fragmentStart, fragmentEnd - fragmentStart);
+                    int graphemeStart = fragmentStart;
+                    while (graphemeStart < fragmentEnd)
+                    {
+                        int graphemeIndex = glyphs[graphemeStart].GraphemeIndex;
+                        int graphemeEnd = graphemeStart + 1;
+                        while (graphemeEnd < fragmentEnd
+                            && glyphs[graphemeEnd].GraphemeIndex == graphemeIndex)
+                        {
+                            graphemeEnd++;
+                        }
+
+                        glyphs.Reverse(graphemeStart, graphemeEnd - graphemeStart);
+                        graphemeStart = graphemeEnd;
+                    }
+                }
+                else
+                {
+                    // Horizontal and mixed-vertical backward runs store HarfBuzz's
+                    // complete backward glyph stream: shaped source positions appear
+                    // in reverse source order while the glyphs inside one source
+                    // position already carry the stream's visual order and offsets.
+                    // Every entry is one complete source position holding its slice
+                    // of that stream, so reversing entry order alone reproduces the
+                    // stored stream exactly and no glyph inside an entry ever moves.
+                    // This is the browser's fragment discipline: sliced fragments
+                    // stay visual and only whole units reorder.
+                    glyphs.Reverse(fragmentStart, fragmentEnd - fragmentStart);
+                }
+            }
+
+            fragmentStart = fragmentEnd;
+        }
+
+        int maximumLevel = 0;
+        int minimumOddLevel = int.MaxValue;
+        for (fragmentStart = 0; fragmentStart < glyphs.Count;)
+        {
+            int level = glyphs[fragmentStart].BidiRun.Level;
+            maximumLevel = Math.Max(maximumLevel, level);
+            if ((level & 1) != 0)
+            {
+                minimumOddLevel = Math.Min(minimumOddLevel, level);
+            }
+
+            fragmentStart = FindFragmentEnd(glyphs, fragmentStart, glyphs.Count);
+        }
+
+        if (minimumOddLevel == int.MaxValue)
+        {
+            return;
+        }
+
+        // Browsers perform this step only after line breaking and reorder whole
+        // runs rather than characters. Apply UAX #9 L2 to the
+        // complete fragments, preserving the visual glyph order within each one.
+        for (int level = maximumLevel; level >= minimumOddLevel; level--)
+        {
+            int sequenceStart = 0;
+            while (sequenceStart < glyphs.Count)
+            {
+                int fragmentEnd = FindFragmentEnd(glyphs, sequenceStart, glyphs.Count);
+                while (sequenceStart < glyphs.Count
+                    && glyphs[sequenceStart].BidiRun.Level < level)
+                {
+                    sequenceStart = fragmentEnd;
+                    fragmentEnd = sequenceStart < glyphs.Count
+                        ? FindFragmentEnd(glyphs, sequenceStart, glyphs.Count)
+                        : sequenceStart;
+                }
+
+                if (sequenceStart == glyphs.Count)
+                {
+                    break;
+                }
+
+                int sequenceEnd = sequenceStart;
+                int fragmentCount = 0;
+                while (sequenceEnd < glyphs.Count
+                    && glyphs[sequenceEnd].BidiRun.Level >= level)
+                {
+                    sequenceEnd = FindFragmentEnd(glyphs, sequenceEnd, glyphs.Count);
+                    fragmentCount++;
+                }
+
+                if (fragmentCount > 1)
+                {
+                    // Reversing the complete storage range reverses both fragment
+                    // order and each fragment's contents. Reverse each now-contiguous
+                    // fragment once more to retain its already-visual glyph order.
+                    // This moves values in place and needs no per-run owner, copied
+                    // glyph array, permutation map, or temporary collection.
+                    glyphs.Reverse(sequenceStart, sequenceEnd - sequenceStart);
+                    int restoredStart = sequenceStart;
+                    while (restoredStart < sequenceEnd)
+                    {
+                        int restoredEnd = FindFragmentEnd(glyphs, restoredStart, sequenceEnd);
+                        glyphs.Reverse(restoredStart, restoredEnd - restoredStart);
+                        restoredStart = restoredEnd;
+                    }
+                }
+
+                sequenceStart = sequenceEnd;
+            }
+        }
+    }
 
     /// <summary>
     /// Reorders positioned shaping records for one line.
@@ -127,15 +252,23 @@ internal static class BidiReordering
     }
 
     /// <summary>
-    /// Adapts layout entries to the shared reordering loop.
+    /// Finds the exclusive end of the directional run fragment beginning at the
+    /// supplied layout index.
     /// </summary>
-    private readonly struct LayoutGlyphOperations : IBidiReorderingOperations<List<GlyphLayoutData>>
+    /// <param name="glyphs">The line's layout storage.</param>
+    /// <param name="start">The first entry in the fragment.</param>
+    /// <param name="end">The exclusive search limit.</param>
+    /// <returns>The first entry after the fragment.</returns>
+    private static int FindFragmentEnd(List<GlyphLayoutData> glyphs, int start, int end)
     {
-        /// <inheritdoc/>
-        public static int GetLevel(List<GlyphLayoutData> state, int index) => state[index].BidiRun.Level;
+        BidiRun bidiRun = glyphs[start].BidiRun;
+        int index = start + 1;
+        while (index < end && glyphs[index].BidiRun.Equals(bidiRun))
+        {
+            index++;
+        }
 
-        /// <inheritdoc/>
-        public static void Reverse(List<GlyphLayoutData> state, int start, int end) => state.Reverse(start, end - start);
+        return index;
     }
 
     /// <summary>

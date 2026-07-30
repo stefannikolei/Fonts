@@ -305,6 +305,7 @@ internal sealed class ArabicShaper : DefaultShaper
             // mark in the run. Moving each record in turn preserves both blocks'
             // internal order without allocating temporary storage.
             int movedCount = modifierEnd - scan;
+            buffer.CombineInputStarts(start, modifierEnd);
             for (int i = 0; i < movedCount; i++)
             {
                 buffer.MoveGlyph(scan + i, start + i);

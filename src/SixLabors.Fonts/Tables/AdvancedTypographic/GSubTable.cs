@@ -166,7 +166,7 @@ internal class GSubTable : Table
             ScriptItemizer.ShapingRun run = ScriptItemizer.ReadRun(buffer, ref i, maxCount, out int count);
 
             Tag unicodeScriptTag = this.GetUnicodeScriptTag(run.Script);
-            ShapePlan shapePlan = buffer.GetOrCreatePlan(run.Script, unicodeScriptTag, fontMetrics, run.Culture);
+            ShapePlan shapePlan = buffer.GetOrCreatePlan(run.Script, unicodeScriptTag, fontMetrics, run.Culture, run.FeatureTags);
 
             BaseShaper shaper = shapePlan.Shaper;
 
@@ -225,6 +225,9 @@ internal class GSubTable : Table
 
             // Record the segment with its post-substitution range so the in-place
             // positioning pass can reuse the plan; one plan then drives both tables.
+            // Mark after GSUB because substitutions can change the number and order
+            // of glyph records to which layout will later apply tracking.
+            ScriptItemizer.MarkCursiveTrackingRun(buffer, index, count, run.Script);
             buffer.SegmentPlans.Add((index, count, run.Script, shapePlan));
         }
     }

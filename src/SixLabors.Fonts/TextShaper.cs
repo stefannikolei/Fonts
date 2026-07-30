@@ -110,8 +110,11 @@ public static partial class TextShaper
         ShapingScratch scratch = ScratchPool.Get();
         try
         {
-            TextOptions options = scratch.GetShapingOptions(font, buffer.Direction, buffer.Language, buffer.Script, features, bidiMode);
-            ShapingBuffer shaped = ShapeCore(buffer.Text, options, scratch, null);
+            // Public shaping accepts shaping concerns only. Point size enters the
+            // projection below; DPI and device coordinates remain renderer inputs.
+            TextOptions options = scratch.GetShapingOptions(font, buffer.TextDirection, buffer.Language, buffer.Script, buffer.LayoutMode, buffer.KerningMode, features, bidiMode);
+
+            ShapingBuffer shaped = ShapeCore(buffer.Text, options, scratch, null, true);
             Span<int> lineEnds = default;
 
             if (bidiMode == TextBidiMode.Normal)
@@ -133,6 +136,32 @@ public static partial class TextShaper
                     }
 
                     BidiReordering.Reorder(shaped, scratch.BidiRuns, scratch.BidiMap, glyphStart, glyphEnd);
+                    if (buffer.LayoutMode.IsVertical())
+                    {
+                        // HarfBuzz normalizes bottom-to-top runs by reversing whole
+                        // graphemes before shaping. UAX #9 has already reversed every
+                        // glyph record, so restore the shaped order inside each
+                        // right-to-left grapheme without changing its line position.
+                        int graphemeStart = glyphStart;
+                        while (graphemeStart < glyphEnd)
+                        {
+                            ref GlyphShapingData first = ref shaped[graphemeStart];
+                            int graphemeIndex = first.GraphemeIndex;
+                            int graphemeEnd = graphemeStart + 1;
+                            while (graphemeEnd < glyphEnd && shaped[graphemeEnd].GraphemeIndex == graphemeIndex)
+                            {
+                                graphemeEnd++;
+                            }
+
+                            if (first.Direction == TextDirection.RightToLeft)
+                            {
+                                shaped.ReverseRange(graphemeStart, graphemeEnd);
+                            }
+
+                            graphemeStart = graphemeEnd;
+                        }
+                    }
+
                     if (paragraph < paragraphEnds.Length)
                     {
                         lineEnds[paragraph] = glyphEnd;
@@ -141,13 +170,11 @@ public static partial class TextShaper
                     glyphStart = glyphEnd;
                 }
             }
-            else if (scratch.RunReadsRightToLeft)
+            else
             {
-                // A directional run has no internal bidi segmentation: its stated
-                // direction applies to every ordinary character. Turning an RTL run
-                // around whole after positioning keeps joiners and other neutral
-                // records attached to the same neighbours as the logical input.
-                shaped.ReverseRange(0, shaped.Count);
+                // Reuse the layout pipeline's per-run finalization so the public
+                // directional-run contract and internal layout cannot diverge.
+                FinalizeDirectionalRuns(shaped, buffer.LayoutMode, scratch);
             }
 
             int count = shaped.Count;
@@ -157,9 +184,45 @@ public static partial class TextShaper
                 ref GlyphShapingData shaping = ref shaped[i];
                 ref ShapingBuffer.GlyphMetricsEntry entry = ref shaped.MetricsAt(i);
                 ref GlyphShapingPosition position = ref shaped.PositionAt(i);
+
+                // Internal positioning remains in design units. Scale once by the
+                // supplied Font.Size before publishing, with no caller-side scaling
+                // and no DPI mixed into the shaping result.
                 float scale = font.Size / entry.Metrics.UnitsPerEm;
                 Vector2 offset = (new Vector2(position.Bounds.X, position.Bounds.Y) + entry.Metrics.Offset) * scale;
-                destination[i] = new ShapedGlyph(entry.Metrics.GlyphId, shaping.CodePointIndex, entry.GetAdvanceWidth(in position) * scale, entry.GetAdvanceHeight(in position) * scale, offset);
+
+                // Mixed vertical layout shapes upright characters vertically but
+                // leaves sideways characters horizontal for the layout rotation.
+                bool isVertical = AdvancedTypographicUtils.IsVerticalGlyph(shaping.CodePoint, buffer.LayoutMode);
+
+                // Shaping publishes an advance vector in the shaper's Y-up coordinate
+                // system. The inactive axis is zero; device-space inversion belongs to
+                // the renderer consuming the result.
+                float advanceWidth = isVertical ? 0 : entry.GetAdvanceWidth(in position) * scale;
+                float advanceHeight = isVertical ? -entry.GetAdvanceHeight(in position) * scale : 0;
+                if (isVertical)
+                {
+                    // Fonts with vertical metrics place the origin above the glyph
+                    // ink by the authored top side bearing.
+                    float verticalOriginY = entry.Metrics.Bounds.Max.Y + entry.Metrics.TopSideBearing;
+                    VerticalMetrics verticalMetrics = entry.Metrics.FontMetrics.VerticalMetrics;
+                    if (verticalMetrics.Synthesized)
+                    {
+                        // HarfBuzz centers glyph extents within the synthesized
+                        // ascender-to-descender advance when vertical tables are
+                        // absent. Floor preserves its integer midpoint behavior.
+                        float fontAdvance = verticalMetrics.Ascender - verticalMetrics.Descender;
+                        verticalOriginY = entry.Metrics.Bounds.Max.Y + MathF.Floor((fontAdvance - entry.Metrics.Height) * .5F);
+                    }
+
+                    // The vertical origin lies at half the horizontal advance and
+                    // at the authored or synthesized Y origin. Subtracting it turns
+                    // the horizontal glyph origin into the vertical shaping origin
+                    // while preserving the public Y-up coordinate system.
+                    offset -= new Vector2(entry.Metrics.AdvanceWidth / 2, verticalOriginY) * scale;
+                }
+
+                destination[i] = new ShapedGlyph(entry.Metrics.GlyphId, shaping.StringIndex, shaping.GraphemeIndex, advanceWidth, advanceHeight, offset);
             }
 
             // Public shaping has no placeholder text runs, so the paragraph loop's

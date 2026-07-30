@@ -1,4 +1,4 @@
-﻿// Copyright (c) Six Labors.
+// Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
 using System.Globalization;
@@ -237,12 +237,20 @@ public class TextLayoutTests
     {
         const string text = "a b\nc";
         Font font = CreateFont(text);
+
+        // Resolve identity independently through the font cmap so this fixture
+        // verifies both the positioned geometry and the selected glyph IDs.
+        Assert.True(font.TryGetGlyphId(new CodePoint('a'), out ushort aGlyphId));
+        Assert.True(font.TryGetGlyphId(new CodePoint(' '), out ushort spaceGlyphId));
+        Assert.True(font.TryGetGlyphId(new CodePoint('b'), out ushort bGlyphId));
+        Assert.True(font.TryGetGlyphId(new CodePoint('c'), out ushort cGlyphId));
+
         GlyphMetrics[] expectedGlyphMetrics =
         [
-            new(new CodePoint('a'), FontRectangle.Empty, new FontRectangle(10, 0, 10, 10), FontRectangle.Empty, font, 0, 0),
-            new(new CodePoint(' '), FontRectangle.Empty, new FontRectangle(40, 0, 30, 10), FontRectangle.Empty, font, 1, 1),
-            new(new CodePoint('b'), FontRectangle.Empty, new FontRectangle(70, 0, 10, 10), FontRectangle.Empty, font, 2, 2),
-            new(new CodePoint('c'), FontRectangle.Empty, new FontRectangle(10, 30, 10, 10), FontRectangle.Empty, font, 4, 4),
+            new(new CodePoint('a'), aGlyphId, FontRectangle.Empty, new FontRectangle(10, 0, 10, 10), FontRectangle.Empty, font, 0, 0),
+            new(new CodePoint(' '), spaceGlyphId, FontRectangle.Empty, new FontRectangle(40, 0, 30, 10), FontRectangle.Empty, font, 1, 1),
+            new(new CodePoint('b'), bGlyphId, FontRectangle.Empty, new FontRectangle(70, 0, 10, 10), FontRectangle.Empty, font, 2, 2),
+            new(new CodePoint('c'), cGlyphId, FontRectangle.Empty, new FontRectangle(10, 30, 10, 10), FontRectangle.Empty, font, 4, 4),
         ];
 
         ReadOnlySpan<GlyphMetrics> glyphs = TextMeasurer.GetGlyphMetrics(
@@ -259,6 +267,7 @@ public class TextLayoutTests
             GlyphMetrics expected = expectedGlyphMetrics[i];
             GlyphMetrics actual = glyphs[i];
             Assert.Equal(expected.CodePoint, actual.CodePoint);
+            Assert.Equal(expected.GlyphId, actual.GlyphId);
 
             // 4 dp as there is minor offset difference in the float values
             Assert.Equal(expected.Bounds.X, actual.Bounds.X, 4F);
@@ -2697,12 +2706,12 @@ public class TextLayoutTests
     public static TheoryData<string, float, float, float[]> FontTrackingVerticalData { get; }
         = new()
         {
-            { "aaaa", 0.0f, 296.9f, [33.5f, 120.7f, 207.9f, 295.0f] },
-            { "aaaa", 0.1f, 316.1f, [33.5f, 127.1f, 220.7f, 314.2f] },
-            { "aaaa", 1.0f, 488.9f, [33.5f, 184.7f, 335.9f, 487.0f] },
-            { "awwa", 0.0f, 296.9f, [33.5f, 121.2f, 208.4f, 295.0f] },
-            { "awwa", 0.1f, 316.1f, [33.5f, 127.6f, 221.2f, 314.2f] },
-            { "awwa", 1.0f, 488.9f, [33.5f, 185.2f, 336.4f, 487.0f] },
+            { "aaaa", 0.0f, 296.4f, [33.6f, 120.6f, 207.6f, 294.6f] },
+            { "aaaa", 0.1f, 315.6f, [33.6f, 127.0f, 220.4f, 313.8f] },
+            { "aaaa", 1.0f, 488.4f, [33.6f, 184.6f, 335.6f, 486.6f] },
+            { "awwa", 0.0f, 296.4f, [33.6f, 121.1f, 208.1f, 294.6f] },
+            { "awwa", 0.1f, 315.6f, [33.6f, 127.5f, 220.9f, 313.8f] },
+            { "awwa", 1.0f, 488.4f, [33.6f, 185.1f, 336.1f, 486.6f] },
         };
 
     [Theory]
@@ -2742,8 +2751,8 @@ public class TextLayoutTests
 
     [Theory]
     [InlineData("\u093f", 1, 48.4)]
-    [InlineData("\u0930\u094D\u0915\u093F", 1, 97.65625)]
-    [InlineData("\u0930\u094D\u0915\u093F\u0930\u094D\u0915\u093F", 1, 227)]
+    [InlineData("\u0930\u094D\u0915\u093f", 1, 66.28125)]
+    [InlineData("\u0930\u094D\u0915\u093f\u0930\u094D\u0915\u093f", 1, 195.625)]
     [InlineData("\u093fa", 1, 145.5f)]
     public void FontTracking_CorrectlyAddSpacingForComposedCharacter(string text, float tracking, float width)
     {
@@ -2808,6 +2817,311 @@ public class TextLayoutTests
         };
 
         TextLayoutTestUtilities.TestLayout(text, options, properties: text);
+    }
+
+    /// <summary>
+    /// Verifies that tracking disables optional ligatures unless the caller
+    /// explicitly re-enables them through feature tags.
+    /// </summary>
+    [Fact]
+    public void FontTracking_DisablesOptionalLigaturesUnlessExplicitlyEnabled()
+    {
+        const string text = "office";
+        Font font = TestFonts.GetFont(TestFonts.OpenSansFile, 64);
+        TextOptions options = new(font);
+
+        int defaultGlyphCount = TextMeasurer.GetGlyphMetrics(text, options).Length;
+
+        options.Tracking = .1F;
+        int trackedGlyphCount = TextMeasurer.GetGlyphMetrics(text, options).Length;
+
+        options.FeatureTags = [KnownFeatureTags.Ligatures];
+        int explicitlyEnabledGlyphCount = TextMeasurer.GetGlyphMetrics(text, options).Length;
+
+        // CSS letter-spacing exposes each grapheme boundary, while an explicit
+        // font-feature-settings declaration has the final say.
+        Assert.True(trackedGlyphCount > defaultGlyphCount);
+        Assert.Equal(defaultGlyphCount, explicitlyEnabledGlyphCount);
+    }
+
+    /// <summary>
+    /// Verifies that tracking preserves Arabic joining forms in every layout
+    /// direction while remaining applicable to an intervening word separator.
+    /// </summary>
+    /// <param name="layoutMode">The horizontal or vertical layout mode.</param>
+    /// <param name="textDirection">The inline text direction.</param>
+    [Theory]
+    [InlineData(LayoutMode.HorizontalTopBottom, TextDirection.LeftToRight)]
+    [InlineData(LayoutMode.HorizontalTopBottom, TextDirection.RightToLeft)]
+    [InlineData(LayoutMode.HorizontalBottomTop, TextDirection.LeftToRight)]
+    [InlineData(LayoutMode.HorizontalBottomTop, TextDirection.RightToLeft)]
+    [InlineData(LayoutMode.VerticalLeftRight, TextDirection.LeftToRight)]
+    [InlineData(LayoutMode.VerticalLeftRight, TextDirection.RightToLeft)]
+    [InlineData(LayoutMode.VerticalRightLeft, TextDirection.LeftToRight)]
+    [InlineData(LayoutMode.VerticalRightLeft, TextDirection.RightToLeft)]
+    [InlineData(LayoutMode.VerticalMixedLeftRight, TextDirection.LeftToRight)]
+    [InlineData(LayoutMode.VerticalMixedLeftRight, TextDirection.RightToLeft)]
+    [InlineData(LayoutMode.VerticalMixedRightLeft, TextDirection.LeftToRight)]
+    [InlineData(LayoutMode.VerticalMixedRightLeft, TextDirection.RightToLeft)]
+    public void FontTracking_PreservesCursiveJoinsAndSpacesWordSeparators(LayoutMode layoutMode, TextDirection textDirection)
+    {
+        const string word = "خَطِّيَّة";
+        const string punctuatedPhrase = "خَطِّيَّة،النَّصِّيَّة";
+        const string phrase = "خَطِّيَّة النَّصِّيَّة";
+        const float tracking = .1F;
+        Font font = TestFonts.GetFont(TestFonts.NotoSansArabicRegular, 30);
+        TextOptions options = new(font)
+        {
+            // CSS resolves 30pt at 96 CSS pixels per inch, making 0.1em exactly
+            // four pixels. Keep this test numerically identical to FontTracking.html.
+            Dpi = 96,
+            LayoutMode = layoutMode,
+            TextDirection = textDirection,
+        };
+
+        FontRectangle untrackedWord = TextMeasurer.MeasureAdvance(word, options);
+        FontRectangle untrackedPunctuatedPhrase = TextMeasurer.MeasureAdvance(punctuatedPhrase, options);
+        FontRectangle untrackedPhrase = TextMeasurer.MeasureAdvance(phrase, options);
+        ReadOnlyMemory<GlyphMetrics> untrackedWordGlyphs = TextMeasurer.GetGlyphMetrics(word, options);
+
+        options.Tracking = tracking;
+        FontRectangle trackedWord = TextMeasurer.MeasureAdvance(word, options);
+        FontRectangle trackedPunctuatedPhrase = TextMeasurer.MeasureAdvance(punctuatedPhrase, options);
+        FontRectangle trackedPhrase = TextMeasurer.MeasureAdvance(phrase, options);
+        ReadOnlyMemory<GlyphMetrics> trackedWordGlyphs = TextMeasurer.GetGlyphMetrics(word, options);
+
+        float untrackedWordAdvance = layoutMode.IsHorizontal() ? untrackedWord.Width : untrackedWord.Height;
+        float trackedWordAdvance = layoutMode.IsHorizontal() ? trackedWord.Width : trackedWord.Height;
+        float untrackedPunctuatedAdvance = layoutMode.IsHorizontal() ? untrackedPunctuatedPhrase.Width : untrackedPunctuatedPhrase.Height;
+        float trackedPunctuatedAdvance = layoutMode.IsHorizontal() ? trackedPunctuatedPhrase.Width : trackedPunctuatedPhrase.Height;
+        float untrackedPhraseAdvance = layoutMode.IsHorizontal() ? untrackedPhrase.Width : untrackedPhrase.Height;
+        float trackedPhraseAdvance = layoutMode.IsHorizontal() ? trackedPhrase.Width : trackedPhrase.Height;
+
+        // Tracking is em-relative in point space; measurement returns device pixels.
+        float expectedSeparatorSpacing = font.Size * tracking * options.Dpi / 72F;
+
+        Assert.Equal(untrackedWordAdvance, trackedWordAdvance, Comparer);
+        Assert.Equal(untrackedPunctuatedAdvance, trackedPunctuatedAdvance, Comparer);
+        Assert.Equal(expectedSeparatorSpacing, trackedPhraseAdvance - untrackedPhraseAdvance, Comparer);
+
+        // Arabic joining forms are represented by the selected glyph IDs. Equal
+        // advances alone could pass even if tracking changed those substitutions,
+        // so compare the complete visual-order glyph stream as well.
+        Assert.Equal(untrackedWordGlyphs.Length, trackedWordGlyphs.Length);
+        for (int i = 0; i < untrackedWordGlyphs.Length; i++)
+        {
+            Assert.Equal(untrackedWordGlyphs.Span[i].GlyphId, trackedWordGlyphs.Span[i].GlyphId);
+        }
+    }
+
+    /// <summary>
+    /// Writes the SixLabors.Fonts side of the browser tracking comparison.
+    /// </summary>
+    /// <param name="layoutMode">The layout mode represented by the browser writing mode.</param>
+    /// <param name="textDirection">The explicit inline text direction.</param>
+    [Theory]
+    [InlineData(LayoutMode.HorizontalTopBottom, TextDirection.LeftToRight)]
+    [InlineData(LayoutMode.HorizontalTopBottom, TextDirection.RightToLeft)]
+    [InlineData(LayoutMode.HorizontalBottomTop, TextDirection.LeftToRight)]
+    [InlineData(LayoutMode.HorizontalBottomTop, TextDirection.RightToLeft)]
+    [InlineData(LayoutMode.VerticalLeftRight, TextDirection.LeftToRight)]
+    [InlineData(LayoutMode.VerticalLeftRight, TextDirection.RightToLeft)]
+    [InlineData(LayoutMode.VerticalRightLeft, TextDirection.LeftToRight)]
+    [InlineData(LayoutMode.VerticalRightLeft, TextDirection.RightToLeft)]
+    [InlineData(LayoutMode.VerticalMixedLeftRight, TextDirection.LeftToRight)]
+    [InlineData(LayoutMode.VerticalMixedLeftRight, TextDirection.RightToLeft)]
+    [InlineData(LayoutMode.VerticalMixedRightLeft, TextDirection.LeftToRight)]
+    [InlineData(LayoutMode.VerticalMixedRightLeft, TextDirection.RightToLeft)]
+    public void FontTracking_BrowserComparison(LayoutMode layoutMode, TextDirection textDirection)
+    {
+        const string latinText = "a\u0308 office ";
+        const string devanagariText = "र्किर्कि";
+        const string arabicWord = "خَطِّيَّة";
+        const string arabicPunctuatedPhrase = "خَطِّيَّة،النَّصِّيَّة";
+        const string arabicPhrase = "خَطِّيَّة النَّصِّيَّة";
+        const string text = latinText + devanagariText + "\n" + arabicWord + "\n" + arabicPunctuatedPhrase + "\n" + arabicPhrase;
+
+        FontCollection collection = new();
+        FontFamily latin = TestFonts.GetFontFamily(collection, TestFonts.OpenSansFile);
+        FontFamily devanagari = TestFonts.GetFontFamily(collection, TestFonts.NotoSansDevanagariRegular);
+        FontFamily arabic = TestFonts.GetFontFamily(collection, TestFonts.NotoSansArabicRegular);
+
+        TextOptions options = new(latin.CreateFont(30))
+        {
+            Dpi = 96,
+            Tracking = .1F,
+            LayoutMode = layoutMode,
+            TextDirection = textDirection,
+            FallbackFontFamilies = [devanagari, arabic],
+        };
+
+        // The visual fixture and its shaping assertions share these exact values.
+        // Any new browser example therefore requires shaping parity in this same test.
+        HarfBuzzDifferentialTests.AssertBrowserFixtureRunMatchesHarfBuzz(TestFonts.OpenSansFile, latinText, TextDirection.LeftToRight, layoutMode);
+        HarfBuzzDifferentialTests.AssertBrowserFixtureRunMatchesHarfBuzz(TestFonts.NotoSansDevanagariRegular, devanagariText, TextDirection.LeftToRight, layoutMode);
+        HarfBuzzDifferentialTests.AssertBrowserFixtureRunMatchesHarfBuzz(TestFonts.NotoSansArabicRegular, arabicWord, TextDirection.RightToLeft, layoutMode);
+        HarfBuzzDifferentialTests.AssertBrowserFixtureRunMatchesHarfBuzz(TestFonts.NotoSansArabicRegular, arabicPunctuatedPhrase, TextDirection.RightToLeft, layoutMode);
+        HarfBuzzDifferentialTests.AssertBrowserFixtureRunMatchesHarfBuzz(TestFonts.NotoSansArabicRegular, arabicPhrase, TextDirection.RightToLeft, layoutMode);
+
+        // The reference image catches library regressions. tests/Browser/FontTracking.html
+        // independently places that stable output beside the browser rendering.
+        TextLayoutTestUtilities.TestLayout(text, options, properties: [layoutMode, textDirection]);
+    }
+
+    /// <summary>
+    /// Verifies the logical caret geometry reported by the browser for the
+    /// vertical-right-to-left upright comparison with left-to-right inline flow.
+    /// </summary>
+    [Fact]
+    public void FontTracking_VerticalRightLeftUpright_MatchesBrowserCaretGeometry()
+    {
+        const string text = "a\u0308 office र्किर्कि\nخَطِّيَّة\nخَطِّيَّة،النَّصِّيَّة\nخَطِّيَّة النَّصِّيَّة";
+
+        FontCollection collection = new();
+        FontFamily latin = TestFonts.GetFontFamily(collection, TestFonts.OpenSansFile);
+        FontFamily devanagari = TestFonts.GetFontFamily(collection, TestFonts.NotoSansDevanagariRegular);
+        FontFamily arabic = TestFonts.GetFontFamily(collection, TestFonts.NotoSansArabicRegular);
+        TextOptions options = new(latin.CreateFont(30))
+        {
+            Dpi = 96,
+            Tracking = .1F,
+            LayoutMode = LayoutMode.VerticalRightLeft,
+            TextDirection = TextDirection.LeftToRight,
+            FallbackFontFamilies = [devanagari, arabic],
+        };
+
+        ReadOnlySpan<GraphemeMetrics> metrics = TextMeasurer.GetGraphemeMetrics(text, options).Span;
+
+        // These are Chrome Range caret positions for the exact FontTracking.html
+        // sample. CSS resolves 30pt to 40px columns. The inline advances are 59px
+        // for Open Sans, 160px per Devanagari cluster, and 85px for Arabic.
+        (int StringIndex, float ColumnX, float InlineY, float InlineAdvance)[] expected =
+        [
+            (0, 0, 0, 59),
+            (2, 0, 59, 59),
+            (3, 0, 118, 59),
+            (4, 0, 177, 59),
+            (5, 0, 236, 59),
+            (6, 0, 295, 59),
+            (7, 0, 354, 59),
+            (8, 0, 413, 59),
+            (9, 0, 472, 59),
+            (10, 0, 531, 160),
+            (14, 0, 691, 160),
+            (19, -40, 255, 85),
+            (21, -40, 170, 85),
+            (24, -40, 85, 85),
+            (27, -40, 0, 85),
+            (29, -80, 850, 85),
+            (31, -80, 765, 85),
+            (34, -80, 680, 85),
+            (37, -80, 595, 85),
+            (38, -80, 510, 85),
+            (39, -80, 425, 85),
+            (40, -80, 340, 85),
+            (41, -80, 255, 85),
+            (44, -80, 170, 85),
+            (47, -80, 85, 85),
+            (50, -80, 0, 85),
+            (52, -120, 824, 85),
+            (54, -120, 739, 85),
+            (57, -120, 654, 85),
+            (60, -120, 569, 85),
+            (61, -120, 510, 59),
+            (62, -120, 425, 85),
+            (63, -120, 340, 85),
+            (64, -120, 255, 85),
+            (67, -120, 170, 85),
+            (70, -120, 85, 85),
+            (73, -120, 0, 85),
+        ];
+
+        // The browser's sample rectangle includes font overhang. Normalize both
+        // implementations to the first logical column so this assertion compares
+        // caret geometry rather than the page-grid placement of the sample.
+        int firstColumnIndex = 0;
+        while (metrics[firstColumnIndex].StringIndex != 0)
+        {
+            firstColumnIndex++;
+        }
+
+        float firstColumnX = metrics[firstColumnIndex].Advance.X;
+        Assert.Equal(expected.Length, metrics.Length);
+        for (int expectedIndex = 0; expectedIndex < expected.Length; expectedIndex++)
+        {
+            (int stringIndex, float columnX, float inlineY, float inlineAdvance) = expected[expectedIndex];
+            int actualIndex = 0;
+            while (metrics[actualIndex].StringIndex != stringIndex)
+            {
+                actualIndex++;
+            }
+
+            GraphemeMetrics actual = metrics[actualIndex];
+            Assert.Equal(columnX, actual.Advance.X - firstColumnX, Comparer);
+            Assert.Equal(inlineY, actual.Advance.Y, Comparer);
+            Assert.Equal(inlineAdvance, actual.Advance.Height, Comparer);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that hard-delimited lines in the browser fixture retain the same
+    /// shaped entry count and inline advance as independently laid-out lines.
+    /// </summary>
+    /// <param name="layoutMode">The browser-comparison layout mode.</param>
+    [Theory]
+    [InlineData(LayoutMode.HorizontalTopBottom)]
+    [InlineData(LayoutMode.HorizontalBottomTop)]
+    [InlineData(LayoutMode.VerticalLeftRight)]
+    [InlineData(LayoutMode.VerticalRightLeft)]
+    [InlineData(LayoutMode.VerticalMixedLeftRight)]
+    [InlineData(LayoutMode.VerticalMixedRightLeft)]
+    public void FontTracking_HardBreakLinesMatchSeparateLayout(LayoutMode layoutMode)
+    {
+        string[] logicalLines =
+        [
+            "a\u0308 office \u0930\u094D\u0915\u093F\u0930\u094D\u0915\u093F",
+            "\u062E\u064E\u0637\u0650\u0651\u064A\u064E\u0651\u0629",
+            "\u062E\u064E\u0637\u0650\u0651\u064A\u064E\u0651\u0629\u060C\u0627\u0644\u0646\u064E\u0651\u0635\u0650\u0651\u064A\u064E\u0651\u0629",
+            "\u062E\u064E\u0637\u0650\u0651\u064A\u064E\u0651\u0629 \u0627\u0644\u0646\u064E\u0651\u0635\u0650\u0651\u064A\u064E\u0651\u0629",
+        ];
+
+        FontCollection collection = new();
+        FontFamily latin = TestFonts.GetFontFamily(collection, TestFonts.OpenSansFile);
+        FontFamily devanagari = TestFonts.GetFontFamily(collection, TestFonts.NotoSansDevanagariRegular);
+        FontFamily arabic = TestFonts.GetFontFamily(collection, TestFonts.NotoSansArabicRegular);
+        TextOptions options = new(latin.CreateFont(30))
+        {
+            Dpi = 96,
+            Tracking = .1F,
+            LayoutMode = layoutMode,
+            TextDirection = TextDirection.RightToLeft,
+            FallbackFontFamilies = [devanagari, arabic],
+        };
+
+        TextBlock combined = new(string.Join('\n', logicalLines), options);
+        TextBox combinedBox = combined.BreakLines(options.WrappingLength);
+        Assert.Equal(logicalLines.Length, combinedBox.TextLines.Count);
+
+        int[] expectedGlyphCounts = new int[logicalLines.Length];
+        int[] actualGlyphCounts = new int[logicalLines.Length];
+        float[] expectedAdvances = new float[logicalLines.Length];
+        float[] actualAdvances = new float[logicalLines.Length];
+        for (int i = 0; i < logicalLines.Length; i++)
+        {
+            TextBox separateBox = new TextBlock(logicalLines[i], options).BreakLines(options.WrappingLength);
+            TextLine expected = Assert.Single(separateBox.TextLines);
+            TextLine actual = combinedBox.TextLines[i];
+
+            // Line breaking must not change the shaped content or its inline
+            // extent merely because another paragraph follows it.
+            expectedGlyphCounts[i] = expected.CountGlyphLayouts();
+            actualGlyphCounts[i] = actual.CountGlyphLayouts();
+            expectedAdvances[i] = expected.ScaledLineAdvance;
+            actualAdvances[i] = actual.ScaledLineAdvance;
+        }
+
+        Assert.Equal(expectedGlyphCounts, actualGlyphCounts);
+        Assert.Equal(expectedAdvances, actualAdvances, Comparer);
     }
 
     [Fact]
@@ -2910,12 +3224,11 @@ public class TextLayoutTests
 
         ReadOnlySpan<GlyphMetrics> glyphs = TextMeasurer.GetGlyphMetrics(text, options).Span;
 
-        int stringIndex = -1;
-
         for (int i = 0; i < glyphs.Length; i++)
         {
             GlyphMetrics bound = glyphs[i];
 
+            int stringIndex;
             if (bound.CodePoint == new CodePoint("k"[0]))
             {
                 stringIndex = text.IndexOf('k');

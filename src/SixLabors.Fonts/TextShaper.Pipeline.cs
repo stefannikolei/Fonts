@@ -146,7 +146,8 @@ public static partial class TextShaper
         ShapingScratch scratch = ScratchPool.Get();
         try
         {
-            ShapingBuffer shaped = ShapeCore(text, options, scratch, prebuiltRuns);
+            ShapingBuffer shaped = ShapeCore(text, options, scratch, prebuiltRuns, false);
+            FinalizeDirectionalRuns(shaped, options.LayoutMode, scratch);
             return new(ProjectShapedText(shaped, options.LayoutMode, scratch), scratch);
         }
         catch
@@ -170,21 +171,25 @@ public static partial class TextShaper
     /// scratch scope, or <see langword="null"/> to let the pass reuse scratch-owned
     /// run state.
     /// </param>
+    /// <param name="useShapingVerticalOrigin">
+    /// Whether synthesized vertical origins follow the public shaping contract
+    /// instead of the browser layout contract.
+    /// </param>
     /// <returns>The positioned buffer.</returns>
-    private static ShapingBuffer ShapeCore(
-        ReadOnlySpan<char> text,
-        TextOptions options,
-        ShapingScratch scratch,
-        IReadOnlyList<TextRun>? prebuiltRuns)
+    private static ShapingBuffer ShapeCore(ReadOnlySpan<char> text, TextOptions options, ShapingScratch scratch, IReadOnlyList<TextRun>? prebuiltRuns, bool useShapingVerticalOrigin)
     {
         (ShapingBuffer substitutions, ShapingBuffer positionings) = scratch.Prepare(options);
+
+        // Public shaping and browser-compatible layout use different synthesized
+        // vertical Y origins. Select that policy once per pass so mark attachment
+        // materializes the right origin without another pass or per-glyph state.
+        substitutions.UseShapingVerticalOrigin = useShapingVerticalOrigin;
+        positionings.UseShapingVerticalOrigin = useShapingVerticalOrigin;
 
         // Gather the font and fallbacks.
         Font[] fallbackFonts = (options.FallbackFontFamilies?.Count > 0)
             ? BuildFallbackFonts(options)
             : [];
-
-        LayoutMode layoutMode = options.LayoutMode;
 
         // Analyse the text for bidi directional runs.
         BidiAlgorithm bidi = scratch.BidiAlgorithm;
@@ -214,7 +219,6 @@ public static partial class TextShaper
             // A directional-run request is already one higher-level protocol unit.
             // Its contents cannot create internal bidi runs, including separators
             // and explicit controls, so only Auto direction requires inspection.
-            scratch.RunReadsRightToLeft = runDirection == BidiCharacterType.RightToLeft;
             scratch.AddBidiRun(new BidiRun(runDirection, runLevel, 0, codePointCount));
         }
         else
@@ -273,6 +277,7 @@ public static partial class TextShaper
         bool complete = true;
         int textRunIndex = 0;
         int codePointIndex = 0;
+        int stringIndex = 0;
         int bidiRunIndex = 0;
 
         // Single-run fast path: shape and seed one buffer in place and flip it to the
@@ -283,17 +288,7 @@ public static partial class TextShaper
         if (textRuns.Count == 1 && !textRuns[0].Placeholder.HasValue)
         {
             TextRun onlyRun = textRuns[0];
-            int graphemeEnd = PopulateAndSubstitute(
-                text,
-                onlyRun.Start,
-                textRuns,
-                ref textRunIndex,
-                ref codePointIndex,
-                ref bidiRunIndex,
-                onlyRun.ResolvedFont,
-                bidiRuns,
-                bidiMap,
-                substitutions);
+            int graphemeEnd = PopulateAndSubstitute(text, onlyRun.Start, textRuns, ref textRunIndex, ref codePointIndex, ref stringIndex, ref bidiRunIndex, onlyRun.ResolvedFont, bidiRuns, bidiMap, substitutions);
 
             if (usesDefaultTextRun)
             {
@@ -358,6 +353,7 @@ public static partial class TextShaper
                 textRuns,
                 ref textRunIndex,
                 ref codePointIndex,
+                ref stringIndex,
                 ref bidiRunIndex,
                 false,
                 textRun.ResolvedFont,
@@ -379,6 +375,7 @@ public static partial class TextShaper
             {
                 textRunIndex = 0;
                 codePointIndex = 0;
+                stringIndex = 0;
                 bidiRunIndex = 0;
                 if (DoFontRun(
                     text,
@@ -386,6 +383,7 @@ public static partial class TextShaper
                     textRuns,
                     ref textRunIndex,
                     ref codePointIndex,
+                    ref stringIndex,
                     ref bidiRunIndex,
                     true,
                     font,
@@ -435,6 +433,66 @@ public static partial class TextShaper
         HideDefaultIgnorables(shaped);
 
         return shaped;
+    }
+
+    /// <summary>
+    /// Finalizes each resolved directional run into HarfBuzz visual glyph order and
+    /// records its contiguous range without copying or taking ownership of glyphs.
+    /// </summary>
+    /// <param name="shaped">The positioned glyph buffer in logical run order.</param>
+    /// <param name="layoutMode">The shaping orientation used for the glyphs.</param>
+    /// <param name="scratch">The pooled state receiving run-range metadata.</param>
+    private static void FinalizeDirectionalRuns(ShapingBuffer shaped, LayoutMode layoutMode, ShapingScratch scratch)
+    {
+        int glyphIndex = 0;
+        BidiRun[] bidiRuns = scratch.BidiRuns;
+        int[] bidiMap = scratch.BidiMap;
+        for (int runIndex = 0; runIndex < scratch.BidiRunCount; runIndex++)
+        {
+            BidiRun bidiRun = bidiRuns[runIndex];
+            int glyphStart = glyphIndex;
+            while (glyphIndex < shaped.Count)
+            {
+                ref GlyphShapingData glyph = ref shaped[glyphIndex];
+                bool belongsToRun = glyph.IsPlaceholder
+                    ? shaped.GetPlaceholderBidiRun(glyph.CodePointIndex).Equals(bidiRun)
+                    : bidiMap[glyph.CodePointIndex] == runIndex;
+
+                if (!belongsToRun)
+                {
+                    break;
+                }
+
+                glyphIndex++;
+            }
+
+            ShapedGlyphRange glyphRange = new(glyphStart, glyphIndex - glyphStart);
+            scratch.SetBidiGlyphRange(runIndex, in glyphRange);
+
+            if ((bidiRun.Level & 1) == 0)
+            {
+                continue;
+            }
+
+            // Browsers copy the shaper's output sequentially because it is already
+            // in visual order for the directional run. Fonts shapes in
+            // logical storage, so apply the same proven finalization used by ShapeRun
+            // once per resolved run before projecting the contiguous arrays.
+            if (layoutMode.IsVertical())
+            {
+                // Bottom-to-top HarfBuzz shaping reverses graphemes before shaping.
+                // Reverse their order while retaining the shaped glyph order inside
+                // each grapheme, exactly as the public directional-run contract does.
+                shaped.ReverseGraphemeRange(glyphStart, glyphIndex);
+            }
+            else
+            {
+                // Horizontal and mixed-vertical directional runs use HarfBuzz's
+                // complete backward stream order, including every positioned glyph
+                // emitted for one source position.
+                shaped.ReverseRange(glyphStart, glyphIndex);
+            }
+        }
     }
 
     /// <summary>
@@ -530,6 +588,14 @@ public static partial class TextShaper
                 flags |= ShapedGlyphFlags.VerticalSubstituted;
             }
 
+            if (shaping.IsCursiveScript)
+            {
+                // Layout needs the post-GSUB script classification only when it
+                // applies tracking. Carry one bit through projection instead of
+                // retaining the heavier itemization data.
+                flags |= ShapedGlyphFlags.CursiveScript;
+            }
+
             infos[i] = new(
                 shaping.CodePointIndex,
                 shaping.CodePoint,
@@ -545,7 +611,16 @@ public static partial class TextShaper
                 entry.Metrics.Offset);
         }
 
-        return new ShapedText(scratch.Runs, infos, positions, count, scratch.BidiRuns, scratch.BidiMap, layoutMode);
+        return new ShapedText(
+            scratch.Runs,
+            infos,
+            positions,
+            count,
+            scratch.BidiRuns,
+            scratch.BidiGlyphRanges,
+            scratch.BidiRunCount,
+            scratch.BidiMap,
+            layoutMode);
     }
 
     /// <summary>
@@ -632,6 +707,7 @@ public static partial class TextShaper
     /// <param name="textRuns">The ordered list of resolved text runs.</param>
     /// <param name="textRunIndex">The index of the current text run; advanced as the enumerator crosses run boundaries.</param>
     /// <param name="codePointIndex">The running codepoint index (absolute within the original input).</param>
+    /// <param name="stringIndex">The running char index (absolute within the original input).</param>
     /// <param name="bidiRunIndex">The running bidi run index.</param>
     /// <param name="isFallbackRun">
     /// <see langword="true"/> if this call is the fallback-font pass (in which case unmapped codepoints
@@ -652,6 +728,7 @@ public static partial class TextShaper
         IReadOnlyList<TextRun> textRuns,
         ref int textRunIndex,
         ref int codePointIndex,
+        ref int stringIndex,
         ref int bidiRunIndex,
         bool isFallbackRun,
         Font font,
@@ -660,17 +737,7 @@ public static partial class TextShaper
         ShapingBuffer substitutions,
         ShapingBuffer positionings)
     {
-        _ = PopulateAndSubstitute(
-            text,
-            start,
-            textRuns,
-            ref textRunIndex,
-            ref codePointIndex,
-            ref bidiRunIndex,
-            font,
-            bidiRuns,
-            bidiMap,
-            substitutions);
+        _ = PopulateAndSubstitute(text, start, textRuns, ref textRunIndex, ref codePointIndex, ref stringIndex, ref bidiRunIndex, font, bidiRuns, bidiMap, substitutions);
 
         bool result = !isFallbackRun
             ? positionings.TryAdd(font, substitutions)
@@ -688,23 +755,14 @@ public static partial class TextShaper
     /// <param name="textRuns">The ordered list of resolved text runs.</param>
     /// <param name="textRunIndex">The index of the current text run; advanced as the enumerator crosses run boundaries.</param>
     /// <param name="codePointIndex">The running codepoint index (absolute within the original input).</param>
+    /// <param name="stringIndex">The running char index (absolute within the original input).</param>
     /// <param name="bidiRunIndex">The running bidi run index.</param>
     /// <param name="font">The font to shape with.</param>
     /// <param name="bidiRuns">The resolved bidi runs covering the whole input.</param>
     /// <param name="bidiMap">A codepoint → bidi-run mapping accumulated across shaping passes.</param>
     /// <param name="substitutions">The GSUB substitution buffer to write into.</param>
     /// <returns>The exclusive grapheme index reached after consuming the text.</returns>
-    private static int PopulateAndSubstitute(
-        ReadOnlySpan<char> text,
-        int start,
-        IReadOnlyList<TextRun> textRuns,
-        ref int textRunIndex,
-        ref int codePointIndex,
-        ref int bidiRunIndex,
-        Font font,
-        BidiRun[] bidiRuns,
-        int[] bidiMap,
-        ShapingBuffer substitutions)
+    private static int PopulateAndSubstitute(ReadOnlySpan<char> text, int start, IReadOnlyList<TextRun> textRuns, ref int textRunIndex, ref int codePointIndex, ref int stringIndex, ref int bidiRunIndex, Font font, BidiRun[] bidiRuns, int[] bidiMap, ShapingBuffer substitutions)
     {
         // For each run we start with a fresh substitution buffer to avoid
         // overwriting the glyph ids.
@@ -718,6 +776,10 @@ public static partial class TextShaper
         // width, emoji, or display flags. The boundary-only mode avoids deriving
         // metadata that no shaping operation consumes.
         int graphemeIndex = start;
+        int inputGroupStart = substitutions.Count;
+        bool previousWasContinuation = false;
+        bool previousWasRegionalIndicator = false;
+        bool previousWasZeroWidthJoiner = false;
         SpanGraphemeEnumerator graphemeEnumerator = new(text, true);
         while (graphemeEnumerator.MoveNext())
         {
@@ -736,6 +798,65 @@ public static partial class TextShaper
             SpanCodePointEnumerator codePointEnumerator = new(grapheme);
             while (codePointEnumerator.MoveNext())
             {
+                CodePoint current = codePointEnumerator.Current;
+                int currentStringIndex = stringIndex;
+                stringIndex += current.Utf16SequenceLength;
+
+                uint value = (uint)current.Value;
+                GraphemeClusterClass graphemeClass = CodePoint.GetGraphemeClusterClass(current);
+
+                // HarfBuzz deliberately uses a smaller continuation rule set than
+                // the complete Unicode grapheme algorithm. In particular, ZWNJ and
+                // adjacent Hangul letters keep distinct input starts, while marks,
+                // emoji modifiers, paired regional indicators, ZWJ emoji sequences,
+                // half-width voiced marks, and emoji tag characters continue the
+                // preceding input group.
+                bool isRegionalIndicator = graphemeClass == GraphemeClusterClass.RegionalIndicator;
+                bool isZeroWidthJoiner = CodePoint.IsZeroWidthJoiner(current);
+                bool isContinuation =
+
+                    // Combining, spacing-combining, and enclosing marks belong to
+                    // the preceding base character.
+                    CodePoint.IsMark(current)
+
+                    // U+1F3FB..U+1F3FF are the five emoji skin-tone modifiers.
+                    || value is >= 0x1F3FB and <= 0x1F3FF
+
+                    // Regional indicators form flag pairs. The second indicator
+                    // continues the first; the third starts the next pair.
+                    || (isRegionalIndicator && previousWasRegionalIndicator && !previousWasContinuation)
+
+                    // U+200D ZERO WIDTH JOINER connects the characters on either side.
+                    || isZeroWidthJoiner
+
+                    // An extended pictographic character following U+200D continues
+                    // the emoji sequence selected by that joiner.
+                    || (previousWasZeroWidthJoiner && graphemeClass == GraphemeClusterClass.ExtendedPictographic)
+
+                    // U+FF9E and U+FF9F are the half-width Katakana voiced and
+                    // semi-voiced sound marks.
+                    || value is >= 0xFF9E and <= 0xFF9F
+
+                    // U+E0020 TAG SPACE through U+E007F CANCEL TAG encode the
+                    // invisible tag sequences used by emoji subregion flags.
+                    || value is >= 0xE0020 and <= 0xE007F;
+
+                if (!isContinuation)
+                {
+                    // The preceding group is now complete. Combine its exact input
+                    // starts once, before GSUB can move or expand any of its records.
+                    if (substitutions.Count - inputGroupStart > 1)
+                    {
+                        substitutions.CombineInputStarts(inputGroupStart, substitutions.Count);
+                    }
+
+                    inputGroupStart = substitutions.Count;
+                }
+
+                previousWasContinuation = isContinuation;
+                previousWasRegionalIndicator = isRegionalIndicator;
+                previousWasZeroWidthJoiner = isZeroWidthJoiner;
+
                 if (codePointIndex == bidiRuns[bidiRunIndex].End)
                 {
                     bidiRunIndex++;
@@ -751,7 +872,6 @@ public static partial class TextShaper
                 bidiMap[codePointIndex] = bidiRunIndex;
 
                 int charsConsumed = 0;
-                CodePoint current = codePointEnumerator.Current;
                 charIndex += current.Utf16SequenceLength;
                 CodePoint? next = hasVariationSequences && graphemeCodePointIndex < graphemeMax
                     ? CodePoint.DecodeFromUtf16At(grapheme, charIndex, out charsConsumed)
@@ -763,9 +883,12 @@ public static partial class TextShaper
                 // codepoint enters the buffer, including unmapped default
                 // ignorables as the missing glyph: sequence matching treats them
                 // as transparent and the hide stage replaces them at the end.
-                substitutions.TryGetGlyphId(font.FontMetrics, current, next, out ushort glyphId, out skipNextCodePoint);
+                _ = substitutions.TryGetGlyphId(font.FontMetrics, current, next, out ushort glyphId, out skipNextCodePoint);
 
-                substitutions.AddGlyph(glyphId, current, (TextDirection)bidiRuns[bidiRunIndex].Direction, (ushort)textRunIndex, codePointIndex, graphemeIndex);
+                // Capture all three source coordinates while the input enumerators
+                // provide them. Later substitutions move, duplicate, or combine the
+                // complete record without reconstructing source positions.
+                substitutions.AddGlyph(glyphId, current, (TextDirection)bidiRuns[bidiRunIndex].Direction, (ushort)textRunIndex, codePointIndex, currentStringIndex, graphemeIndex);
 
                 codePointIndex++;
                 graphemeCodePointIndex++;
@@ -774,8 +897,14 @@ public static partial class TextShaper
             graphemeIndex++;
         }
 
+        if (substitutions.Count - inputGroupStart > 1)
+        {
+            // Complete the final input group because no following codepoint exists
+            // to close it inside the loop.
+            substitutions.CombineInputStarts(inputGroupStart, substitutions.Count);
+        }
+
         // Apply the simple and complex substitutions.
-        // TODO: Investigate HarfBuzz normalizer.
         SubstituteBidiMirrors(font.FontMetrics, substitutions);
 
         font.FontMetrics.ApplySubstitution(substitutions);

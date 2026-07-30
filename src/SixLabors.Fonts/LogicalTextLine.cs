@@ -1,12 +1,11 @@
 // Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
-using SixLabors.Fonts.Unicode;
-
 namespace SixLabors.Fonts;
 
 /// <summary>
-/// Contains a composed logical text line and its width-independent line break opportunities.
+/// Contains a composed logical text line and the retained source text its line
+/// break opportunities are queried from.
 /// </summary>
 internal readonly struct LogicalTextLine
 {
@@ -14,17 +13,17 @@ internal readonly struct LogicalTextLine
     /// Initializes a new instance of the <see cref="LogicalTextLine"/> struct.
     /// </summary>
     /// <param name="textLine">The composed logical text line.</param>
-    /// <param name="lineBreaks">The collected line break opportunities.</param>
+    /// <param name="sourceText">The retained source text used to query line break opportunities.</param>
     /// <param name="wordSegments">The collected word-boundary segment runs.</param>
     /// <param name="hyphenationMarkers">The visible hyphenation markers created for soft hyphen entries.</param>
     public LogicalTextLine(
         TextLine textLine,
-        List<LineBreak> lineBreaks,
+        char[] sourceText,
         List<WordSegmentRun> wordSegments,
         List<GlyphLayoutData> hyphenationMarkers)
     {
         this.TextLine = textLine;
-        this.LineBreaks = lineBreaks;
+        this.SourceText = sourceText;
         this.WordSegments = wordSegments;
         this.HyphenationMarkers = hyphenationMarkers;
     }
@@ -35,9 +34,12 @@ internal readonly struct LogicalTextLine
     public TextLine TextLine { get; }
 
     /// <summary>
-    /// Gets the collected line break opportunities.
+    /// Gets the retained source text. Browsers keep the source text alive and query
+    /// break opportunities through a lazy cursor per layout pass; retaining the text
+    /// here lets every wrapping length do the same instead of materializing the
+    /// paragraph's break candidates.
     /// </summary>
-    public List<LineBreak> LineBreaks { get; }
+    public char[] SourceText { get; }
 
     /// <summary>
     /// Gets the collected word-boundary segment runs.

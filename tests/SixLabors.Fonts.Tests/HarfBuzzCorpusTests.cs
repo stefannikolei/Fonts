@@ -249,7 +249,7 @@ public class HarfBuzzCorpusTests
 
         TextShapingBuffer shapingBuffer = new();
         shapingBuffer.Add(text);
-        shapingBuffer.Direction = buffer.Direction == Direction.RightToLeft
+        shapingBuffer.TextDirection = buffer.Direction == Direction.RightToLeft
             ? TextDirection.RightToLeft
             : TextDirection.LeftToRight;
         shapingBuffer.Script = ReadScriptClass(requestedScript);
@@ -259,6 +259,15 @@ public class HarfBuzzCorpusTests
         string actual = Describe(shapingBuffer);
 
         Assert.Equal(expected, actual);
+
+        ReadOnlySpan<GlyphInfo> referenceGlyphs = buffer.GetGlyphInfoSpan();
+        ReadOnlySpan<ShapedGlyph> actualGlyphs = shapingBuffer.Glyphs;
+        for (int i = 0; i < referenceGlyphs.Length; i++)
+        {
+            // AddUtf16 reports char indices, which is the same contract exposed by
+            // ShapedGlyph.StringIndex.
+            Assert.Equal((int)referenceGlyphs[i].Cluster, actualGlyphs[i].StringIndex);
+        }
     }
 
     /// <summary>
@@ -355,15 +364,6 @@ public class HarfBuzzCorpusTests
     /// while this library reports the font's line advance there, so comparing it
     /// would report a difference of convention on every glyph. Every corpus case is
     /// horizontal, so the axis compared is the horizontal one.
-    /// </para>
-    /// <para>
-    /// Which character each glyph came from is not compared either, and that is a
-    /// real gap rather than a convention. The reference merges the characters of a
-    /// grapheme into one group and reports every glyph of that group against the
-    /// group's first character, so a base and its marks all report the same index.
-    /// This library reports the index each glyph actually came from. Comparing the
-    /// two would require modelling the merging, which the shaping API deliberately
-    /// does not expose. Until it does, a wrong text mapping will not be caught here.
     /// </para>
     /// </remarks>
     /// <param name="builder">The builder.</param>

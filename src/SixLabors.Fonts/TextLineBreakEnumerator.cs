@@ -18,7 +18,10 @@ internal sealed class TextLineBreakEnumerator
     private readonly bool normalizeDecomposedAdvances;
     private readonly int maxLines;
     private readonly CodePoint? ellipsisMarkerCodePoint;
-    private readonly List<LineBreak> lineBreaks;
+    private readonly bool includeHyphenationBreaks;
+    private LineBreakEnumerator.State breakCursorState;
+    private LineBreak bufferedBreak;
+    private bool hasBufferedBreak;
     private TextLine textLine;
     private int processed;
     private int lineCount;
@@ -39,7 +42,8 @@ internal sealed class TextLineBreakEnumerator
         this.normalizeDecomposedAdvances = options.LayoutMode.IsVertical();
         this.maxLines = options.MaxLines;
         this.ellipsisMarkerCodePoint = TextLayout.GetEllipsisMarkerCodePoint(options);
-        this.lineBreaks = logicalLine.LineBreaks;
+        this.includeHyphenationBreaks = TextLayout.GetHyphenationMarkerCodePoint(options).HasValue;
+        this.ReseedBreakCursor();
 
         // The breaker mutates the remaining line as it advances, so each cursor owns
         // a clone of the immutable prepared line held by TextBlock.
@@ -72,43 +76,72 @@ internal sealed class TextLineBreakEnumerator
         {
             LineBreak? bestBreak = null;
 
-            // Index rather than enumerate: the interface-typed break list would allocate a heap
-            // enumerator for every produced line.
-            for (int i = 0; i < this.lineBreaks.Count; i++)
-            {
-                LineBreak lineBreak = this.lineBreaks[i];
+            // Browsers fill each line by pulling the next break opportunity from a
+            // lazy cursor and measuring the line incrementally as it grows, holding
+            // O(1) state instead of a materialized candidate list. The entry walk
+            // below carries a running advance and the advance through the most
+            // recent non-whitespace entry, so each candidate's measurement excludes
+            // trailing whitespace without re-summing from the line start.
+            int entryIndex = 0;
+            float runningAdvance = 0;
+            float measuredAdvance = 0;
 
-                // Skip breaks that are already behind the processed portion.
+            while (this.TryPeekBreak(out LineBreak lineBreak))
+            {
+                // Candidates at or behind the processed boundary belong to lines
+                // already produced (or entries consumed by width splits); discard.
                 if (lineBreak.PositionWrap <= this.processed)
                 {
+                    this.ConsumeBreak();
                     continue;
                 }
 
-                // Measure the text up to the adjusted break point.
-                int measureIndex = lineBreak.PositionMeasure - this.processed;
-                float advance = this.textLine.MeasureAt(measureIndex);
+                // Advance the incremental measurement to the candidate's measure
+                // position, clamped to the remaining line exactly as the previous
+                // whole-line measurement clamped its index.
+                int measureTarget = Math.Min(lineBreak.PositionMeasure - this.processed, this.textLine.Count - 1);
+                while (entryIndex <= measureTarget)
+                {
+                    GlyphLayoutData entry = this.textLine[entryIndex];
+                    runningAdvance += entry.ScaledAdvance;
+                    if (!CodePoint.IsWhiteSpace(entry.CodePoint))
+                    {
+                        measuredAdvance = runningAdvance;
+                    }
+
+                    entryIndex++;
+                }
+
+                float advance = measuredAdvance;
                 if (lineBreak.IsHyphenationBreak)
                 {
                     advance += this.textLine.GetHyphenationMarkerAdvance(
-                        measureIndex - 1,
+                        lineBreak.PositionMeasure - this.processed - 1,
                         this.logicalLine.HyphenationMarkers);
                 }
 
                 if (advance >= scaledWrappingLength)
                 {
-                    bestBreak ??= lineBreak;
+                    // The overflowing candidate is taken only when nothing earlier
+                    // fit; otherwise it stays buffered as the next line's first
+                    // candidate, replacing the previous full-list rescan.
+                    if (bestBreak is null)
+                    {
+                        bestBreak = lineBreak;
+                        this.ConsumeBreak();
+                    }
+
                     break;
                 }
+
+                this.ConsumeBreak();
+                bestBreak = lineBreak;
 
                 // If it's a mandatory break, stop immediately.
                 if (lineBreak.Required)
                 {
-                    bestBreak = lineBreak;
                     break;
                 }
-
-                // Update the best break.
-                bestBreak = lineBreak;
             }
 
             if (bestBreak != null)
@@ -125,6 +158,79 @@ internal sealed class TextLineBreakEnumerator
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Exposes the next undiscarded break opportunity without consuming it, pulling
+    /// from the streaming cursor into the single-candidate buffer when empty.
+    /// </summary>
+    /// <param name="lineBreak">The next break opportunity.</param>
+    /// <returns><see langword="true"/> while opportunities remain.</returns>
+    private bool TryPeekBreak(out LineBreak lineBreak)
+    {
+        if (!this.hasBufferedBreak)
+        {
+            if (!this.TryPullBreak(out this.bufferedBreak))
+            {
+                lineBreak = default;
+                return false;
+            }
+
+            this.hasBufferedBreak = true;
+        }
+
+        lineBreak = this.bufferedBreak;
+        return true;
+    }
+
+    /// <summary>
+    /// Consumes the buffered break opportunity so the next peek pulls a fresh one.
+    /// </summary>
+    private void ConsumeBreak() => this.hasBufferedBreak = false;
+
+    /// <summary>
+    /// Pulls the next layout-relevant break opportunity from the retained source
+    /// text, resuming the streaming UAX #14 enumeration from its captured state.
+    /// </summary>
+    /// <remarks>
+    /// The enumerator is a ref struct, so this class persists its value state
+    /// between pulls and reconstitutes it over the retained text per candidate.
+    /// URL solidus tailoring is layout policy and is enabled only here, keeping the
+    /// enumerator's public constructor Unicode-conformant; soft-hyphen candidates
+    /// participate only when hyphenation is configured.
+    /// </remarks>
+    /// <param name="lineBreak">The next break opportunity.</param>
+    /// <returns><see langword="true"/> while opportunities remain.</returns>
+    private bool TryPullBreak(out LineBreak lineBreak)
+    {
+        LineBreakEnumerator cursor = new(this.logicalLine.SourceText, true, in this.breakCursorState);
+        while (cursor.MoveNext())
+        {
+            if (cursor.Current.IsHyphenationBreak && !this.includeHyphenationBreaks)
+            {
+                continue;
+            }
+
+            this.breakCursorState = cursor.CaptureState();
+            lineBreak = cursor.Current;
+            return true;
+        }
+
+        this.breakCursorState = cursor.CaptureState();
+        lineBreak = default;
+        return false;
+    }
+
+    /// <summary>
+    /// Restarts the streaming break cursor from the start of the retained text.
+    /// The processed boundary discards the dead prefix on the next scan, which is
+    /// how browsers requery their break iterator after rewinding an overflowed line.
+    /// </summary>
+    private void ReseedBreakCursor()
+    {
+        LineBreakEnumerator cursor = new(this.logicalLine.SourceText, tailorUrls: true);
+        this.breakCursorState = cursor.CaptureState();
+        this.hasBufferedBreak = false;
     }
 
     /// <summary>
@@ -176,8 +282,14 @@ internal sealed class TextLineBreakEnumerator
                     this.textLine.TrySplitAt(scaledWrappingLength, out TextLine? overflow))
                 {
                     // Reinsert the overflow at the beginning of the remaining line.
+                    // Rewinding the processed boundary reinstates source positions
+                    // whose break candidates the cursor has already consumed, so
+                    // the stream restarts and the dead prefix is discarded on the
+                    // next scan. Overflow rewinds are rare, so the restart cost
+                    // never dominates the fill.
                     this.processed -= overflow.Count;
                     remaining.InsertAt(0, overflow);
+                    this.ReseedBreakCursor();
                 }
             }
 
@@ -329,6 +441,7 @@ internal sealed class TextLineBreakEnumerator
         // Paragraph layout trims trailing breaking whitespace. Editor interaction keeps
         // ordinary trailing whitespace addressable so typed spaces can advance the caret.
         this.current = line.Finalize(
+            this.options.LayoutMode,
             skipJustification,
             this.normalizeDecomposedAdvances,
             preserveTrailingBreakingWhitespace);

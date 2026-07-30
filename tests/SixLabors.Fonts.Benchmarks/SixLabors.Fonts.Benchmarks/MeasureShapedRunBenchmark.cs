@@ -116,7 +116,7 @@ public class MeasureShapedRunBenchmark : IDisposable
     public FontRectangle SixLaborsFonts()
     {
         this.shapingBuffer.Add(this.text);
-        this.shapingBuffer.Direction = this.direction;
+        this.shapingBuffer.TextDirection = this.direction;
         TextShaper.ShapeRun(this.font, this.shapingBuffer);
 
         return TextMeasurer.MeasureBounds(this.shapingBuffer, this.glyphOptions);

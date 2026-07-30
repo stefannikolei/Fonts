@@ -78,6 +78,7 @@ internal sealed class PlaceholderGlyphMetrics : FontGlyphMetrics
         GlyphLayoutMode mode,
         TextRun textRun,
         Vector2 positionOffset,
+        Vector2 positionedAdvance,
         float pointSize,
         float dpi,
         HintingMode hintingMode,

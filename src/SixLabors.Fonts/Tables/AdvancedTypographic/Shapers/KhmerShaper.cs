@@ -385,6 +385,8 @@ internal sealed class KhmerShaper : DefaultShaper
                     buffer.EnableShapingFeature(i, prefMask);
                     buffer.EnableShapingFeature(i + 1, prefMask);
 
+                    buffer.CombineInputStarts(start, i + 2);
+
                     // Move the two records independently so their order remains H, Ra at the start.
                     buffer.MoveGlyph(i, start);
                     buffer.MoveGlyph(i + 1, start + 1);
@@ -399,6 +401,7 @@ internal sealed class KhmerShaper : DefaultShaper
             }
             else if (buffer[i].Syllable.IndicCategory == Categories.VPre)
             {
+                buffer.CombineInputStarts(start, i + 1);
                 buffer.MoveGlyph(i, start);
             }
         }

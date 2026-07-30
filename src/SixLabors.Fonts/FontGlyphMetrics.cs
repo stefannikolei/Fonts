@@ -366,26 +366,33 @@ public abstract class FontGlyphMetrics
     /// <param name="scaledPointSize">The scaled point size, mapped to pixels by the caller.</param>
     /// <param name="textRun">The text run providing the styling information for this glyph.</param>
     /// <param name="positionOffset">The positioned placement offset in font design units, composed with the glyph's base offset.</param>
+    /// <param name="positionedAdvance">The positioned advance in font design units used to substitute bounds for glyphs without an outline.</param>
     /// <returns>
     /// A <see cref="FontRectangle"/> representing the glyph bounds in device space.
     /// </returns>
-    internal FontRectangle GetBoundingBox(GlyphLayoutMode mode, Vector2 origin, float scaledPointSize, TextRun? textRun, Vector2 positionOffset)
+    internal FontRectangle GetBoundingBox(GlyphLayoutMode mode, Vector2 origin, float scaledPointSize, TextRun? textRun, Vector2 positionOffset, Vector2 positionedAdvance)
     {
         Vector2 scale = new(scaledPointSize / this.ScaleFactor.X, scaledPointSize / this.ScaleFactor.Y);
         Bounds b = this.GetDesignBounds();
 
-        // 1) Substitute fallback bounds if the glyph has no outline.
+        // 1) Substitute fallback bounds if the glyph has no outline. The box uses the
+        // positioned advance rather than the font's nominal advance because it stands
+        // for the space the glyph occupies in the laid-out line: positioning can
+        // rewrite the advance, and an invisible default ignorable is deliberately
+        // zeroed, so its nominal advance would claim ink no renderer produces.
+        // Callers without positioned state pass the nominal metrics advances, which
+        // are identical whenever nothing repositioned the glyph.
         if (b.Equals(Bounds.Empty))
         {
             if (mode == GlyphLayoutMode.Vertical)
             {
-                // For vertical layout, set Y-up min = -AdvanceHeight to 0 so Y-down is 0..+AdvanceHeight.
-                b = new Bounds(0f, -this.AdvanceHeight, 0f, 0f);
+                // For vertical layout, set Y-up min = -advance to 0 so Y-down is 0..+advance.
+                b = new Bounds(0f, -positionedAdvance.Y, 0f, 0f);
             }
             else
             {
-                // For horizontal layout, just use advance width.
-                b = new Bounds(0f, 0f, this.AdvanceWidth, 0f);
+                // For horizontal layout, just use the positioned advance width.
+                b = new Bounds(0f, 0f, positionedAdvance.X, 0f);
             }
         }
 
@@ -454,6 +461,7 @@ public abstract class FontGlyphMetrics
     /// <param name="mode">The glyph layout mode to render using.</param>
     /// <param name="textRun">The text run providing the styling information for this glyph.</param>
     /// <param name="positionOffset">The positioned placement offset in font design units, composed with the glyph's base offset.</param>
+    /// <param name="positionedAdvance">The positioned advance in font design units used to substitute bounds for glyphs without an outline.</param>
     /// <param name="pointSize">The point size used to render this glyph.</param>
     /// <param name="dpi">The pixel density used to render this glyph.</param>
     /// <param name="hintingMode">The hinting mode used to render this glyph.</param>
@@ -469,6 +477,7 @@ public abstract class FontGlyphMetrics
         GlyphLayoutMode mode,
         TextRun textRun,
         Vector2 positionOffset,
+        Vector2 positionedAdvance,
         float pointSize,
         float dpi,
         HintingMode hintingMode,
@@ -489,7 +498,7 @@ public abstract class FontGlyphMetrics
         float scaledPPEM = this.GetScaledSize(pointSize, dpi);
 
         Matrix3x2 rotation = GetRotationMatrix(mode);
-        FontRectangle box = this.GetBoundingBox(mode, glyphOrigin, scaledPPEM, textRun, positionOffset);
+        FontRectangle box = this.GetBoundingBox(mode, glyphOrigin, scaledPPEM, textRun, positionOffset, positionedAdvance);
         GlyphRendererParameters parameters = new(this, textRun, pointSize, dpi, mode, graphemeIndex);
 
         if (!renderer.BeginGlyph(in box, in parameters))
@@ -553,7 +562,7 @@ public abstract class FontGlyphMetrics
         {
             if (!whitespace)
             {
-                this.RenderOutlineTo(outlineTarget, glyphOrigin, mode, textRun, positionOffset, scaledPPEM, hintingMode);
+                this.RenderOutlineTo(outlineTarget, glyphOrigin, mode, textRun, positionOffset, positionedAdvance, scaledPPEM, hintingMode);
             }
 
             renderer.EndGlyph();
@@ -572,13 +581,14 @@ public abstract class FontGlyphMetrics
     /// <summary>
     /// Renders only the glyph outline geometry to the specified renderer, without glyph or
     /// decoration bookkeeping, using the same transforms as
-    /// <see cref="RenderTo(IGlyphRenderer, int, Vector2, Vector2, Vector2, GlyphLayoutMode, TextRun, Vector2, float, float, HintingMode, TextDecorationSkipInk, DecorationPositioningMode, FontMetrics)"/>.
+    /// <see cref="RenderTo(IGlyphRenderer, int, Vector2, Vector2, Vector2, GlyphLayoutMode, TextRun, Vector2, Vector2, float, float, HintingMode, TextDecorationSkipInk, DecorationPositioningMode, FontMetrics)"/>.
     /// </summary>
     /// <param name="renderer">The surface renderer.</param>
     /// <param name="glyphOrigin">The origin used to render the glyph outline, in device pixels.</param>
     /// <param name="mode">The glyph layout mode to render using.</param>
     /// <param name="textRun">The text run providing the styling information for this glyph.</param>
     /// <param name="positionOffset">The positioned placement offset in font design units, composed with the glyph's base offset.</param>
+    /// <param name="positionedAdvance">The positioned advance in font design units used to substitute bounds for glyphs without an outline.</param>
     /// <param name="scaledPPEM">The scaled pixels-per-em value used to scale the outline.</param>
     /// <param name="hintingMode">The hinting mode used to render the glyph.</param>
     internal virtual void RenderOutlineTo(
@@ -587,6 +597,7 @@ public abstract class FontGlyphMetrics
         GlyphLayoutMode mode,
         TextRun? textRun,
         Vector2 positionOffset,
+        Vector2 positionedAdvance,
         float scaledPPEM,
         HintingMode hintingMode)
     {

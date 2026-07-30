@@ -377,6 +377,9 @@ public static class TextMeasurer
 
         Vector2 baselineOrigin = options.Origin;
         int originalGraphemeIndex = options.GraphemeIndex;
+
+        // Shaped values are already Font.Size-scaled points. Measurement owns the
+        // single points-to-device-pixels conversion.
         float scale = options.Dpi / 72F;
 
         GlyphMetrics[] metrics = new GlyphMetrics[glyphs.Length];
@@ -396,8 +399,10 @@ public static class TextMeasurer
                         baselineOrigin.X + ((penX + glyph.Offset.X) * scale),
                         baselineOrigin.Y - ((penY + glyph.Offset.Y) * scale));
 
-                    int graphemeIndex = originalGraphemeIndex + glyph.CodePointIndex;
-                    metrics[i] = CreateGlyphMetrics(glyph.GlyphId, options, graphemeIndex, glyph.CodePointIndex);
+                    // GraphemeIndex identifies the shaped cluster; StringIndex is
+                    // the UTF-16 source boundary. Keep both distinct in the result.
+                    int graphemeIndex = originalGraphemeIndex + glyph.GraphemeIndex;
+                    metrics[i] = CreateGlyphMetrics(glyph.GlyphId, options, graphemeIndex, glyph.StringIndex);
 
                     penX += glyph.AdvanceWidth;
                     penY += glyph.AdvanceHeight;
@@ -406,6 +411,9 @@ public static class TextMeasurer
             else
             {
                 FontMetrics fontMetrics = options.Font.FontMetrics;
+
+                // Shaping records hard-line glyph boundaries but deliberately does
+                // not choose a device-space baseline progression.
                 float lineAdvance = fontMetrics.HorizontalMetrics.LineHeight * options.Font.Size * options.Dpi / fontMetrics.ScaleFactor;
                 float baselineY = baselineOrigin.Y;
                 int glyphStart = 0;
@@ -424,8 +432,8 @@ public static class TextMeasurer
                             baselineOrigin.X + ((penX + glyph.Offset.X) * scale),
                             baselineY - ((penY + glyph.Offset.Y) * scale));
 
-                        int graphemeIndex = originalGraphemeIndex + glyph.CodePointIndex;
-                        metrics[i] = CreateGlyphMetrics(glyph.GlyphId, options, graphemeIndex, glyph.CodePointIndex);
+                        int graphemeIndex = originalGraphemeIndex + glyph.GraphemeIndex;
+                        metrics[i] = CreateGlyphMetrics(glyph.GlyphId, options, graphemeIndex, glyph.StringIndex);
 
                         penX += glyph.AdvanceWidth;
                         penY += glyph.AdvanceHeight;
@@ -438,6 +446,8 @@ public static class TextMeasurer
         }
         finally
         {
+            // Measurement temporarily reuses the caller's options to avoid a
+            // per-glyph allocation; leave the object exactly as it arrived.
             options.Origin = baselineOrigin;
         }
 
@@ -847,8 +857,12 @@ public static class TextMeasurer
     {
         if (!TryGetMeasurableGlyphMetrics(glyphId, options, out FontGlyphMetrics? metrics))
         {
+            // Keep the requested id even when the font cannot resolve it. Run
+            // overloads promise one index-correlated entry per input glyph, so the
+            // empty geometry must not discard the identity of that entry.
             return new GlyphMetrics(
                 default,
+                glyphId,
                 FontRectangle.Empty,
                 FontRectangle.Empty,
                 FontRectangle.Empty,
@@ -861,6 +875,7 @@ public static class TextMeasurer
         FontRectangle bounds = GetGlyphBounds(metrics, options);
         return new GlyphMetrics(
             metrics.CodePoint,
+            glyphId,
             advance,
             bounds,
             FontRectangle.Union(GetAbsoluteAdvance(metrics, options), bounds),
@@ -910,7 +925,8 @@ public static class TextMeasurer
             GetAnchoredOrigin(options, layoutMode),
             metrics.GetScaledSize(options.Font.Size, options.Dpi),
             null,
-            Vector2.Zero);
+            Vector2.Zero,
+            new Vector2(metrics.AdvanceWidth, metrics.AdvanceHeight));
     }
 
     /// <summary>

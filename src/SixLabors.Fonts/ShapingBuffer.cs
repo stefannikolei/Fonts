@@ -188,7 +188,7 @@ internal sealed class ShapingBuffer
     private FontMetrics? shapingClassCacheOwner;
 
     /// <summary>
-    /// The bidi runs recorded for inline placeholders, keyed by codepoint offset.
+    /// The bidi runs recorded for inline placeholders, keyed by codepoint index.
     /// Placeholder state lives here rather than on every glyph record because only
     /// placeholders carry a bidi run of their own, and only the copy-out reads it.
     /// </summary>
@@ -196,12 +196,12 @@ internal sealed class ShapingBuffer
 
     /// <summary>
     /// Shape plans reused across segments and passes, keyed by script, script tag,
-    /// and font. Safe to reuse because the pooled buffer is exclusively owned and a
-    /// plan's per-segment shaper state is reassigned at each pause invocation.
-    /// Cleared when a reset adopts a different options instance, whose values the
-    /// plans captured when built.
+    /// font, language, and effective feature list. Safe to reuse because the pooled
+    /// buffer is exclusively owned and a plan's per-segment shaper state is
+    /// reassigned at each pause invocation. Cleared when a reset changes an option
+    /// value captured by the plans.
     /// </summary>
-    private readonly List<(ScriptClass Script, Tag ScriptTag, FontMetrics FontMetrics, string Language, ShapePlan Plan)> planCache = new(4);
+    private readonly List<(ScriptClass Script, Tag ScriptTag, FontMetrics FontMetrics, string Language, IReadOnlyList<Tag> FeatureTags, ShapePlan Plan)> planCache = new(4);
 
     /// <summary>
     /// The language the cached language tags were resolved for.
@@ -212,6 +212,21 @@ internal sealed class ShapingBuffer
     /// The feature tags the cached plans were built for.
     /// </summary>
     private IReadOnlyList<Tag>? featureKey;
+
+    /// <summary>
+    /// The layout mode the cached plans were built for.
+    /// </summary>
+    private LayoutMode layoutModeKey;
+
+    /// <summary>
+    /// The kerning mode the cached plans were built for.
+    /// </summary>
+    private KerningMode kerningModeKey;
+
+    /// <summary>
+    /// Whether tracking was enabled when the cached plans were built.
+    /// </summary>
+    private bool hasTrackingKey;
 
     /// <summary>
     /// The output-side record storage for substitution passes. Allocated on the
@@ -407,12 +422,18 @@ internal sealed class ShapingBuffer
     /// exceed the maximum nesting depth. A font may chain contextual lookups
     /// into each other without bound, so recursion is capped rather than trusted.
     /// </summary>
-    public bool NestingLimitReached => this.nestedApplicationDepth >= Tables.AdvancedTypographic.AdvancedTypographicUtils.MaxNestingLevel;
+    public bool NestingLimitReached => this.nestedApplicationDepth >= AdvancedTypographicUtils.MaxNestingLevel;
 
     /// <summary>
     /// Gets the text options used by this buffer.
     /// </summary>
     public TextOptions TextOptions { get; private set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether synthesized vertical origins follow
+    /// the public shaping contract rather than the browser layout contract.
+    /// </summary>
+    public bool UseShapingVerticalOrigin { get; set; }
 
     /// <summary>
     /// Gets the approximate membership filter over every glyph id the buffer has ever
@@ -563,16 +584,24 @@ internal sealed class ShapingBuffer
         // Cached plans and language tags captured option values when built, so what
         // invalidates them is those values changing. A caller shaping run after run
         // through one buffer hands the same options over each time with the members
-        // rewritten, so identity alone would never notice.
+        // rewritten, so identity alone would never notice. Tracking only affects
+        // plan construction when it crosses zero; its magnitude is applied by
+        // layout and therefore does not belong in the shape-plan cache key.
         string language = textOptions.Culture?.Name ?? string.Empty;
         if (!ReferenceEquals(this.TextOptions, textOptions)
             || !string.Equals(this.languageKey, language, StringComparison.Ordinal)
-            || !ReferenceEquals(this.featureKey, textOptions.FeatureTags))
+            || !ReferenceEquals(this.featureKey, textOptions.FeatureTags)
+            || this.layoutModeKey != textOptions.LayoutMode
+            || this.kerningModeKey != textOptions.KerningMode
+            || this.hasTrackingKey != (textOptions.Tracking != 0))
         {
             this.planCache.Clear();
             this.TextOptions = textOptions;
             this.languageKey = language;
             this.featureKey = textOptions.FeatureTags;
+            this.layoutModeKey = textOptions.LayoutMode;
+            this.kerningModeKey = textOptions.KerningMode;
+            this.hasTrackingKey = textOptions.Tracking != 0;
         }
     }
 
@@ -753,38 +782,23 @@ internal sealed class ShapingBuffer
     }
 
     /// <summary>
-    /// Adds a copy of the glyph shaping data at the specified codepoint offset.
-    /// </summary>
-    /// <param name="data">The data to copy.</param>
-    /// <param name="offset">The zero-based index within the input codepoint buffer.</param>
-    public void AddGlyph(GlyphShapingData data, int offset)
-    {
-        this.glyphDigest.Add(data.GlyphId);
-        this.HasDefaultIgnorables |= data.IsDefaultIgnorable;
-        ref GlyphShapingData slot = ref this.Append();
-
-        // This path preserves every shaping field, so a value copy is both the exact
-        // operation required and cheaper than replaying the struct through setters.
-        slot = data;
-        slot.CodePointIndex = offset;
-    }
-
-    /// <summary>
     /// Adds the glyph id and the codepoint it represents.
     /// </summary>
     /// <param name="glyphId">The id of the glyph to add.</param>
     /// <param name="codePoint">The codepoint the glyph represents.</param>
     /// <param name="direction">The resolved text direction for the codepoint.</param>
     /// <param name="textRunIndex">The index of the text run this glyph belongs to.</param>
-    /// <param name="offset">The zero-based index within the input codepoint buffer.</param>
+    /// <param name="codePointIndex">The zero-based index within the input codepoint buffer.</param>
+    /// <param name="stringIndex">The zero-based char index in the original text.</param>
     /// <param name="graphemeIndex">The zero-based index of the grapheme the glyph belongs to.</param>
-    public void AddGlyph(ushort glyphId, CodePoint codePoint, TextDirection direction, ushort textRunIndex, int offset, int graphemeIndex)
+    public void AddGlyph(ushort glyphId, CodePoint codePoint, TextDirection direction, ushort textRunIndex, int codePointIndex, int stringIndex, int graphemeIndex)
     {
         this.glyphDigest.Add(glyphId);
         ref GlyphShapingData slot = ref this.Append();
         slot = new(textRunIndex)
         {
-            CodePointIndex = offset,
+            CodePointIndex = codePointIndex,
+            StringIndex = stringIndex,
             GraphemeIndex = graphemeIndex,
             CodePoint = codePoint,
             Direction = direction,
@@ -846,28 +860,28 @@ internal sealed class ShapingBuffer
     /// <param name="codePoint">The object replacement codepoint used for Unicode processing.</param>
     /// <param name="bidiRun">The resolved bidi run for the placeholder.</param>
     /// <param name="textRunIndex">The index of the text run this placeholder belongs to.</param>
-    /// <param name="offset">The zero-based index within the input codepoint buffer.</param>
-    public void AddPlaceholder(CodePoint codePoint, BidiRun bidiRun, ushort textRunIndex, int offset)
+    /// <param name="codePointIndex">The zero-based index within the input codepoint buffer.</param>
+    public void AddPlaceholder(CodePoint codePoint, BidiRun bidiRun, ushort textRunIndex, int codePointIndex)
     {
         ref GlyphShapingData slot = ref this.Append();
         slot = new(textRunIndex)
         {
-            CodePointIndex = offset,
+            CodePointIndex = codePointIndex,
             CodePoint = codePoint,
             Direction = (TextDirection)bidiRun.Direction,
             GlyphId = 0,
             IsPlaceholder = true,
         };
 
-        this.placeholderBidiRuns.Add((offset, bidiRun));
+        this.placeholderBidiRuns.Add((codePointIndex, bidiRun));
     }
 
     /// <summary>
-    /// Gets the bidi run recorded for the placeholder at the given codepoint offset.
-    /// Placeholders shape in isolated single-glyph runs, so their offsets are stable
+    /// Gets the bidi run recorded for the placeholder at the given codepoint index.
+    /// Placeholders shape in isolated single-glyph runs, so their indices are stable
     /// for the lifetime of the pass.
     /// </summary>
-    /// <param name="codePointIndex">The placeholder's zero-based codepoint offset.</param>
+    /// <param name="codePointIndex">The placeholder's zero-based codepoint index.</param>
     /// <returns>The recorded <see cref="BidiRun"/>, or the default when none was recorded.</returns>
     public BidiRun GetPlaceholderBidiRun(int codePointIndex)
     {
@@ -884,18 +898,18 @@ internal sealed class ShapingBuffer
     }
 
     /// <summary>
-    /// Copies the placeholder bidi run recorded at the given codepoint offset in
+    /// Copies the placeholder bidi run recorded at the given codepoint index in
     /// <paramref name="source"/> into this buffer, so seeding from a workspace
     /// preserves placeholder bidi state without carrying it on every glyph record.
     /// </summary>
     /// <param name="source">The buffer to copy the recorded run from.</param>
-    /// <param name="codePointIndex">The placeholder's zero-based codepoint offset.</param>
+    /// <param name="codePointIndex">The placeholder's zero-based codepoint index.</param>
     public void CopyPlaceholderBidiRun(ShapingBuffer source, int codePointIndex)
         => this.placeholderBidiRuns.Add((codePointIndex, source.GetPlaceholderBidiRun(codePointIndex)));
 
     /// <summary>
-    /// Moves the specified glyph to the specified position. Codepoint offsets stay
-    /// bound to their slots: only the shaping state travels.
+    /// Moves the specified glyph and its original input indices to the specified
+    /// position.
     /// </summary>
     /// <param name="fromIndex">The index to move from.</param>
     /// <param name="toIndex">The index to move to.</param>
@@ -908,33 +922,66 @@ internal sealed class ShapingBuffer
 
         GlyphShapingData[] items = this.data;
         GlyphShapingData moved = items[fromIndex];
-        int targetOffset = items[toIndex].CodePointIndex;
 
         if (fromIndex > toIndex)
         {
-            // Moving the selected state left shifts the intervening states right.
-            // Restore each destination slot's offset after its state moves into it.
-            for (int i = fromIndex; i > toIndex; i--)
-            {
-                int keep = items[i].CodePointIndex;
-                items[i] = items[i - 1];
-                items[i].CodePointIndex = keep;
-            }
+            Array.Copy(items, toIndex, items, toIndex + 1, fromIndex - toIndex);
         }
         else
         {
-            // The inverse move shifts intervening states left under the same
-            // slot-owned offset rule.
-            for (int i = fromIndex; i < toIndex; i++)
-            {
-                int keep = items[i].CodePointIndex;
-                items[i] = items[i + 1];
-                items[i].CodePointIndex = keep;
-            }
+            Array.Copy(items, fromIndex + 1, items, fromIndex, toIndex - fromIndex);
         }
 
         items[toIndex] = moved;
-        items[toIndex].CodePointIndex = targetOffset;
+    }
+
+    /// <summary>
+    /// Assigns the earliest stored input starts to every record in a shaping range.
+    /// </summary>
+    /// <param name="startIndex">The first record in the range.</param>
+    /// <param name="endIndex">The first record after the range.</param>
+    public void CombineInputStarts(int startIndex, int endIndex)
+    {
+        GlyphShapingData[] items = this.data;
+        int sourceIndex = startIndex;
+        for (int i = startIndex + 1; i < endIndex; i++)
+        {
+            if (items[i].StringIndex < items[sourceIndex].StringIndex)
+            {
+                sourceIndex = i;
+            }
+        }
+
+        int sourceStringIndex = items[sourceIndex].StringIndex;
+        int leadingStringIndex = items[startIndex].StringIndex;
+        int trailingStringIndex = items[endIndex - 1].StringIndex;
+
+        // HarfBuzz extends a changed boundary across adjacent records that already
+        // share its old input start. This keeps every output copied from that input
+        // together when only part of it intersects the requested shaping range.
+        if (sourceStringIndex != trailingStringIndex)
+        {
+            while (endIndex < this.Count && items[endIndex].StringIndex == trailingStringIndex)
+            {
+                endIndex++;
+            }
+        }
+
+        if (sourceStringIndex != leadingStringIndex)
+        {
+            while (startIndex > 0 && items[startIndex - 1].StringIndex == leadingStringIndex)
+            {
+                startIndex--;
+            }
+        }
+
+        GlyphShapingData source = items[sourceIndex];
+        for (int i = startIndex; i < endIndex; i++)
+        {
+            items[i].CodePointIndex = source.CodePointIndex;
+            items[i].StringIndex = source.StringIndex;
+            items[i].GraphemeIndex = source.GraphemeIndex;
+        }
     }
 
     /// <summary>
@@ -969,29 +1016,66 @@ internal sealed class ShapingBuffer
     }
 
     /// <summary>
+    /// Reverses the grapheme order in the specified range while preserving the
+    /// shaped glyph order within each grapheme.
+    /// </summary>
+    /// <param name="startIndex">The zero-based index at which to start reversing (inclusive).</param>
+    /// <param name="endIndex">The zero-based index at which to stop reversing (exclusive).</param>
+    public void ReverseGraphemeRange(int startIndex, int endIndex)
+    {
+        int start = Math.Max(0, Math.Min(startIndex, this.Count));
+        int end = Math.Max(0, Math.Min(endIndex, this.Count));
+        if (end < start + 2)
+        {
+            return;
+        }
+
+        // Reversing all records puts the graphemes in the required order but also
+        // reverses every multi-glyph grapheme. Reverse each contiguous grapheme
+        // again to restore the glyph stream produced for that grapheme.
+        this.ReverseRange(start, end);
+        int graphemeStart = start;
+        while (graphemeStart < end)
+        {
+            int graphemeIndex = this.data[graphemeStart].GraphemeIndex;
+            int graphemeEnd = graphemeStart + 1;
+            while (graphemeEnd < end && this.data[graphemeEnd].GraphemeIndex == graphemeIndex)
+            {
+                graphemeEnd++;
+            }
+
+            this.ReverseRange(graphemeStart, graphemeEnd);
+            graphemeStart = graphemeEnd;
+        }
+    }
+
+    /// <summary>
     /// Performs a stable sort of the glyph records by the comparison delegate.
-    /// Codepoint offsets stay bound to their slots: only the shaping state is
-    /// reordered.
     /// </summary>
     /// <param name="startIndex">The start index.</param>
     /// <param name="endIndex">The end index.</param>
     /// <param name="comparer">The comparison delegate.</param>
     public void Sort(int startIndex, int endIndex, Comparison<GlyphShapingData> comparer)
     {
-        // Stable insertion sort using adjacent swaps. The sorted ranges are typically
-        // small (syllable clusters of 2-10 glyphs), so insertion sort is optimal and
-        // avoids allocations.
+        // The sorted ranges are typically small runs of marks or syllables, so a
+        // stable insertion sort avoids both allocation and general-purpose sort
+        // overhead.
         GlyphShapingData[] items = this.data;
         for (int i = startIndex + 1; i < endIndex; i++)
         {
             int j = i;
-            while (j > startIndex && comparer(items[j - 1], items[j]) > 0)
+            while (j > startIndex && comparer(items[j - 1], items[i]) > 0)
             {
-                // Swap the records, then swap the offsets back so they keep their slots.
-                (items[j], items[j - 1]) = (items[j - 1], items[j]);
-                (items[j].CodePointIndex, items[j - 1].CodePointIndex) = (items[j - 1].CodePointIndex, items[j].CodePointIndex);
                 j--;
             }
+
+            if (j == i)
+            {
+                continue;
+            }
+
+            this.CombineInputStarts(j, i + 1);
+            this.MoveGlyph(i, j);
         }
     }
 
@@ -1053,15 +1137,22 @@ internal sealed class ShapingBuffer
     /// <param name="feature">The feature to apply to the record at the specified index.</param>
     public void Replace(int index, ReadOnlySpan<int> removalIndices, ushort glyphId, int ligatureId, int ligatureComponent, Tag feature)
     {
+        if (!removalIndices.IsEmpty)
+        {
+            this.CombineInputStarts(index, removalIndices[^1] + 1);
+        }
+
         // Gather the merged codepoint bookkeeping from the component records
         // before any of them move.
         int codePointCount = 0;
         CodePoint codePoint = default;
+
         for (int i = removalIndices.Length - 1; i >= 0; i--)
         {
-            int match = removalIndices[i];
-            codePointCount += this.data[match].CodePointCount;
-            CodePoint currentCodePoint = this.data[match].CodePoint;
+            ref GlyphShapingData consumed = ref this.data[removalIndices[i]];
+
+            codePointCount += consumed.CodePointCount;
+            CodePoint currentCodePoint = consumed.CodePoint;
             if (!UnicodeUtility.IsDefaultIgnorableCodePoint((uint)currentCodePoint.Value) || UnicodeUtility.ShouldRenderWhiteSpaceOnly(currentCodePoint))
             {
                 if (!CodePoint.IsZeroWidthJoiner(currentCodePoint) && !CodePoint.IsZeroWidthNonJoiner(currentCodePoint))
@@ -1155,15 +1246,22 @@ internal sealed class ShapingBuffer
     /// <param name="feature">The feature to apply to the record at the specified index.</param>
     public void Replace(int index, int count, ushort glyphId, Tag feature)
     {
+        if (count > 0)
+        {
+            this.CombineInputStarts(index, index + count + 1);
+        }
+
         // Gather the merged codepoint bookkeeping from the following records
         // before any of them move.
         int codePointCount = 0;
         CodePoint codePoint = default;
+
         for (int i = count; i > 0; i--)
         {
-            int match = index + i;
-            codePointCount += this.data[match].CodePointCount;
-            CodePoint currentCodePoint = this.data[match].CodePoint;
+            ref GlyphShapingData consumed = ref this.data[index + i];
+
+            codePointCount += consumed.CodePointCount;
+            CodePoint currentCodePoint = consumed.CodePoint;
             if (!UnicodeUtility.IsDefaultIgnorableCodePoint((uint)currentCodePoint.Value) || UnicodeUtility.ShouldRenderWhiteSpaceOnly(currentCodePoint))
             {
                 if (!CodePoint.IsZeroWidthJoiner(currentCodePoint) && !CodePoint.IsZeroWidthNonJoiner(currentCodePoint))
@@ -1240,8 +1338,9 @@ internal sealed class ShapingBuffer
     public void MergeGlyph(int index, int mergeIndex, ushort glyphId, Tag feature)
     {
         this.glyphDigest.Add(glyphId);
+        this.CombineInputStarts(index, mergeIndex + 1);
 
-        ref GlyphShapingData merged = ref this.data[mergeIndex];
+        GlyphShapingData merged = this.data[mergeIndex];
         int codePointCount = merged.CodePointCount;
 
         this.RemoveAt(mergeIndex);
@@ -1384,7 +1483,7 @@ internal sealed class ShapingBuffer
     }
 
     /// <summary>
-    /// Inserts the shaping data at the given index, adopting the slot's codepoint offset.
+    /// Inserts the shaping data at the given index, adopting the slot's codepoint index.
     /// </summary>
     /// <param name="index">The zero-based index at which to insert.</param>
     /// <param name="data">The shaping data to insert.</param>
@@ -1508,8 +1607,8 @@ internal sealed class ShapingBuffer
 
     /// <summary>
     /// Replaces fallback glyphs in this buffer with glyphs shaped by a fallback font.
-    /// Each surviving workspace offset supersedes the source interval up to the next
-    /// surviving offset, including records consumed by substitution.
+    /// Each surviving workspace codepoint index supersedes the source interval up to
+    /// the next surviving index, including records consumed by substitution.
     /// </summary>
     /// <param name="font">The fallback font used to resolve metrics.</param>
     /// <param name="workspace">The substituted workspace buffer for the fallback font.</param>
@@ -1547,38 +1646,38 @@ internal sealed class ShapingBuffer
             // Fallback fonts inherit the point size of the unresolved destination
             // record. Their Font instance identifies the face, but an explicit text
             // run can have a different size from the options' default font.
-            int offset = this.data[i].CodePointIndex;
+            int codePointIndex = this.data[i].CodePointIndex;
             float pointSize = this.metrics[i].PointSize;
 
-            // Shaping preserves ascending source offsets even when substitution
+            // Shaping preserves ascending source codepoint indices even when substitution
             // changes the number of glyphs. Locate the contiguous replacement group
             // directly in the workspace instead of allocating a temporary list.
             int replacementStart = 0;
-            while (replacementStart < workspace.Count && workspace.data[replacementStart].CodePointIndex < offset)
+            while (replacementStart < workspace.Count && workspace.data[replacementStart].CodePointIndex < codePointIndex)
             {
                 replacementStart++;
             }
 
             int replacementEnd = replacementStart;
-            while (replacementEnd < workspace.Count && workspace.data[replacementEnd].CodePointIndex == offset)
+            while (replacementEnd < workspace.Count && workspace.data[replacementEnd].CodePointIndex == codePointIndex)
             {
                 replacementEnd++;
             }
 
             if (replacementStart == replacementEnd)
             {
-                // The fallback shaping result has no glyph at this source offset and
-                // no earlier result in this pass claimed it. Leave the destination
-                // record available for the next configured fallback font.
+                // The fallback shaping result has no glyph at this source codepoint
+                // index and no earlier result in this pass claimed it. Leave the
+                // destination record available for the next configured fallback font.
                 hasFallBacks = true;
                 i++;
                 continue;
             }
 
             // A substitution can consume later source records into the glyphs at
-            // this offset. The next surviving offset marks the end of that source
-            // interval; replacing only the first record would leave the consumed
-            // primary-font .notdef records visible.
+            // this codepoint index. The next surviving index marks the end of that
+            // source interval; replacing only the first record would leave the
+            // consumed primary-font .notdef records visible.
             int replacementLimit = replacementEnd < workspace.Count
                 ? workspace.data[replacementEnd].CodePointIndex
                 : int.MaxValue;
@@ -1618,11 +1717,11 @@ internal sealed class ShapingBuffer
                 continue;
             }
 
-            // Multiple glyphs can survive at the same source offset. Walk back to
+            // Multiple glyphs can survive at the same source codepoint index. Walk back to
             // include every primary-font result at the replacement boundary, then
-            // extend through offsets consumed by the fallback substitution.
+            // extend through indices consumed by the fallback substitution.
             int destinationStart = i;
-            while (destinationStart > 0 && this.data[destinationStart - 1].CodePointIndex == offset)
+            while (destinationStart > 0 && this.data[destinationStart - 1].CodePointIndex == codePointIndex)
             {
                 destinationStart--;
             }
@@ -1782,31 +1881,38 @@ internal sealed class ShapingBuffer
     /// <param name="unicodeScriptTag">The resolved OpenType script tag.</param>
     /// <param name="fontMetrics">The font metrics the plan binds to.</param>
     /// <param name="culture">The culture whose language system the plan selects.</param>
+    /// <param name="featureTags">The effective additional feature tags.</param>
     /// <returns>The <see cref="ShapePlan"/>.</returns>
-    public ShapePlan GetOrCreatePlan(ScriptClass script, Tag unicodeScriptTag, FontMetrics fontMetrics, CultureInfo culture)
+    public ShapePlan GetOrCreatePlan(ScriptClass script, Tag unicodeScriptTag, FontMetrics fontMetrics, CultureInfo culture, IReadOnlyList<Tag> featureTags)
     {
         // The plan carries the language system the font's features were selected
         // through, so a plan built for one language cannot stand in for another.
         string language = culture.Name;
 
-        List<(ScriptClass Script, Tag ScriptTag, FontMetrics FontMetrics, string Language, ShapePlan Plan)> cache = this.planCache;
+        // The itemizer gives adjacent records with equivalent effective features
+        // one shared list instance. Reference comparison therefore keeps this hot
+        // cache lookup allocation-free and avoids enumerating tags per segment.
+        List<(ScriptClass Script, Tag ScriptTag, FontMetrics FontMetrics, string Language, IReadOnlyList<Tag> FeatureTags, ShapePlan Plan)> cache = this.planCache;
         for (int i = 0; i < cache.Count; i++)
         {
-            (ScriptClass cachedScript, Tag cachedTag, FontMetrics cachedMetrics, string cachedLanguage, ShapePlan cachedPlan) = cache[i];
+            (ScriptClass cachedScript, Tag cachedTag, FontMetrics cachedMetrics, string cachedLanguage, IReadOnlyList<Tag> cachedFeatures, ShapePlan cachedPlan) = cache[i];
             if (cachedScript == script
                 && cachedTag == unicodeScriptTag
                 && ReferenceEquals(cachedMetrics, fontMetrics)
-                && string.Equals(cachedLanguage, language, StringComparison.Ordinal))
+                && string.Equals(cachedLanguage, language, StringComparison.Ordinal)
+                && ReferenceEquals(cachedFeatures, featureTags))
             {
                 return cachedPlan;
             }
         }
 
         Tag[] languageTags = ResolveLanguageTags(culture);
-        ShapePlan plan = ShapePlan.Build(fontMetrics, script, unicodeScriptTag, this.TextOptions, languageTags);
+        ShapePlan plan = ShapePlan.Build(fontMetrics, script, unicodeScriptTag, this.TextOptions, featureTags, languageTags);
         if (plan.IsCacheable)
         {
-            cache.Add((script, unicodeScriptTag, fontMetrics, language, plan));
+            // Variation-dependent plans opt out because their resolved lookups can
+            // change without any managed cache-key value changing.
+            cache.Add((script, unicodeScriptTag, fontMetrics, language, featureTags, plan));
         }
 
         return plan;
@@ -2023,27 +2129,92 @@ internal sealed class ShapingBuffer
         bool positioning = this.Role == ShapingBufferRole.Positioning;
         int kept = 0;
         int pendingCodePointIndex = -1;
+        int pendingStringIndex = -1;
+        int pendingGraphemeIndex = -1;
         int pendingCodePointCount = 0;
         for (int i = 0; i < this.Count; i++)
         {
             if (filter(this.data[i]))
             {
                 ref GlyphShapingData deleted = ref this.data[i];
-                if (kept > 0)
+                if (kept > 0 && deleted.Direction != TextDirection.RightToLeft)
                 {
+                    int previousCodePointIndex = this.data[kept - 1].CodePointIndex;
+                    int previousStringIndex = this.data[kept - 1].StringIndex;
+                    if (deleted.CodePointIndex < previousCodePointIndex)
+                    {
+                        // One input codepoint can produce several adjacent glyphs.
+                        // Update every glyph carrying the old index so none of the
+                        // surviving output disagrees about the combined input.
+                        for (int j = kept - 1; j >= 0 && this.data[j].CodePointIndex == previousCodePointIndex; j--)
+                        {
+                            this.data[j].CodePointIndex = deleted.CodePointIndex;
+                            this.data[j].GraphemeIndex = Math.Min(this.data[j].GraphemeIndex, deleted.GraphemeIndex);
+                        }
+                    }
+
+                    if (deleted.StringIndex >= 0 && deleted.StringIndex < previousStringIndex)
+                    {
+                        // The char index travels with glyph records. Update every
+                        // glyph representing the preceding input before compaction
+                        // removes the record that supplied the earlier index.
+                        for (int j = kept - 1; j >= 0 && this.data[j].StringIndex == previousStringIndex; j--)
+                        {
+                            this.data[j].StringIndex = deleted.StringIndex;
+                        }
+                    }
+
                     this.data[kept - 1].CodePointCount += deleted.CodePointCount;
                 }
                 else
                 {
-                    if (pendingCodePointIndex < 0)
-                    {
-                        pendingCodePointIndex = deleted.CodePointIndex;
-                    }
-
+                    // The buffer remains logical until layout reorders it. For a
+                    // right-to-left run, the next logical glyph is the preceding
+                    // glyph visually and therefore receives the deleted input.
+                    pendingCodePointIndex = pendingCodePointIndex < 0
+                        ? deleted.CodePointIndex
+                        : Math.Min(pendingCodePointIndex, deleted.CodePointIndex);
+                    pendingStringIndex = pendingStringIndex < 0
+                        ? deleted.StringIndex
+                        : Math.Min(pendingStringIndex, deleted.StringIndex);
+                    pendingGraphemeIndex = pendingGraphemeIndex < 0
+                        ? deleted.GraphemeIndex
+                        : Math.Min(pendingGraphemeIndex, deleted.GraphemeIndex);
                     pendingCodePointCount += deleted.CodePointCount;
                 }
 
                 continue;
+            }
+
+            if (pendingCodePointCount > 0)
+            {
+                int nextCodePointIndex = this.data[i].CodePointIndex;
+                int nextStringIndex = this.data[i].StringIndex;
+                int nextGraphemeIndex = this.data[i].GraphemeIndex;
+
+                // The following input can already be represented by several glyphs.
+                // Update every sibling before compaction so deleting a leading
+                // record cannot leave part of that input with the later indices.
+                for (int j = i; j < this.Count && this.data[j].CodePointIndex == nextCodePointIndex; j++)
+                {
+                    this.data[j].CodePointIndex = Math.Min(this.data[j].CodePointIndex, pendingCodePointIndex);
+                }
+
+                if (pendingStringIndex >= 0)
+                {
+                    for (int j = i; j < this.Count && this.data[j].StringIndex == nextStringIndex; j++)
+                    {
+                        this.data[j].StringIndex = Math.Min(this.data[j].StringIndex, pendingStringIndex);
+                    }
+                }
+
+                for (int j = i; j < this.Count && this.data[j].GraphemeIndex == nextGraphemeIndex; j++)
+                {
+                    this.data[j].GraphemeIndex = Math.Min(this.data[j].GraphemeIndex, pendingGraphemeIndex);
+                }
+
+                this.data[i].CodePointCount += pendingCodePointCount;
+                pendingCodePointCount = 0;
             }
 
             if (kept != i)
@@ -2056,15 +2227,28 @@ internal sealed class ShapingBuffer
                 }
             }
 
-            if (pendingCodePointCount > 0)
+            kept++;
+        }
+
+        if (pendingCodePointCount > 0 && kept > 0)
+        {
+            int lastCodePointIndex = this.data[kept - 1].CodePointIndex;
+            int lastStringIndex = this.data[kept - 1].StringIndex;
+            for (int i = kept - 1; i >= 0 && this.data[i].CodePointIndex == lastCodePointIndex; i--)
             {
-                ref GlyphShapingData first = ref this.data[kept];
-                first.CodePointIndex = pendingCodePointIndex;
-                first.CodePointCount += pendingCodePointCount;
-                pendingCodePointCount = 0;
+                this.data[i].CodePointIndex = Math.Min(this.data[i].CodePointIndex, pendingCodePointIndex);
+                this.data[i].GraphemeIndex = Math.Min(this.data[i].GraphemeIndex, pendingGraphemeIndex);
             }
 
-            kept++;
+            if (pendingStringIndex >= 0)
+            {
+                for (int i = kept - 1; i >= 0 && this.data[i].StringIndex == lastStringIndex; i--)
+                {
+                    this.data[i].StringIndex = Math.Min(this.data[i].StringIndex, pendingStringIndex);
+                }
+            }
+
+            this.data[kept - 1].CodePointCount += pendingCodePointCount;
         }
 
         this.Count = kept;

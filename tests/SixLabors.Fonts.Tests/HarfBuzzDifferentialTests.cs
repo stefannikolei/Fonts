@@ -66,7 +66,7 @@ public class HarfBuzzDifferentialTests
         Font font = new FontCollection().Add(fontFile).CreateFont(shapingSize);
         TextShapingBuffer shapingBuffer = new();
         shapingBuffer.Add(text);
-        shapingBuffer.Direction = rightToLeft ? TextDirection.RightToLeft : TextDirection.LeftToRight;
+        shapingBuffer.TextDirection = rightToLeft ? TextDirection.RightToLeft : TextDirection.LeftToRight;
 
         TextShaper.ShapeRun(font, shapingBuffer);
 
@@ -90,6 +90,71 @@ public class HarfBuzzDifferentialTests
         {
             Assert.Equal(infos[i].Codepoint, glyphs[i].GlyphId);
             Assert.Equal(positions[i].XAdvance, glyphs[i].AdvanceWidth);
+            Assert.Equal(positions[i].XOffset, glyphs[i].Offset.X);
+            Assert.Equal(positions[i].YOffset, glyphs[i].Offset.Y);
+        }
+    }
+
+    /// <summary>
+    /// Verifies one font run used by the browser tracking fixture against HarfBuzz directly.
+    /// </summary>
+    /// <param name="fontFile">The font file used by both shaping engines.</param>
+    /// <param name="text">The exact text rendered with the supplied font.</param>
+    /// <param name="textDirection">The directional-run contract for the script.</param>
+    /// <param name="layoutMode">The SixLabors layout mode selecting the shaping orientation.</param>
+    internal static void AssertBrowserFixtureRunMatchesHarfBuzz(string fontFile, string text, TextDirection textDirection, LayoutMode layoutMode)
+    {
+        using Blob blob = Blob.FromFile(fontFile);
+        using HBFace face = new(blob, 0);
+        using HBFont hbFont = new(face);
+        hbFont.SetFunctionsOpenType();
+
+        int shapingSize = (int)face.UnitsPerEm;
+        hbFont.SetScale(shapingSize, shapingSize);
+
+        Font font = new FontCollection().Add(fontFile).CreateFont(shapingSize);
+
+        // Upright vertical text follows the vertical inline axis. Horizontal and
+        // mixed vertical text retain the resolved direction of the script run.
+        Direction harfBuzzDirection = layoutMode.IsVertical()
+            ? textDirection == TextDirection.LeftToRight ? Direction.TopToBottom : Direction.BottomToTop
+            : textDirection == TextDirection.LeftToRight ? Direction.LeftToRight : Direction.RightToLeft;
+
+        using HBBuffer buffer = new();
+        buffer.AddUtf16(text);
+        buffer.Direction = harfBuzzDirection;
+        buffer.GuessSegmentProperties();
+        hbFont.Shape(buffer);
+
+        ReadOnlySpan<GlyphInfo> infos = buffer.GetGlyphInfoSpan();
+        ReadOnlySpan<GlyphPosition> positions = buffer.GetGlyphPositionSpan();
+        uint[] expectedGlyphIds = infos.ToArray().Select(x => x.Codepoint).ToArray();
+
+        TextShapingBuffer shapingBuffer = new()
+        {
+            LayoutMode = layoutMode,
+            TextDirection = textDirection
+        };
+
+        shapingBuffer.Add(text);
+
+        // Layout has already split the paragraph into font and directional runs at
+        // this boundary, so ShapeRun exercises the same shaping contract it consumes.
+        TextShaper.ShapeRun(font, shapingBuffer);
+
+        ReadOnlySpan<ShapedGlyph> glyphs = shapingBuffer.Glyphs;
+        Assert.Equal(infos.Length, glyphs.Length);
+
+        // Compare the complete visual-order stream first so a substitution or
+        // reordering error reports the full shaped result rather than one glyph.
+        uint[] actualGlyphIds = glyphs.ToArray().Select(x => (uint)x.GlyphId).ToArray();
+        Assert.Equal(expectedGlyphIds, actualGlyphIds);
+
+        for (int i = 0; i < glyphs.Length; i++)
+        {
+            Assert.Equal(infos[i].Codepoint, glyphs[i].GlyphId);
+            Assert.Equal(positions[i].XAdvance, glyphs[i].AdvanceWidth);
+            Assert.Equal(positions[i].YAdvance, glyphs[i].AdvanceHeight);
             Assert.Equal(positions[i].XOffset, glyphs[i].Offset.X);
             Assert.Equal(positions[i].YOffset, glyphs[i].Offset.Y);
         }

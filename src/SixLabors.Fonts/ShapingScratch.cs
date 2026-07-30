@@ -60,6 +60,12 @@ internal sealed class ShapingScratch
     private BidiRun[] bidiRuns = new BidiRun[4];
 
     /// <summary>
+    /// The contiguous visual glyph range of each resolved bidi run, parallel to
+    /// <see cref="bidiRuns"/> and grown to the same high-water run count.
+    /// </summary>
+    private ShapedGlyphRange[] bidiGlyphRanges = new ShapedGlyphRange[4];
+
+    /// <summary>
     /// The per-glyph identity records of the current pass's projection, grown to
     /// the high-water glyph count.
     /// </summary>
@@ -96,16 +102,15 @@ internal sealed class ShapingScratch
     public BidiRun[] BidiRuns => this.bidiRuns;
 
     /// <summary>
+    /// Gets the contiguous visual glyph range of each resolved bidi run. Only the
+    /// first <see cref="BidiRunCount"/> entries are live.
+    /// </summary>
+    public ShapedGlyphRange[] BidiGlyphRanges => this.bidiGlyphRanges;
+
+    /// <summary>
     /// Gets the number of live entries in <see cref="BidiRuns"/>.
     /// </summary>
     public int BidiRunCount { get; private set; }
-
-    /// <summary>
-    /// Gets or sets a value indicating whether the run of the current pass reads
-    /// right to left. Settled while the run's direction is resolved, so it holds even
-    /// when the caller left the direction to the text to say.
-    /// </summary>
-    public bool RunReadsRightToLeft { get; set; }
 
     /// <summary>
     /// Gets the run table of the current pass's projection. Only the first
@@ -136,18 +141,25 @@ internal sealed class ShapingScratch
     /// <param name="direction">The line base direction or directional-run direction.</param>
     /// <param name="language">The language the text is written in.</param>
     /// <param name="script">The script applied to the whole request, or <see langword="null"/> to infer scripts from the text.</param>
+    /// <param name="layoutMode">The horizontal or vertical layout mode.</param>
+    /// <param name="kerningMode">The kerning mode.</param>
     /// <param name="features">The feature tags to turn on.</param>
     /// <param name="bidiMode">Whether the request is a logical line or one directional run.</param>
     /// <returns>The options.</returns>
-    public TextOptions GetShapingOptions(Font font, TextDirection direction, CultureInfo language, ScriptClass? script, Tag[] features, TextBidiMode bidiMode)
+    public TextOptions GetShapingOptions(Font font, TextDirection direction, CultureInfo language, ScriptClass? script, LayoutMode layoutMode, KerningMode kerningMode, Tag[] features, TextBidiMode bidiMode)
     {
         TextOptions current = this.shapingOptions ??= new TextOptions(font);
 
+        // The object is retained with the pooled scratch state to avoid allocating
+        // TextOptions per call. Overwrite every value the public shaping API can
+        // control so no state leaks from the previous use of the pool entry.
         current.Font = font;
         current.TextDirection = direction;
         current.TextBidiMode = bidiMode;
         current.Culture = language;
         current.Script = script;
+        current.LayoutMode = layoutMode;
+        current.KerningMode = kerningMode;
         current.FeatureTags = features;
 
         return current;
@@ -162,10 +174,19 @@ internal sealed class ShapingScratch
         if (this.BidiRunCount == this.bidiRuns.Length)
         {
             Array.Resize(ref this.bidiRuns, this.bidiRuns.Length * 2);
+            Array.Resize(ref this.bidiGlyphRanges, this.bidiGlyphRanges.Length * 2);
         }
 
         this.bidiRuns[this.BidiRunCount++] = run;
     }
+
+    /// <summary>
+    /// Records the contiguous visual glyph range owned by one resolved bidi run.
+    /// </summary>
+    /// <param name="runIndex">The zero-based resolved bidi-run index.</param>
+    /// <param name="range">The glyph range over the projected shaping arrays.</param>
+    public void SetBidiGlyphRange(int runIndex, in ShapedGlyphRange range)
+        => this.bidiGlyphRanges[runIndex] = range;
 
     /// <summary>
     /// Empties the projected run table for a new pass.
@@ -243,11 +264,6 @@ internal sealed class ShapingScratch
     /// <returns>The reusable buffers, sharing one feature map.</returns>
     public (ShapingBuffer Workspace, ShapingBuffer Result) Prepare(TextOptions options)
     {
-        // A pooled scratch carries nothing over from its last use. The direction is
-        // settled again for every pass, and a pass that never settles it must not read
-        // the answer the previous one left.
-        this.RunReadsRightToLeft = false;
-
         ShapingBuffer? workspace = this.workspace;
         ShapingBuffer? result = this.result;
         if (workspace is null || result is null)

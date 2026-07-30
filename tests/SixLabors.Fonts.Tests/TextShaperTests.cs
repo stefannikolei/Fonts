@@ -2,6 +2,7 @@
 // Licensed under the Six Labors Split License.
 
 using System.Globalization;
+using SixLabors.Fonts.Rendering;
 using SixLabors.Fonts.Unicode;
 
 namespace SixLabors.Fonts.Tests;
@@ -50,11 +51,61 @@ public class TextShaperTests
         Assert.Equal(3, glyphs.Length);
         for (int i = 0; i < glyphs.Length; i++)
         {
-            Assert.Equal(i, glyphs[i].CodePointIndex);
+            Assert.Equal(i, glyphs[i].StringIndex);
             Assert.NotEqual(0, glyphs[i].GlyphId);
             Assert.True(glyphs[i].AdvanceWidth > 0);
         }
     }
+
+    /// <summary>
+    /// Verifies that public shaping and its measurement consumer preserve the
+    /// distinct UTF-16 and grapheme source indices of a combining sequence.
+    /// </summary>
+    [Fact]
+    public void Shape_CombiningSequence_PreservesStringAndGraphemeIndices()
+    {
+        Font font = new FontCollection().Add(TestFonts.OpenSansFile).CreateFont(72);
+        TextShapingBuffer buffer = new();
+        buffer.Add("a\u0308b");
+
+        TextShaper.Shape(font, buffer);
+
+        int index = -1;
+        for (int i = 0; i < buffer.Count; i++)
+        {
+            if (buffer[i].StringIndex == 2)
+            {
+                index = i;
+                break;
+            }
+        }
+
+        Assert.True(index >= 0);
+        Assert.Equal(1, buffer[index].GraphemeIndex);
+
+        GlyphOptions options = new()
+        {
+            Font = font,
+            GraphemeIndex = 7
+        };
+
+        ReadOnlySpan<GlyphMetrics> metrics = TextMeasurer.GetGlyphMetrics(buffer, options).Span;
+        Assert.Equal(buffer[index].GlyphId, metrics[index].GlyphId);
+        Assert.Equal(8, metrics[index].GraphemeIndex);
+        Assert.Equal(2, metrics[index].StringIndex);
+
+        GlyphRenderer renderer = new();
+        TextRenderer.RenderTo(renderer, buffer, options);
+
+        Assert.Equal(8, renderer.GlyphKeys[index].GraphemeIndex);
+    }
+
+    /// <summary>
+    /// Verifies that a new public shaping buffer infers paragraph direction.
+    /// </summary>
+    [Fact]
+    public void TextShapingBuffer_DefaultsToAutomaticDirection()
+        => Assert.Equal(TextDirection.Auto, new TextShapingBuffer().TextDirection);
 
     [Fact]
     public void Shape_EmptyText_ProducesNoGlyphs()
@@ -87,27 +138,28 @@ public class TextShaperTests
     public void Shape_Ligature_MergesCodePoints()
     {
         // Dubai applies mandatory Arabic ligatures; Lam + Alef must merge into a single
-        // glyph spanning both codepoints.
+        // glyph spanning both code points.
         Font font = new FontCollection().Add(TestFonts.ArabicFontFile).CreateFont(72);
         ShapedGlyph[] glyphs = Shape(font, "لا");
 
         Assert.Single(glyphs);
+
         // Two characters merged into one glyph, so the run's only glyph carries the
         // cluster of the first of them.
-        Assert.Equal(0, glyphs[0].CodePointIndex);
+        Assert.Equal(0, glyphs[0].StringIndex);
     }
 
     [Fact]
     public void Shape_RightToLeft_ReportsRunInReadingOrder()
     {
         // A run that reads right to left is handed back in that order, so the first
-        // glyph is the rightmost one and the codepoints it came from descend.
+        // glyph is the rightmost one and the source indices descend.
         // Ordering runs against one another belongs to the caller, which alone
         // knows where its lines break.
         Font font = new FontCollection().Add(TestFonts.ArabicFontFile).CreateFont(72);
         TextShapingBuffer buffer = new();
         buffer.Add("سلام");
-        buffer.Direction = TextDirection.RightToLeft;
+        buffer.TextDirection = TextDirection.RightToLeft;
         TextShaper.ShapeRun(font, buffer);
 
         ReadOnlySpan<ShapedGlyph> glyphs = buffer.Glyphs;
@@ -115,7 +167,7 @@ public class TextShaperTests
         Assert.True(glyphs.Length > 1);
         for (int i = 1; i < glyphs.Length; i++)
         {
-            Assert.True(glyphs[i].CodePointIndex < glyphs[i - 1].CodePointIndex);
+            Assert.True(glyphs[i].StringIndex < glyphs[i - 1].StringIndex);
         }
     }
 
@@ -126,16 +178,16 @@ public class TextShaperTests
         Font font = new FontCollection().Add(TestFonts.Anchor2FontFile).CreateFont(72);
         TextShapingBuffer buffer = new();
         buffer.Add(text);
-        buffer.Direction = TextDirection.Auto;
+        buffer.TextDirection = TextDirection.Auto;
 
         TextShaper.Shape(font, buffer);
 
         ReadOnlySpan<ShapedGlyph> glyphs = buffer.Glyphs;
-        int[] expectedCodePointIndices = [0, 1, 2, 3, 6, 5, 4, 7, 8, 9, 10];
-        Assert.Equal(expectedCodePointIndices.Length, glyphs.Length);
+        int[] expectedStringIndices = [0, 1, 2, 3, 6, 5, 4, 7, 8, 9, 10];
+        Assert.Equal(expectedStringIndices.Length, glyphs.Length);
         for (int i = 0; i < glyphs.Length; i++)
         {
-            Assert.Equal(expectedCodePointIndices[i], glyphs[i].CodePointIndex);
+            Assert.Equal(expectedStringIndices[i], glyphs[i].StringIndex);
         }
     }
 
@@ -144,13 +196,11 @@ public class TextShaperTests
     [InlineData(TextDirection.RightToLeft)]
     public void Shape_MixedDirection_MatchesUnwrappedLayoutOrder(TextDirection direction)
     {
-        // Every codepoint is in the BMP and produces one glyph, so the shaper's
-        // codepoint indices can be compared directly with layout's UTF-16 indices.
         const string text = "abc אבג def";
         Font font = new FontCollection().Add(TestFonts.Anchor2FontFile).CreateFont(72);
         TextShapingBuffer buffer = new();
         buffer.Add(text);
-        buffer.Direction = direction;
+        buffer.TextDirection = direction;
 
         TextShaper.Shape(font, buffer);
 
@@ -164,8 +214,23 @@ public class TextShaperTests
         Assert.Equal(layoutGlyphs.Length, shapedGlyphs.Length);
         for (int i = 0; i < shapedGlyphs.Length; i++)
         {
-            Assert.Equal(layoutGlyphs[i].StringIndex, shapedGlyphs[i].CodePointIndex);
+            Assert.Equal(layoutGlyphs[i].StringIndex, shapedGlyphs[i].StringIndex);
         }
+    }
+
+    /// <summary>
+    /// Verifies that public source indices count UTF-16 code units while
+    /// grapheme indices count text elements.
+    /// </summary>
+    [Fact]
+    public void Shape_StringIndexUsesUtf16CodeUnits()
+    {
+        const string text = "😀A";
+        Font font = new FontCollection().Add(TestFonts.OpenSansFile).CreateFont(72);
+        ShapedGlyph[] glyphs = Shape(font, text);
+
+        Assert.Equal(2, glyphs[^1].StringIndex);
+        Assert.Equal(1, glyphs[^1].GraphemeIndex);
     }
 
     /// <summary>
@@ -179,17 +244,17 @@ public class TextShaperTests
         Font font = new FontCollection().Add(TestFonts.Anchor2FontFile).CreateFont(72);
         TextShapingBuffer buffer = new();
         buffer.Add(text);
-        buffer.Direction = TextDirection.Auto;
+        buffer.TextDirection = TextDirection.Auto;
 
         TextShaper.Shape(font, buffer);
 
         // The first paragraph resolves RTL and the second resolves LTR. Their
         // records remain in line order rather than participating in one reversal.
-        int[] expectedCodePointIndices = [3, 2, 1, 0, 4, 5, 6];
-        Assert.Equal(expectedCodePointIndices.Length, buffer.Count);
+        int[] expectedStringIndices = [3, 2, 1, 0, 4, 5, 6];
+        Assert.Equal(expectedStringIndices.Length, buffer.Count);
         for (int i = 0; i < buffer.Count; i++)
         {
-            Assert.Equal(expectedCodePointIndices[i], buffer[i].CodePointIndex);
+            Assert.Equal(expectedStringIndices[i], buffer[i].StringIndex);
         }
     }
 
@@ -208,42 +273,112 @@ public class TextShaperTests
         Font font = new FontCollection().Add(TestFonts.Anchor2FontFile).CreateFont(72);
         TextShapingBuffer combined = new();
         combined.Add(firstLine + secondLine);
-        combined.Direction = TextDirection.Auto;
+        combined.TextDirection = TextDirection.Auto;
         TextShaper.Shape(font, combined);
 
         TextShapingBuffer first = new();
         first.Add(firstLine);
-        first.Direction = TextDirection.Auto;
+        first.TextDirection = TextDirection.Auto;
         TextShaper.Shape(font, first);
 
         TextShapingBuffer second = new();
         second.Add(secondLine);
-        second.Direction = TextDirection.Auto;
+        second.TextDirection = TextDirection.Auto;
         TextShaper.Shape(font, second);
 
         Assert.Equal(first.Count + second.Count, combined.Count);
-        int firstLineCodePointCount = CodePoint.GetCodePointCount(firstLine);
-
         for (int i = 0; i < first.Count; i++)
         {
             ShapedGlyph expected = first[i];
             ShapedGlyph actual = combined[i];
             Assert.Equal(expected.GlyphId, actual.GlyphId);
-            Assert.Equal(expected.CodePointIndex, actual.CodePointIndex);
+            Assert.Equal(expected.StringIndex, actual.StringIndex);
+            Assert.Equal(expected.GraphemeIndex, actual.GraphemeIndex);
             Assert.Equal(expected.AdvanceWidth, actual.AdvanceWidth);
             Assert.Equal(expected.AdvanceHeight, actual.AdvanceHeight);
             Assert.Equal(expected.Offset, actual.Offset);
         }
 
+        int firstLineGraphemeCount = firstLine.GetGraphemeCount();
         for (int i = 0; i < second.Count; i++)
         {
             ShapedGlyph expected = second[i];
             ShapedGlyph actual = combined[first.Count + i];
             Assert.Equal(expected.GlyphId, actual.GlyphId);
-            Assert.Equal(expected.CodePointIndex + firstLineCodePointCount, actual.CodePointIndex);
+            Assert.Equal(expected.StringIndex + firstLine.Length, actual.StringIndex);
+            Assert.Equal(expected.GraphemeIndex + firstLineGraphemeCount, actual.GraphemeIndex);
             Assert.Equal(expected.AdvanceWidth, actual.AdvanceWidth);
             Assert.Equal(expected.AdvanceHeight, actual.AdvanceHeight);
             Assert.Equal(expected.Offset, actual.Offset);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that the complex-script lines from the browser fixture remain
+    /// independent shaping units across hard breaks in every shaping orientation.
+    /// </summary>
+    /// <param name="layoutMode">The horizontal, upright vertical, or mixed vertical shaping path.</param>
+    [Theory]
+    [InlineData(LayoutMode.HorizontalTopBottom)]
+    [InlineData(LayoutMode.VerticalLeftRight)]
+    [InlineData(LayoutMode.VerticalMixedLeftRight)]
+    public void Shape_BrowserArabicHardBreaks_MatchSeparateCalls(LayoutMode layoutMode)
+    {
+        string[] logicalLines =
+        [
+            "\u062E\u064E\u0637\u0650\u0651\u064A\u064E\u0651\u0629\n",
+            "\u062E\u064E\u0637\u0650\u0651\u064A\u064E\u0651\u0629\u060C\u0627\u0644\u0646\u064E\u0651\u0635\u0650\u0651\u064A\u064E\u0651\u0629\n",
+            "\u062E\u064E\u0637\u0650\u0651\u064A\u064E\u0651\u0629 \u0627\u0644\u0646\u064E\u0651\u0635\u0650\u0651\u064A\u064E\u0651\u0629",
+        ];
+
+        Font font = new FontCollection().Add(TestFonts.NotoSansArabicRegular).CreateFont(72);
+        TextShapingBuffer combined = new()
+        {
+            LayoutMode = layoutMode,
+            TextDirection = TextDirection.RightToLeft,
+        };
+
+        combined.Add(string.Concat(logicalLines));
+        TextShaper.Shape(font, combined);
+
+        // The differential fixture checks each line's values against HarfBuzz.
+        // This comparison separately pins the public hard-break contract: shaping
+        // the lines together cannot let one line affect another.
+        int combinedStart = 0;
+        int stringOffset = 0;
+        int graphemeOffset = 0;
+        for (int line = 0; line < logicalLines.Length; line++)
+        {
+            string lineText = logicalLines[line];
+            TextShapingBuffer separate = new()
+            {
+                LayoutMode = layoutMode,
+                TextDirection = TextDirection.RightToLeft,
+            };
+
+            separate.Add(lineText);
+            TextShaper.Shape(font, separate);
+
+            int combinedEnd = line < combined.LineEnds.Length ? combined.LineEnds[line] : combined.Count;
+            Assert.Equal(separate.Count, combinedEnd - combinedStart);
+
+            // The visual glyph stream and all positioned values must be identical;
+            // only the source indices advance through the preceding logical lines.
+            for (int i = 0; i < separate.Count; i++)
+            {
+                ShapedGlyph expected = separate[i];
+                ShapedGlyph actual = combined[combinedStart + i];
+                Assert.Equal(expected.GlyphId, actual.GlyphId);
+                Assert.Equal(expected.StringIndex + stringOffset, actual.StringIndex);
+                Assert.Equal(expected.GraphemeIndex + graphemeOffset, actual.GraphemeIndex);
+                Assert.Equal(expected.AdvanceWidth, actual.AdvanceWidth);
+                Assert.Equal(expected.AdvanceHeight, actual.AdvanceHeight);
+                Assert.Equal(expected.Offset, actual.Offset);
+            }
+
+            combinedStart = combinedEnd;
+            stringOffset += lineText.Length;
+            graphemeOffset += lineText.GetGraphemeCount();
         }
     }
 
@@ -258,14 +393,14 @@ public class TextShaperTests
         Font font = new FontCollection().Add(TestFonts.Anchor2FontFile).CreateFont(72);
         TextShapingBuffer buffer = new();
         buffer.Add(text);
-        buffer.Direction = TextDirection.RightToLeft;
+        buffer.TextDirection = TextDirection.RightToLeft;
 
         TextShaper.ShapeRun(font, buffer);
 
         Assert.Equal(text.Length, buffer.Count);
         for (int i = 1; i < buffer.Count; i++)
         {
-            Assert.True(buffer[i].CodePointIndex < buffer[i - 1].CodePointIndex);
+            Assert.True(buffer[i].StringIndex < buffer[i - 1].StringIndex);
         }
     }
 
@@ -276,7 +411,7 @@ public class TextShaperTests
         Font font = new FontCollection().Add(TestFonts.Anchor2FontFile).CreateFont(72);
         TextShapingBuffer buffer = new();
         buffer.Add(text);
-        buffer.Direction = TextDirection.LeftToRight;
+        buffer.TextDirection = TextDirection.LeftToRight;
 
         TextShaper.ShapeRun(font, buffer);
 
@@ -284,7 +419,7 @@ public class TextShaperTests
         Assert.Equal(text.Length, glyphs.Length);
         for (int i = 0; i < glyphs.Length; i++)
         {
-            Assert.Equal(i, glyphs[i].CodePointIndex);
+            Assert.Equal(i, glyphs[i].StringIndex);
         }
     }
 
@@ -494,7 +629,8 @@ public class TextShaperTests
                     ShapedGlyph expectedGlyph = expected[i];
                     ShapedGlyph actual = buffer[i];
                     Assert.Equal(expectedGlyph.GlyphId, actual.GlyphId);
-                    Assert.Equal(expectedGlyph.CodePointIndex, actual.CodePointIndex);
+                    Assert.Equal(expectedGlyph.StringIndex, actual.StringIndex);
+                    Assert.Equal(expectedGlyph.GraphemeIndex, actual.GraphemeIndex);
                     Assert.Equal(expectedGlyph.AdvanceWidth, actual.AdvanceWidth);
                     Assert.Equal(expectedGlyph.AdvanceHeight, actual.AdvanceHeight);
                     Assert.Equal(expectedGlyph.Offset, actual.Offset);

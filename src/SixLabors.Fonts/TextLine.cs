@@ -15,7 +15,6 @@ namespace SixLabors.Fonts;
 internal sealed class TextLine
 {
     private readonly List<GlyphLayoutData> data;
-    private readonly Dictionary<int, float> advances = [];
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TextLine"/> class with a small default capacity.
@@ -132,7 +131,7 @@ internal sealed class TextLine
         int count = 0;
         for (int i = 0; i < this.data.Count; i++)
         {
-            count += this.data[i].Metrics.Count;
+            count += this.data[i].Metrics.Length;
         }
 
         return count;
@@ -141,7 +140,7 @@ internal sealed class TextLine
     /// <summary>
     /// Appends a shaped entry to this line, updating the aggregated line-level metrics.
     /// </summary>
-    /// <param name="metrics">The glyph metrics produced by shaping this entry's codepoint.</param>
+    /// <param name="metrics">The entry's contiguous slice of the line's shaped glyph storage.</param>
     /// <param name="font">The font used to shape and render this entry.</param>
     /// <param name="pointSize">The point size at which the entry is rendered.</param>
     /// <param name="scaledAdvance">The scaled advance contributed by this entry.</param>
@@ -161,7 +160,7 @@ internal sealed class TextLine
     /// <param name="lineSpacing">The line-spacing factor to apply to <paramref name="scaledLineHeight"/>.</param>
     /// <param name="hyphenationMarkerIndex">The marker index to use if this entry becomes a selected soft-hyphen break.</param>
     public void Add(
-        IReadOnlyList<PositionedGlyphMetrics> metrics,
+        ReadOnlyMemory<PositionedGlyphMetrics> metrics,
         Font font,
         float pointSize,
         float scaledAdvance,
@@ -186,11 +185,9 @@ internal sealed class TextLine
 
         // Reset metrics.
         // We track the maximum metrics for each line to ensure glyphs can be aligned.
-        if (graphemeCodePointIndex == 0)
-        {
-            // TODO: Check this logic is correct.
-            this.ScaledLineAdvance += scaledAdvance;
-        }
+        // Layout consumes every positioned glyph advance. Grapheme boundaries govern
+        // text semantics, but do not collapse multiple positioned glyph advances.
+        this.ScaledLineAdvance += scaledAdvance;
 
         this.ScaledMaxLineHeight = MathF.Max(this.ScaledMaxLineHeight, scaledLineHeight);
         this.ScaledMaxAscender = MathF.Max(this.ScaledMaxAscender, scaledAscender);
@@ -201,15 +198,16 @@ internal sealed class TextLine
         // For scripts with stacked marks (Tibetan, etc) this can be significantly
         // above the typographic ascender, so we cannot trust ascender alone.
         float scaledMinY = 0;
-        for (int i = 0; i < metrics.Count; i++)
+        ReadOnlySpan<PositionedGlyphMetrics> metricsSpan = metrics.Span;
+        for (int i = 0; i < metricsSpan.Length; i++)
         {
-            FontGlyphMetrics metric = metrics[i].Metrics;
+            FontGlyphMetrics metric = metricsSpan[i].Metrics;
             if (FontGlyphMetrics.ShouldSkipGlyphRendering(metric.CodePoint))
             {
                 continue;
             }
 
-            FontRectangle bbox = metric.GetBoundingBox(layoutMode, Vector2.Zero, pointSize, metrics[i].TextRun, metrics[i].Offset);
+            FontRectangle bbox = metric.GetBoundingBox(layoutMode, Vector2.Zero, pointSize, metricsSpan[i].TextRun, metricsSpan[i].Offset, new Vector2(metricsSpan[i].AdvanceWidth, metricsSpan[i].AdvanceHeight));
             scaledMinY = MathF.Min(scaledMinY, bbox.Y);
         }
 
@@ -281,7 +279,7 @@ internal sealed class TextLine
             ? GlyphLayoutMode.Horizontal
             : GlyphLayoutMode.Vertical;
 
-        FontRectangle placeholderBox = placeholderGlyph.GetBoundingBox(placeholderMode, Vector2.Zero, run.PointSize, run.TextRun, Vector2.Zero);
+        FontRectangle placeholderBox = placeholderGlyph.GetBoundingBox(placeholderMode, Vector2.Zero, run.PointSize, run.TextRun, Vector2.Zero, new Vector2(placeholderGlyph.AdvanceWidth, placeholderGlyph.AdvanceHeight));
 
         IMetricsHeader metricsHeader = isPlaceholderHorizontal
             ? placeholderGlyph.FontMetrics.HorizontalMetrics
@@ -304,8 +302,10 @@ internal sealed class TextLine
 
         // Placeholders share the source codepoint offset at their insertion point,
         // but they do not consume source grapheme, codepoint, or UTF-16 indexes.
+        // Generated glyphs are not part of the shaped stream, so the entry owns
+        // its single-glyph storage.
         this.Add(
-            [new(placeholderGlyph, placeholderGlyph.AdvanceWidth, placeholderGlyph.AdvanceHeight, Vector2.Zero, run.TextRun)],
+            new PositionedGlyphMetrics[] { new(placeholderGlyph, placeholderGlyph.AdvanceWidth, placeholderGlyph.AdvanceHeight, Vector2.Zero, run.TextRun) },
             run.Font,
             run.PointSize,
             placeholderAdvance,
@@ -335,43 +335,6 @@ internal sealed class TextLine
     {
         this.data.InsertRange(index, textLine.data);
         RecalculateLineMetrics(this);
-    }
-
-    /// <summary>
-    /// Returns the cumulative scaled advance up to and including the glyph at the given index.
-    /// Whitespace entries at or after <paramref name="index"/> are skipped so the returned value
-    /// represents the advance at the last non-whitespace glyph before a potential line break.
-    /// </summary>
-    /// <remarks>Results are memoized by index.</remarks>
-    /// <param name="index">The zero-based index to measure up to.</param>
-    /// <returns>The cumulative scaled advance.</returns>
-    public float MeasureAt(int index)
-    {
-        if (this.advances.TryGetValue(index, out float advance))
-        {
-            return advance;
-        }
-
-        if (index >= this.data.Count)
-        {
-            index = this.data.Count - 1;
-        }
-
-        while (index >= 0 && CodePoint.IsWhiteSpace(this.data[index].CodePoint))
-        {
-            // If the index is whitespace, we need to measure at the previous
-            // non-whitespace glyph to ensure we don't break too early.
-            index--;
-        }
-
-        advance = 0;
-        for (int i = 0; i <= index; i++)
-        {
-            advance += this.data[i].ScaledAdvance;
-        }
-
-        this.advances[index] = advance;
-        return advance;
     }
 
     /// <summary>
@@ -416,7 +379,7 @@ internal sealed class TextLine
 
         GlyphLayoutData anchor = this.data[^1];
         GlyphLayoutData marker = TextLayout.CreateGeneratedMarker(
-            anchor.Metrics[0],
+            anchor.Metrics.Span[0],
             anchor.PointSize,
             anchor.BidiRun,
             anchor.GraphemeIndex,
@@ -551,6 +514,15 @@ internal sealed class TextLine
         {
             if (this.data[--index].CodePointIndex == lineBreak.PositionWrap)
             {
+                // One source codepoint can emit several layout entries. The
+                // reverse search lands on its final entry, so rewind to the first
+                // entry or the preceding line would retain part of the grapheme
+                // after its hard break.
+                while (index > 0 && this.data[index - 1].CodePointIndex == lineBreak.PositionWrap)
+                {
+                    index--;
+                }
+
                 break;
             }
         }
@@ -661,30 +633,31 @@ internal sealed class TextLine
     /// Finalizes this line after line-breaking: trims trailing breaking whitespace when requested,
     /// applies bidi reordering so entries are in visual order, and recomputes aggregated metrics.
     /// </summary>
+    /// <param name="layoutMode">The orientation used to finalize directional run fragments.</param>
     /// <param name="skipJustification">
     /// When <see langword="true"/>, marks the line so <see cref="Justify"/> becomes a no-op
     /// (used for paragraph-final lines).
     /// </param>
-    /// <param name="redistributeGraphemeAdvances">
-    /// When <see langword="true"/>, moves each decomposed grapheme's advance onto the entry
-    /// that ends it once reordering has settled which entry that is.
+    /// <param name="normalizeDecomposedAdvances">
+    /// When <see langword="true"/>, moves decomposed grapheme advances to the final visual entry.
     /// </param>
     /// <param name="preserveTrailingBreakingWhitespace">
     /// When <see langword="true"/>, keeps ordinary trailing breaking whitespace in the finalized line.
     /// </param>
     /// <returns>This line, for fluent chaining.</returns>
     public TextLine Finalize(
+        LayoutMode layoutMode,
         bool skipJustification = false,
-        bool redistributeGraphemeAdvances = false,
+        bool normalizeDecomposedAdvances = false,
         bool preserveTrailingBreakingWhitespace = false)
     {
         this.SkipJustification = skipJustification;
         this.RemoveTrailingBreakingWhitespace(preserveTrailingBreakingWhitespace);
-        this.BidiReOrder();
+        this.BidiReOrder(layoutMode);
 
-        if (redistributeGraphemeAdvances)
+        if (normalizeDecomposedAdvances)
         {
-            this.RedistributeGraphemeAdvances();
+            this.NormalizeDecomposedAdvances();
         }
 
         RecalculateLineMetrics(this);
@@ -692,11 +665,9 @@ internal sealed class TextLine
     }
 
     /// <summary>
-    /// Gathers each decomposed grapheme's advance onto the entry that ends it, which
-    /// reordering may have changed. This is advance bookkeeping and has nothing to do
-    /// with normalizing text.
+    /// Moves decomposed grapheme advances when bidi reordering moved the grapheme boundary marker.
     /// </summary>
-    private void RedistributeGraphemeAdvances()
+    private void NormalizeDecomposedAdvances()
     {
         int start = 0;
         while (start < this.data.Count)
@@ -838,7 +809,8 @@ internal sealed class TextLine
     /// Re-orders the entries in this line from logical to visual order according to the
     /// Unicode Bidirectional Algorithm (<see href="https://unicode.org/reports/tr9/"/>, rule L2).
     /// </summary>
-    public void BidiReOrder() => BidiReordering.Reorder(this.data);
+    /// <param name="layoutMode">The orientation used to finalize directional run fragments.</param>
+    public void BidiReOrder(LayoutMode layoutMode) => BidiReordering.Reorder(this.data, layoutMode);
 
     /// <summary>
     /// Recomputes the aggregated per-line metrics (advance, max line height, ascender,
@@ -872,7 +844,5 @@ internal sealed class TextLine
         textLine.ScaledMaxDelta = delta;
         textLine.ScaledMaxLineHeight = lineHeight;
         textLine.ScaledMinY = minY;
-
-        textLine.advances.Clear();
     }
 }

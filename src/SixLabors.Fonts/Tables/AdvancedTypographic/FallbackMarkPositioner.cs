@@ -283,7 +283,9 @@ internal static class FallbackMarkPositioner
         int componentCount = baseData.LigatureComponentCount;
         int xOffset = 0;
         int yOffset = 0;
-        if (baseData.Direction == TextDirection.LeftToRight)
+        bool isForward = baseData.Direction == TextDirection.LeftToRight
+            || buffer.TextOptions.LayoutMode.IsVertical();
+        if (isForward)
         {
             xOffset -= basePosition.Bounds.Width;
             yOffset -= basePosition.Bounds.Height;
@@ -300,7 +302,7 @@ internal static class FallbackMarkPositioner
             if (combiningClass == 0)
             {
                 ref GlyphShapingPosition ordinaryPosition = ref buffer.PositionAt(i);
-                if (data.Direction == TextDirection.LeftToRight)
+                if (isForward)
                 {
                     xOffset -= ordinaryPosition.Bounds.Width;
                     yOffset -= ordinaryPosition.Bounds.Height;

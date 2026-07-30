@@ -182,6 +182,37 @@ internal ref struct LineBreakEnumerator
         this.next = LineBreakCodePoint.CreateSentinel(StartOfText, 0, 0);
     }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="LineBreakEnumerator"/> struct that resumes a
+    /// previously captured enumeration over the same text.
+    /// </summary>
+    /// <remarks>
+    /// The enumerator is a ref struct, so a caller that must survive between pulls cannot hold it
+    /// directly. Capturing the value state instead lets such a caller continue one enumeration
+    /// candidate by candidate — the way browsers query their line break iterator lazily during
+    /// line filling — without restarting the rule window from the start of text.
+    /// </remarks>
+    /// <param name="source">The same source text the state was captured over.</param>
+    /// <param name="tailorUrls">Whether to apply layout-level URL solidus tailoring.</param>
+    /// <param name="state">The state captured from the enumeration being resumed.</param>
+    internal LineBreakEnumerator(ReadOnlySpan<char> source, bool tailorUrls, in State state)
+        : this()
+    {
+        this.source = source;
+        this.tailorUrls = tailorUrls;
+        this.charPosition = state.CharPosition;
+        this.pointPosition = state.PointPosition;
+        this.endOfTextPushed = state.EndOfTextPushed;
+        this.previousBreakPosition = state.PreviousBreakPosition;
+        this.previous = state.Previous;
+        this.current = state.Current;
+        this.next = state.Next;
+        this.lb8 = state.Lb8;
+        this.spaces = state.Spaces;
+        this.regionalIndicatorCount = state.RegionalIndicatorCount;
+        this.urlTailoringState = state.UrlTailoringState;
+    }
+
     private enum BreakAction
     {
         /// <summary>
@@ -269,6 +300,28 @@ internal ref struct LineBreakEnumerator
             }
         }
     }
+
+    /// <summary>
+    /// Captures the value state of this enumeration so a later
+    /// <see cref="LineBreakEnumerator(ReadOnlySpan{char}, bool, in State)"/> call can resume it.
+    /// <see cref="Current"/> is not part of the state: a resumed enumerator exposes a result only
+    /// after its own <see cref="MoveNext"/> succeeds.
+    /// </summary>
+    /// <returns>The resumable state.</returns>
+    internal readonly State CaptureState() => new()
+    {
+        CharPosition = this.charPosition,
+        PointPosition = this.pointPosition,
+        EndOfTextPushed = this.endOfTextPushed,
+        PreviousBreakPosition = this.previousBreakPosition,
+        Previous = this.previous,
+        Current = this.current,
+        Next = this.next,
+        Lb8 = this.lb8,
+        Spaces = this.spaces,
+        RegionalIndicatorCount = this.regionalIndicatorCount,
+        UrlTailoringState = this.urlTailoringState,
+    };
 
     /// <summary>
     /// Decodes the next UTF-16 code point, maps its line break class according to LB1,
@@ -1758,7 +1811,7 @@ internal ref struct LineBreakEnumerator
     /// <c>://</c>, or a <c>www.</c> prefix at a host-label boundary. Once a run is URL-like, later
     /// solidus boundaries in that run can use the tailored behavior without rescanning the text.
     /// </remarks>
-    private struct UrlTailoringState
+    public struct UrlTailoringState
     {
         /// <summary>
         /// Length of the current ASCII URI-scheme candidate, or zero when no scheme is active.
@@ -1936,7 +1989,7 @@ internal ref struct LineBreakEnumerator
     /// original span, trim trailing whitespace for measurement, and perform bounded lookahead/lookbehind
     /// without allocating intermediate collections.
     /// </remarks>
-    private struct LineBreakCodePoint
+    public struct LineBreakCodePoint
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="LineBreakCodePoint"/> struct for a real code point.
@@ -2084,5 +2137,69 @@ internal ref struct LineBreakEnumerator
         /// <returns><see langword="true"/> when this is a real item with the requested value.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool HasValue(int value) => !this.IsSentinel && this.CodePoint.Value == value;
+    }
+
+    /// <summary>
+    /// The complete mutable value state of an enumeration: the source position, the
+    /// three-code-point rule window, and the cross-boundary rule flags. Every mutable
+    /// field of the enumerator except the source span must appear here or a resumed
+    /// enumeration silently diverges from an uninterrupted one.
+    /// </summary>
+    public struct State
+    {
+        /// <summary>
+        /// The captured <see cref="charPosition"/>.
+        /// </summary>
+        public int CharPosition;
+
+        /// <summary>
+        /// The captured <see cref="pointPosition"/>.
+        /// </summary>
+        public int PointPosition;
+
+        /// <summary>
+        /// The captured <see cref="endOfTextPushed"/>.
+        /// </summary>
+        public bool EndOfTextPushed;
+
+        /// <summary>
+        /// The captured <see cref="previousBreakPosition"/>.
+        /// </summary>
+        public int PreviousBreakPosition;
+
+        /// <summary>
+        /// The captured <see cref="previous"/> window item.
+        /// </summary>
+        public LineBreakCodePoint Previous;
+
+        /// <summary>
+        /// The captured <see cref="current"/> window item.
+        /// </summary>
+        public LineBreakCodePoint Current;
+
+        /// <summary>
+        /// The captured <see cref="next"/> window item.
+        /// </summary>
+        public LineBreakCodePoint Next;
+
+        /// <summary>
+        /// The captured <see cref="lb8"/> flag.
+        /// </summary>
+        public bool Lb8;
+
+        /// <summary>
+        /// The captured <see cref="spaces"/> flag.
+        /// </summary>
+        public bool Spaces;
+
+        /// <summary>
+        /// The captured <see cref="regionalIndicatorCount"/>.
+        /// </summary>
+        public int RegionalIndicatorCount;
+
+        /// <summary>
+        /// The captured <see cref="urlTailoringState"/>.
+        /// </summary>
+        public UrlTailoringState UrlTailoringState;
     }
 }

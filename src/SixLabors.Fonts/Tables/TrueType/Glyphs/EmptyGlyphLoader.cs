@@ -9,9 +9,7 @@ namespace SixLabors.Fonts.Tables.TrueType.Glyphs;
 /// </summary>
 internal class EmptyGlyphLoader : GlyphLoader
 {
-    private bool loop;
     private readonly Bounds fallbackEmptyBounds;
-    private GlyphVector? glyph;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="EmptyGlyphLoader"/> class.
@@ -23,14 +21,9 @@ internal class EmptyGlyphLoader : GlyphLoader
     /// <inheritdoc/>
     public override GlyphVector CreateGlyph(GlyphTable table)
     {
-        if (this.loop)
-        {
-            this.glyph ??= GlyphVector.Empty(this.fallbackEmptyBounds);
-            return this.glyph.Value;
-        }
-
-        this.loop = true;
-        this.glyph ??= GlyphVector.Empty(table.GetGlyph(0).Bounds);
-        return this.glyph.Value;
+        // A zero-length glyf entry has no ink. Reusing glyph zero's bounds would
+        // incorrectly turn every empty glyph, including spaces, into .notdef.
+        // Measurement derives fallback advance bounds from this empty vector later.
+        return GlyphVector.Empty(this.fallbackEmptyBounds);
     }
 }

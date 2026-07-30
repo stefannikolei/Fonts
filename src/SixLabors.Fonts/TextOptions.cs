@@ -301,6 +301,10 @@ public class TextOptions
     /// <summary>
     /// Gets or sets the collection of additional feature tags to apply during glyph shaping.
     /// </summary>
+    /// <remarks>
+    /// A text run with a non-null <see cref="TextRun.FeatureTags"/> collection
+    /// replaces this collection over that run.
+    /// </remarks>
     public IReadOnlyList<Tag> FeatureTags { get; set; } = Array.Empty<Tag>();
 
     /// <summary>

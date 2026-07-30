@@ -81,22 +81,22 @@ public class Issues_462
     }
 
     [Theory]
-    [InlineData("robot", "🤖")]
-    [InlineData("clown", "🤡")]
-    [InlineData("leg", "🦿")]
-    [InlineData("mending-heart", "❤️‍🩹")]
-    [InlineData("heart-on-fire", "❤️‍🔥")]
-    public void CanRenderProblemEmojiTransforms_With_COLRv1(string name, string text)
-        => this.AssertCanRenderProblemEmojiTransforms(name, text, ColorFontSupport.ColrV1);
+    [InlineData("robot", "🤖", 1)]
+    [InlineData("clown", "🤡", 1)]
+    [InlineData("leg", "🦿", 1)]
+    [InlineData("mending-heart", "❤️‍🩹", 2)]
+    [InlineData("heart-on-fire", "❤️‍🔥", 2)]
+    public void CanRenderProblemEmojiTransforms_With_COLRv1(string name, string text, int glyphCount)
+        => this.AssertCanRenderProblemEmojiTransforms(name, text, ColorFontSupport.ColrV1, glyphCount);
 
     [Theory]
-    [InlineData("robot", "🤖")]
-    [InlineData("clown", "🤡")]
-    [InlineData("leg", "🦿")]
-    [InlineData("mending-heart", "❤️‍🩹")]
-    [InlineData("heart-on-fire", "❤️‍🔥")]
-    public void CanRenderProblemEmojiTransforms_With_SVG(string name, string text)
-        => this.AssertCanRenderProblemEmojiTransforms(name, text, ColorFontSupport.Svg);
+    [InlineData("robot", "🤖", 1)]
+    [InlineData("clown", "🤡", 1)]
+    [InlineData("leg", "🦿", 1)]
+    [InlineData("mending-heart", "❤️‍🩹", 2)]
+    [InlineData("heart-on-fire", "❤️‍🔥", 2)]
+    public void CanRenderProblemEmojiTransforms_With_SVG(string name, string text, int glyphCount)
+        => this.AssertCanRenderProblemEmojiTransforms(name, text, ColorFontSupport.Svg, glyphCount);
 
     [Fact]
     public void CanRenderEmojiSanityMatrix_With_COLRv1()
@@ -147,6 +147,7 @@ public class Issues_462
         string name,
         string text,
         ColorFontSupport support,
+        int glyphCount,
         [CallerMemberName] string test = "")
     {
         Font font = this.emoji.CreateFont(256);
@@ -157,9 +158,13 @@ public class Issues_462
             FallbackFontFamilies = new[] { this.noto },
         };
 
+        // A joined sequence ligates to one visible glyph, but a skipped default
+        // ignorable that survives the ligature remains in the shaped stream as an
+        // ink-free invisible glyph, exactly as HarfBuzz and browsers keep it, so
+        // the joined sequences render one more glyph than they show.
         GlyphRenderer renderer = new();
         TextRenderer.RenderTo(renderer, text, options);
-        Assert.Single(renderer.GlyphKeys);
+        Assert.Equal(glyphCount, renderer.GlyphKeys.Count);
 
         TextLayoutTestUtilities.TestLayout(text, options, test: test, properties: name);
     }

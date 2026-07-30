@@ -77,6 +77,7 @@ public sealed class PaintedGlyphMetrics : FontGlyphMetrics
         GlyphLayoutMode mode,
         TextRun? textRun,
         Vector2 positionOffset,
+        Vector2 positionedAdvance,
         float scaledPPEM,
         HintingMode hintingMode)
     {
@@ -96,7 +97,7 @@ public sealed class PaintedGlyphMetrics : FontGlyphMetrics
         layout *= Matrix3x2.CreateScale(1F, -1F);
         layout.Translation += glyphOrigin;
 
-        FontRectangle box = this.GetBoundingBox(mode, glyphOrigin, scaledPPEM, textRun, positionOffset);
+        FontRectangle box = this.GetBoundingBox(mode, glyphOrigin, scaledPPEM, textRun, positionOffset, positionedAdvance);
 
         // Source-to-UPEM: viewBox mapping (uniform "meet"), optional y-flip, optional root transform.
         Matrix3x2 s2u = ComputeSourceToUpem(canvas, this.UnitsPerEm);

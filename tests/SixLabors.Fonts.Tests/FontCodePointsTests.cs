@@ -16,8 +16,8 @@ public class FontCodePointsTests
         CodePoint[] codePointArray = codePoints.ToArray();
         IEnumerable<int> codePointValues = codePointArray.Select(x => x.Value);
 
-        // Compare with https://everythingfonts.com/ttfdump
-        Assert.Equal(257, codePoints.Length);
+        // The font maps seven characters.
+        Assert.Equal(7, codePoints.Length);
 
         // Compare with https://fontdrop.info/
         Assert.Contains(0x0000, codePointValues);
@@ -27,7 +27,6 @@ public class FontCodePointsTests
         Assert.Contains(0x0042, codePointValues);
         Assert.Contains(0x0061, codePointValues);
         Assert.Contains(0x0062, codePointValues);
-        Assert.Contains(0xFFFF, codePointValues);
 
         HashSet<int> glyphIds = [];
         foreach (CodePoint codePoint in codePoints.Span)
@@ -36,8 +35,7 @@ public class FontCodePointsTests
             glyphIds.Add(glyph.Value.GlyphMetrics.GlyphId);
         }
 
-        // Compare with https://fontdrop.info/
-        Assert.Equal(8, glyphIds.Count);
+        Assert.Equal(7, glyphIds.Count);
     }
 
     [Fact]
@@ -49,8 +47,8 @@ public class FontCodePointsTests
         CodePoint[] codePointArray = codePoints.ToArray();
         IEnumerable<int> codePointValues = codePointArray.Select(x => x.Value);
 
-        // Compare with https://everythingfonts.com/ttfdump
-        Assert.Equal(257, codePoints.Length);
+        // The font maps seven characters.
+        Assert.Equal(7, codePoints.Length);
 
         // Compare with https://fontdrop.info/
         Assert.Contains(0x0000, codePointValues);
@@ -60,7 +58,6 @@ public class FontCodePointsTests
         Assert.Contains(0x0042, codePointValues);
         Assert.Contains(0x0061, codePointValues);
         Assert.Contains(0x0062, codePointValues);
-        Assert.Contains(0xFFFF, codePointValues);
 
         HashSet<int> glyphIds = [];
         foreach (CodePoint codePoint in codePoints.Span)
@@ -69,7 +66,6 @@ public class FontCodePointsTests
             glyphIds.Add(glyph.Value.GlyphMetrics.GlyphId);
         }
 
-        // Compare with https://fontdrop.info/
-        Assert.Equal(8, glyphIds.Count);
+        Assert.Equal(7, glyphIds.Count);
     }
 }

@@ -21,7 +21,7 @@ internal class NotImplementedSubTable : LookupSubTable
     public override bool TryUpdatePosition(
         FontMetrics fontMetrics,
         GPosTable table,
-        GlyphPositioningCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
         int index,
         int count)

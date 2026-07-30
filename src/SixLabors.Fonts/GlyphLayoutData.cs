@@ -15,12 +15,12 @@ namespace SixLabors.Fonts;
 [DebuggerDisplay("{DebuggerDisplay,nq}")]
 internal struct GlyphLayoutData
 {
-    internal const int NoHyphenationMarker = -1;
+    public const int NoHyphenationMarker = -1;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GlyphLayoutData"/> struct.
     /// </summary>
-    /// <param name="metrics">The shaped glyph metrics for this codepoint.</param>
+    /// <param name="metrics">The entry's contiguous slice of the line's shaped glyph storage.</param>
     /// <param name="font">The font used to shape and render this entry.</param>
     /// <param name="pointSize">The point size at which the glyph is rendered.</param>
     /// <param name="scaledAdvance">The scaled advance of this entry.</param>
@@ -39,7 +39,7 @@ internal struct GlyphLayoutData
     /// <param name="stringIndex">The UTF-16 character index in the source string.</param>
     /// <param name="hyphenationMarkerIndex">The marker index to use if this entry becomes a selected soft-hyphen break.</param>
     public GlyphLayoutData(
-        IReadOnlyList<FontGlyphMetrics> metrics,
+        ReadOnlyMemory<PositionedGlyphMetrics> metrics,
         Font font,
         float pointSize,
         float scaledAdvance,
@@ -78,67 +78,113 @@ internal struct GlyphLayoutData
         this.HyphenationMarkerIndex = hyphenationMarkerIndex;
     }
 
-    /// <summary>Gets the source codepoint for this entry.</summary>
-    public readonly CodePoint CodePoint => this.Metrics[0].CodePoint;
+    /// <summary>
+    /// Gets the source codepoint for this entry.
+    /// </summary>
+    public readonly CodePoint CodePoint => this.Metrics.Span[0].Metrics.CodePoint;
 
-    /// <summary>Gets the shaped glyph metrics produced for this codepoint (one codepoint may map to several glyphs).</summary>
-    public IReadOnlyList<FontGlyphMetrics> Metrics { get; }
+    /// <summary>
+    /// Gets the entry's positioned glyphs as a contiguous slice of the line's shaped
+    /// glyph storage. The slice preserves the stored per-run visual glyph order the
+    /// shaper produced, so line composition and reordering move entries as whole
+    /// units and never rearrange the glyphs inside one. Generated entries such as
+    /// placeholders and markers reference their own single-glyph storage.
+    /// </summary>
+    public ReadOnlyMemory<PositionedGlyphMetrics> Metrics { get; }
 
-    /// <summary>Gets the font used to shape and render this entry.</summary>
+    /// <summary>
+    /// Gets the font used to shape and render this entry.
+    /// </summary>
     public Font Font { get; }
 
-    /// <summary>Gets the point size at which this entry is rendered.</summary>
+    /// <summary>
+    /// Gets the point size at which this entry is rendered.
+    /// </summary>
     public float PointSize { get; }
 
-    /// <summary>Gets or sets the scaled advance of this entry (mutated by justification).</summary>
+    /// <summary>
+    /// Gets or sets the scaled advance of this entry (mutated by justification).
+    /// </summary>
     public float ScaledAdvance { get; set; }
 
-    /// <summary>Gets the scaled line height contributed by this entry, before line-spacing is applied.</summary>
+    /// <summary>
+    /// Gets the scaled line height contributed by this entry, before line-spacing is applied.
+    /// </summary>
     public float ScaledLineHeight { get; }
 
-    /// <summary>Gets the scaled typographic ascender.</summary>
+    /// <summary>
+    /// Gets the scaled typographic ascender.
+    /// </summary>
     public float ScaledAscender { get; }
 
-    /// <summary>Gets the scaled typographic descender.</summary>
+    /// <summary>
+    /// Gets the scaled typographic descender.
+    /// </summary>
     public float ScaledDescender { get; }
 
-    /// <summary>Gets the symmetric ascender/descender delta applied during line-box construction.</summary>
+    /// <summary>
+    /// Gets the symmetric ascender/descender delta applied during line-box construction.
+    /// </summary>
     public float ScaledDelta { get; }
 
-    /// <summary>Gets the smallest (most negative) scaled Y across <see cref="Metrics"/>.</summary>
+    /// <summary>
+    /// Gets the smallest (most negative) scaled Y across <see cref="Metrics"/>.
+    /// </summary>
     public float ScaledMinY { get; }
 
-    /// <summary>Gets the resolved bidi run this entry belongs to.</summary>
+    /// <summary>
+    /// Gets the resolved bidi run this entry belongs to.
+    /// </summary>
     public BidiRun BidiRun { get; }
 
-    /// <summary>Gets the text direction derived from <see cref="BidiRun"/>.</summary>
+    /// <summary>
+    /// Gets the text direction derived from <see cref="BidiRun"/>.
+    /// </summary>
     public readonly TextDirection TextDirection => (TextDirection)this.BidiRun.Direction;
 
-    /// <summary>Gets the zero-based grapheme index in the original text.</summary>
+    /// <summary>
+    /// Gets the zero-based grapheme index in the original text.
+    /// </summary>
     public int GraphemeIndex { get; }
 
-    /// <summary>Gets or sets a value indicating whether this is the last entry in its grapheme cluster.</summary>
+    /// <summary>
+    /// Gets or sets a value indicating whether this is the last entry in its grapheme cluster.
+    /// </summary>
     public bool IsLastInGrapheme { get; set; }
 
-    /// <summary>Gets the index of this codepoint within its grapheme cluster (0-based).</summary>
+    /// <summary>
+    /// Gets the index of this codepoint within its grapheme cluster (0-based).
+    /// </summary>
     public int GraphemeCodePointIndex { get; }
 
-    /// <summary>Gets the codepoint index in the source text.</summary>
+    /// <summary>
+    /// Gets the codepoint index in the source text.
+    /// </summary>
     public int CodePointIndex { get; }
 
-    /// <summary>Gets a value indicating whether the entry participates in a transformed vertical layout.</summary>
+    /// <summary>
+    /// Gets a value indicating whether the entry participates in a transformed vertical layout.
+    /// </summary>
     public bool IsTransformed { get; }
 
-    /// <summary>Gets a value indicating whether the entry was produced by Unicode decomposition.</summary>
+    /// <summary>
+    /// Gets a value indicating whether the entry was produced by Unicode decomposition.
+    /// </summary>
     public bool IsDecomposed { get; }
 
-    /// <summary>Gets the zero-based UTF-16 code unit index in the original text.</summary>
+    /// <summary>
+    /// Gets the zero-based UTF-16 code unit index in the original text.
+    /// </summary>
     public int StringIndex { get; }
 
-    /// <summary>Gets the marker index to use if this entry becomes a selected soft-hyphen break.</summary>
+    /// <summary>
+    /// Gets the marker index to use if this entry becomes a selected soft-hyphen break.
+    /// </summary>
     public int HyphenationMarkerIndex { get; }
 
-    /// <summary>Gets a value indicating whether the codepoint is a line-break character.</summary>
+    /// <summary>
+    /// Gets a value indicating whether the codepoint is a line-break character.
+    /// </summary>
     public readonly bool IsNewLine => CodePoint.IsNewLine(this.CodePoint);
 
     private readonly string DebuggerDisplay => FormattableString

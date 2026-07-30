@@ -2,6 +2,7 @@
 // Licensed under the Six Labors Split License.
 
 using System.Globalization;
+using SixLabors.Fonts.Tables.AdvancedTypographic.GSub;
 using SixLabors.Fonts.Unicode;
 using SixLabors.Fonts.Unicode.Resources;
 using UnicodeTrieGenerator.StateAutomation;
@@ -14,93 +15,240 @@ namespace SixLabors.Fonts.Tables.AdvancedTypographic.Shapers;
 /// </summary>
 internal sealed class IndicShaper : DefaultShaper
 {
-    /// <summary>The state machine for Indic syllable identification.</summary>
+    /// <summary>
+    /// Devanagari letter RRA.
+    /// </summary>
+    private const int DevanagariLetterRra = 0x0931;
+
+    /// <summary>
+    /// Bengali letter RRA.
+    /// </summary>
+    private const int BengaliLetterRra = 0x09DC;
+
+    /// <summary>
+    /// Bengali letter RHA.
+    /// </summary>
+    private const int BengaliLetterRha = 0x09DD;
+
+    /// <summary>
+    /// Tamil letter AU.
+    /// </summary>
+    private const int TamilLetterAu = 0x0B94;
+
+    /// <summary>
+    /// Bengali letter YA.
+    /// </summary>
+    private const int BengaliLetterYa = 0x09AF;
+
+    /// <summary>
+    /// Bengali sign Nukta.
+    /// </summary>
+    private const int BengaliSignNukta = 0x09BC;
+
+    /// <summary>
+    /// Bengali letter YYA.
+    /// </summary>
+    private const int BengaliLetterYya = 0x09DF;
+
+    /// <summary>
+    /// The bit shift extracting the shaping category from a packed Indic shaping
+    /// property word; the category occupies the upper byte.
+    /// </summary>
+    private const int IndicCategoryShift = 8;
+
+    /// <summary>
+    /// The mask extracting the zero-based shaping position from a packed Indic
+    /// shaping property word; the position occupies the lower byte.
+    /// </summary>
+    private const int IndicPositionMask = 0xFF;
+
+    /// <summary>
+    /// The state machine for Indic syllable identification.
+    /// </summary>
     private static readonly StateMachine StateMachine =
         new(StateTable, AcceptingStates, Tags);
 
-    /// <summary>Maps Indic shaping category codes to compact DFA symbol indices.</summary>
+    /// <summary>
+    /// The syllable type for each machine state, translated from the tag rows once so
+    /// match handling never maps rule name strings.
+    /// </summary>
+    private static readonly SyllableType[] StateSyllableTypes =
+        SyllableTypeMap.FromMachineTags(Tags);
+
+    /// <summary>
+    /// Maps Indic shaping category codes to compact DFA symbol indices.
+    /// </summary>
     private static readonly int[] CategoryToSymbolId = BuildCategoryToSymbolId();
 
-    /// <summary>The 'rphf' (reph forms) feature tag.</summary>
+    /// <summary>
+    /// The 'rphf' (reph forms) feature tag.
+    /// </summary>
     private static readonly Tag RphfTag = Tag.Parse("rphf");
 
-    /// <summary>The 'nukt' (nukta forms) feature tag.</summary>
+    /// <summary>
+    /// The 'nukt' (nukta forms) feature tag.
+    /// </summary>
     private static readonly Tag NuktTag = Tag.Parse("nukt");
 
-    /// <summary>The 'akhn' (akhands) feature tag.</summary>
+    /// <summary>
+    /// The 'akhn' (akhands) feature tag.
+    /// </summary>
     private static readonly Tag AkhnTag = Tag.Parse("akhn");
 
-    /// <summary>The 'pref' (pre-base forms) feature tag.</summary>
+    /// <summary>
+    /// The 'pref' (pre-base forms) feature tag.
+    /// </summary>
     private static readonly Tag PrefTag = Tag.Parse("pref");
 
-    /// <summary>The 'rkrf' (rakar forms) feature tag.</summary>
+    /// <summary>
+    /// The 'rkrf' (rakar forms) feature tag.
+    /// </summary>
     private static readonly Tag RkrfTag = Tag.Parse("rkrf");
 
-    /// <summary>The 'abvf' (above-base forms) feature tag.</summary>
+    /// <summary>
+    /// The 'abvf' (above-base forms) feature tag.
+    /// </summary>
     private static readonly Tag AbvfTag = Tag.Parse("abvf");
 
-    /// <summary>The 'blwf' (below-base forms) feature tag.</summary>
+    /// <summary>
+    /// The 'blwf' (below-base forms) feature tag.
+    /// </summary>
     private static readonly Tag BlwfTag = Tag.Parse("blwf");
 
-    /// <summary>The 'half' (half forms) feature tag.</summary>
+    /// <summary>
+    /// The 'half' (half forms) feature tag.
+    /// </summary>
     private static readonly Tag HalfTag = Tag.Parse("half");
 
-    /// <summary>The 'pstf' (post-base forms) feature tag.</summary>
+    /// <summary>
+    /// The 'pstf' (post-base forms) feature tag.
+    /// </summary>
     private static readonly Tag PstfTag = Tag.Parse("pstf");
 
-    /// <summary>The 'vatu' (vattu variants) feature tag.</summary>
+    /// <summary>
+    /// The 'vatu' (vattu variants) feature tag.
+    /// </summary>
     private static readonly Tag VatuTag = Tag.Parse("vatu");
 
-    /// <summary>The 'cjct' (conjunct forms) feature tag.</summary>
+    /// <summary>
+    /// The 'cjct' (conjunct forms) feature tag.
+    /// </summary>
     private static readonly Tag CjctTag = Tag.Parse("cjct");
 
-    /// <summary>The 'cfar' (conjunct form after Ra) feature tag.</summary>
+    /// <summary>
+    /// The 'cfar' (conjunct form after Ra) feature tag.
+    /// </summary>
     private static readonly Tag CfarTag = Tag.Parse("cfar");
 
-    /// <summary>The 'init' (initial forms) feature tag.</summary>
+    /// <summary>
+    /// The 'init' (initial forms) feature tag.
+    /// </summary>
     private static readonly Tag InitTag = Tag.Parse("init");
 
-    /// <summary>The 'abvs' (above-base substitutions) feature tag.</summary>
+    /// <summary>
+    /// The 'abvs' (above-base substitutions) feature tag.
+    /// </summary>
     private static readonly Tag AbvsTag = Tag.Parse("abvs");
 
-    /// <summary>The 'blws' (below-base substitutions) feature tag.</summary>
+    /// <summary>
+    /// The 'blws' (below-base substitutions) feature tag.
+    /// </summary>
     private static readonly Tag BlwsTag = Tag.Parse("blws");
 
-    /// <summary>The 'pres' (pre-base substitutions) feature tag.</summary>
+    /// <summary>
+    /// The 'pres' (pre-base substitutions) feature tag.
+    /// </summary>
     private static readonly Tag PresTag = Tag.Parse("pres");
 
-    /// <summary>The 'psts' (post-base substitutions) feature tag.</summary>
+    /// <summary>
+    /// The 'psts' (post-base substitutions) feature tag.
+    /// </summary>
     private static readonly Tag PstsTag = Tag.Parse("psts");
 
-    /// <summary>The 'haln' (halant forms) feature tag.</summary>
+    /// <summary>
+    /// The 'haln' (halant forms) feature tag.
+    /// </summary>
     private static readonly Tag HalnTag = Tag.Parse("haln");
 
-    /// <summary>The 'dist' (distances) feature tag.</summary>
-    private static readonly Tag DistTag = Tag.Parse("dist");
-
-    /// <summary>The 'abvm' (above-base mark positioning) feature tag.</summary>
-    private static readonly Tag AbvmTag = Tag.Parse("abvm");
-
-    /// <summary>The 'blwm' (below-base mark positioning) feature tag.</summary>
-    private static readonly Tag BlwmTag = Tag.Parse("blwm");
-
-    /// <summary>Dotted circle code point (U+25CC) used as a placeholder base.</summary>
+    /// <summary>
+    /// Dotted circle code point (U+25CC) used as a placeholder base.
+    /// </summary>
     private const int DottedCircle = 0x25cc;
 
-    /// <summary>The text options.</summary>
-    private readonly TextOptions textOptions;
-
-    /// <summary>The font metrics used for glyph lookups.</summary>
+    /// <summary>
+    /// The font metrics used for glyph lookups.
+    /// </summary>
     private readonly FontMetrics fontMetrics;
 
-    /// <summary>The script-specific shaping configuration for this Indic script.</summary>
+    /// <summary>
+    /// The script-specific shaping configuration for this Indic script.
+    /// </summary>
     private ShapingConfiguration indicConfiguration;
 
-    /// <summary>Whether this font uses old-spec Indic script tags.</summary>
+    /// <summary>
+    /// Whether this font uses old-spec Indic script tags.
+    /// </summary>
     private readonly bool isOldSpec;
 
-    /// <summary>Whether any broken clusters were detected during syllable setup.</summary>
+    /// <summary>
+    /// Whether feature probes disallow matching context outside the probed glyph
+    /// sequence. New-spec scripts other than Malayalam match with zero context.
+    /// </summary>
+    private readonly bool zeroContext;
+
+    /// <summary>
+    /// Whether the substitution lookups used by Indic feature probes have been
+    /// captured from the owning shaping plan.
+    /// </summary>
+    private bool probeLookupsResolved;
+
+    /// <summary>
+    /// The reph-form lookups used to test whether an initial Ra forms a reph.
+    /// </summary>
+    private List<(Tag Feature, ushort Index, LookupTable LookupTable)>? rphfProbeLookups;
+
+    /// <summary>
+    /// The pre-base-form lookups used to test consonant positioning.
+    /// </summary>
+    private List<(Tag Feature, ushort Index, LookupTable LookupTable)>? prefProbeLookups;
+
+    /// <summary>
+    /// The below-base-form lookups used to test consonant positioning.
+    /// </summary>
+    private List<(Tag Feature, ushort Index, LookupTable LookupTable)>? blwfProbeLookups;
+
+    /// <summary>
+    /// The post-base-form lookups used to test consonant positioning.
+    /// </summary>
+    private List<(Tag Feature, ushort Index, LookupTable LookupTable)>? pstfProbeLookups;
+
+    /// <summary>
+    /// The vattu-form lookups used to test consonant positioning.
+    /// </summary>
+    private List<(Tag Feature, ushort Index, LookupTable LookupTable)>? vatuProbeLookups;
+
+    /// <summary>
+    /// Whether any broken clusters were detected during syllable setup.
+    /// </summary>
     private bool hasBrokenClusters;
+
+    /// <summary>
+    /// The syllable setup pause, converted to a delegate once so per-pass feature
+    /// planning never allocates for the conversion.
+    /// </summary>
+    private readonly Action<ShapePlan, ShapingBuffer, int, int> setupSyllablesAction;
+
+    /// <summary>
+    /// The initial reorder pause, converted to a delegate once so per-pass feature
+    /// planning never allocates for the conversion.
+    /// </summary>
+    private readonly Action<ShapePlan, ShapingBuffer, int, int> initialReorderAction;
+
+    /// <summary>
+    /// The final reorder pause, converted to a delegate once so per-pass feature
+    /// planning never allocates for the conversion.
+    /// </summary>
+    private readonly Action<ShapePlan, ShapingBuffer, int, int> finalReorderAction;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="IndicShaper"/> class.
@@ -112,8 +260,18 @@ internal sealed class IndicShaper : DefaultShaper
     public IndicShaper(ScriptClass script, Tag unicodeScriptTag, TextOptions textOptions, FontMetrics fontMetrics)
         : base(script, MarkZeroingMode.None, textOptions)
     {
-        this.textOptions = textOptions;
+        this.FallbackMarkPositioning = false;
         this.fontMetrics = fontMetrics;
+        this.setupSyllablesAction = this.SetupSyllables;
+        this.initialReorderAction = this.InitialReorder;
+        this.finalReorderAction = this.FinalReorder;
+
+        // Every character comes apart first, even one the font already draws whole.
+        // This shaper reads a syllable by its pieces and moves them about, so a vowel
+        // written as one character has to be split into the pieces that are reordered;
+        // were it left whole because the font can draw it, the reordering would never
+        // see it.
+        this.NormalizationMode = NormalizationMode.ComposedDiacriticsNoShortCircuit;
 
         if (IndicConfigurations.TryGetValue(script, out ShapingConfiguration value))
         {
@@ -125,93 +283,99 @@ internal sealed class IndicShaper : DefaultShaper
         }
 
         this.isOldSpec = this.indicConfiguration.HasOldSpec && !unicodeScriptTag.ToString().EndsWith("2", StringComparison.OrdinalIgnoreCase);
+        this.zeroContext = !this.isOldSpec && script != ScriptClass.Malayalam;
     }
 
     /// <inheritdoc />
-    protected override void PlanFeatures(IGlyphShapingCollection collection, int index, int count)
+    protected override void PreprocessText(ShapingBuffer buffer, int index, int count)
+        => VowelConstraints.Insert(buffer, this.fontMetrics, this.ScriptClass, index, count);
+
+    /// <inheritdoc />
+    public override bool TryDecompose(CodePoint codePoint, out CodePoint first, out CodePoint second)
     {
-        this.AddFeature(collection, index, count, LoclTag, preAction: this.SetupSyllables);
-        this.AddFeature(collection, index, count, CcmpTag);
+        // Indic normalization keeps these four letters atomic even though canonical
+        // decomposition data contains pairs for them. Fonts expect the original
+        // letters during script-specific substitution.
+        if (codePoint.Value is DevanagariLetterRra or BengaliLetterRra or BengaliLetterRha or TamilLetterAu)
+        {
+            first = default;
+            second = default;
+            return false;
+        }
 
-        this.AddFeature(collection, index, count, NuktTag, preAction: this.InitialReorder);
-        this.AddFeature(collection, index, count, AkhnTag);
-
-        this.AddFeature(collection, index, count, RphfTag, false);
-        this.AddFeature(collection, index, count, RkrfTag);
-        this.AddFeature(collection, index, count, PrefTag, false);
-        this.AddFeature(collection, index, count, BlwfTag, false);
-        this.AddFeature(collection, index, count, AbvfTag, false);
-        this.AddFeature(collection, index, count, HalfTag, false);
-        this.AddFeature(collection, index, count, PstfTag, false);
-        this.AddFeature(collection, index, count, VatuTag);
-        this.AddFeature(collection, index, count, CjctTag);
-        this.AddFeature(collection, index, count, CfarTag, false, postAction: this.FinalReorder);
-
-        this.AddFeature(collection, index, count, InitTag, false);
-        this.AddFeature(collection, index, count, PresTag);
-        this.AddFeature(collection, index, count, AbvsTag);
-        this.AddFeature(collection, index, count, BlwsTag);
-        this.AddFeature(collection, index, count, PstsTag);
-        this.AddFeature(collection, index, count, HalnTag);
-        this.AddFeature(collection, index, count, DistTag);
-        this.AddFeature(collection, index, count, AbvmTag);
-        this.AddFeature(collection, index, count, BlwmTag);
+        return base.TryDecompose(codePoint, out first, out second);
     }
 
     /// <inheritdoc />
-    protected override void AssignFeatures(IGlyphShapingCollection collection, int index, int count)
+    public override bool TryCompose(CodePoint first, CodePoint second, out CodePoint composed)
     {
-        if (collection is not GlyphSubstitutionCollection substitutionCollection)
+        // A split vowel begins with a mark and must remain decomposed for reordering.
+        if (CodePoint.IsMark(first))
         {
-            return;
+            composed = default;
+            return false;
         }
 
-        FontMetrics fontMetrics = this.fontMetrics;
-
-        // Decompose split matras
-        Span<ushort> buffer = stackalloc ushort[16];
-        int end = index + count;
-        for (int i = end - 1; i >= index; i--)
+        if (first.Value == BengaliLetterYa && second.Value == BengaliSignNukta)
         {
-            GlyphShapingData data = substitutionCollection[i];
-            if ((Decompositions.TryGetValue(data.CodePoint.Value, out int[]? decompositions) ||
-                UniversalShapingData.Decompositions.TryGetValue(data.CodePoint.Value, out decompositions)) &&
-                decompositions != null)
-            {
-                Span<ushort> ids = buffer[..decompositions.Length];
-                bool shouldDecompose = true;
-                for (int j = 0; j < decompositions.Length; j++)
-                {
-                    if (!fontMetrics.TryGetGlyphId(new CodePoint(decompositions[j]), out ushort id))
-                    {
-                        shouldDecompose = false;
-                        break;
-                    }
-
-                    ids[j] = id;
-                }
-
-                if (shouldDecompose)
-                {
-                    substitutionCollection.Replace(i, ids, KnownFeatureTags.GlyphCompositionDecomposition);
-                    for (int j = 0; j < decompositions.Length; j++)
-                    {
-                        substitutionCollection[i + j].CodePoint = new(decompositions[j]);
-                    }
-                }
-            }
+            // This excluded canonical pair is intentionally restored to Bengali YYA
+            // so fonts can address the letter as one substitution input.
+            composed = new CodePoint(BengaliLetterYya);
+            return true;
         }
+
+        return base.TryCompose(first, second, out composed);
+    }
+
+    /// <inheritdoc />
+    protected override void PlanFeatures(ShapingBuffer buffer, int index, int count)
+    {
+        this.EnableFeature(buffer, index, count, LoclTag, ShapingFeatureFlags.PerSyllable, this.setupSyllablesAction, null);
+        this.EnableFeature(buffer, index, count, CcmpTag, ShapingFeatureFlags.PerSyllable);
+
+        this.EnableFeature(buffer, index, count, NuktTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable, this.initialReorderAction, null);
+        this.EnableFeature(buffer, index, count, AkhnTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable);
+
+        this.AddFeature(buffer, index, count, RphfTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable, false, null, null);
+        this.EnableFeature(buffer, index, count, RkrfTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable);
+        this.AddFeature(buffer, index, count, PrefTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable, false, null, null);
+        this.AddFeature(buffer, index, count, BlwfTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable, false, null, null);
+        this.AddFeature(buffer, index, count, AbvfTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable, false, null, null);
+        this.AddFeature(buffer, index, count, HalfTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable, false, null, null);
+        this.AddFeature(buffer, index, count, PstfTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable, false, null, null);
+        this.EnableFeature(buffer, index, count, VatuTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable);
+        this.EnableFeature(buffer, index, count, CjctTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable);
+        this.AddFeature(buffer, index, count, CfarTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable, false, null, this.finalReorderAction);
+
+        this.AddFeature(buffer, index, count, InitTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable, false, null, null);
+        this.EnableFeature(buffer, index, count, PresTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable);
+        this.EnableFeature(buffer, index, count, AbvsTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable);
+        this.EnableFeature(buffer, index, count, BlwsTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable);
+        this.EnableFeature(buffer, index, count, PstsTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable);
+        this.EnableFeature(buffer, index, count, HalnTag, ShapingFeatureFlags.ManualJoiners | ShapingFeatureFlags.PerSyllable);
+    }
+
+    /// <inheritdoc />
+    protected override void PlanPostprocessingFeatures(ShapingBuffer buffer, int index, int count)
+    {
+        base.PlanPostprocessingFeatures(buffer, index, count);
+
+        // Standard ligature substitution interferes with the conjunct forms these
+        // scripts build through their dedicated features, so the feature is
+        // disabled for the whole plan and its lookups are never collected.
+        this.Features.DisableFeature(LigaTag);
     }
 
     /// <summary>
     /// Identifies Indic syllables using the state machine and assigns shaping info to each glyph.
     /// </summary>
-    /// <param name="collection">The glyph shaping collection.</param>
+    /// <param name="plan">The plan whose segment is being shaped.</param>
+    /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private void SetupSyllables(IGlyphShapingCollection collection, int index, int count)
+    private void SetupSyllables(ShapePlan plan, ShapingBuffer buffer, int index, int count)
     {
-        if (collection is not GlyphSubstitutionCollection substitutionCollection)
+        if (buffer.Role != ShapingBufferRole.Substitution)
         {
             return;
         }
@@ -219,6 +383,7 @@ internal sealed class IndicShaper : DefaultShaper
         this.hasBrokenClusters = false;
 
         Span<int> values = count <= 64 ? stackalloc int[count] : new int[count];
+        Span<ushort> shapingProps = count <= 64 ? stackalloc ushort[count] : new ushort[count];
 
         for (int i = index; i < index + count; i++)
         {
@@ -230,47 +395,51 @@ internal sealed class IndicShaper : DefaultShaper
             // machine expects its input alphabet to be dense 0..N-1, matching the
             // sequential IDs assigned in GenerateIndicShapingDataTrie.
             //
-            // CategoryToSymbolId[IndicShapingCategory(codePoint)] performs this mapping, ensuring that
-            // every codepoint is presented to the DFA using the correct compact
-            // symbol index.
-            CodePoint codePoint = substitutionCollection[i].CodePoint;
-            values[i - index] = CategoryToSymbolId[IndicShapingCategory(codePoint)];
+            // The property word is fetched once per glyph and stashed: the match
+            // loop below derives both the category and position lanes from it
+            // rather than walking the trie again.
+            CodePoint codePoint = buffer[i].CodePoint;
+            ushort props = (ushort)UnicodeData.GetIndicShapingProperties((uint)codePoint.Value);
+            shapingProps[i - index] = props;
+            values[i - index] = CategoryToSymbolId[props >> IndicCategoryShift];
         }
 
         int syllable = 0;
         int last = 0;
-        foreach (StateMatch match in StateMachine.Match(values))
+        StateMachine.MatchEnumerator match = StateMachine.EnumerateMatches(values);
+        while (match.MoveNext())
         {
             if (match.StartIndex > last)
             {
                 ++syllable;
                 for (int i = last; i < match.StartIndex; i++)
                 {
-                    GlyphShapingData data = substitutionCollection[i + index];
-                    data.IndicShapingEngineInfo = new(Categories.X, Positions.End, "non_indic_cluster", syllable);
+                    ref GlyphShapingData data = ref buffer[i + index];
+                    data.Syllable.IndicCategory = Categories.X;
+                    data.Syllable.IndicPosition = Positions.End;
+                    data.Syllable.Type = SyllableType.NonIndicCluster;
+                    data.Syllable.Number = syllable;
                 }
             }
 
             ++syllable;
 
+            SyllableType syllableType = StateSyllableTypes[match.TagState];
+            if (syllableType == SyllableType.BrokenCluster)
+            {
+                this.hasBrokenClusters = true;
+            }
+
             // Create shaper info.
             for (int i = match.StartIndex; i <= match.EndIndex; i++)
             {
-                GlyphShapingData data = substitutionCollection[i + index];
-                CodePoint codePoint = data.CodePoint;
+                ref GlyphShapingData data = ref buffer[i + index];
+                ushort props = shapingProps[i];
 
-                string syllableType = match.Tags[0];
-
-                if (syllableType == "broken_cluster")
-                {
-                    this.hasBrokenClusters = true;
-                }
-
-                data.IndicShapingEngineInfo = new(
-                    (Categories)IndicShapingCategory(codePoint),
-                    (Positions)IndicShapingPosition(codePoint),
-                    syllableType,
-                    syllable);
+                data.Syllable.IndicCategory = (Categories)(props >> IndicCategoryShift);
+                data.Syllable.IndicPosition = (Positions)((props & IndicPositionMask) + 1);
+                data.Syllable.Type = syllableType;
+                data.Syllable.Number = syllable;
             }
 
             last = match.EndIndex + 1;
@@ -281,8 +450,11 @@ internal sealed class IndicShaper : DefaultShaper
             ++syllable;
             for (int i = last; i < count; i++)
             {
-                GlyphShapingData data = substitutionCollection[i + index];
-                data.IndicShapingEngineInfo = new(Categories.X, Positions.End, "non_indic_cluster", syllable);
+                ref GlyphShapingData data = ref buffer[i + index];
+                data.Syllable.IndicCategory = Categories.X;
+                data.Syllable.IndicPosition = Positions.End;
+                data.Syllable.Type = SyllableType.NonIndicCluster;
+                data.Syllable.Number = syllable;
             }
         }
     }
@@ -293,34 +465,61 @@ internal sealed class IndicShaper : DefaultShaper
     /// <param name="codePoint">The code point.</param>
     /// <returns>The shaping category value.</returns>
     private static int IndicShapingCategory(CodePoint codePoint)
-        => UnicodeData.GetIndicShapingProperties((uint)codePoint.Value) >> 8;
+        => UnicodeData.GetIndicShapingProperties((uint)codePoint.Value) >> IndicCategoryShift;
 
     /// <summary>
-    /// Gets the Indic shaping position for a code point (lower 8 bits as a bit flag).
+    /// Gets the Indic shaping position for a code point. The trie stores the position
+    /// zero-based; adding one maps it onto the ordinal enum whose zero is the
+    /// unassigned sentinel.
     /// </summary>
     /// <param name="codePoint">The code point.</param>
-    /// <returns>The shaping position as a bit flag.</returns>
+    /// <returns>The shaping position ordinal.</returns>
     private static int IndicShapingPosition(CodePoint codePoint)
-        => 1 << (UnicodeData.GetIndicShapingProperties((uint)codePoint.Value) & 0xFF);
+        => (UnicodeData.GetIndicShapingProperties((uint)codePoint.Value) & IndicPositionMask) + 1;
 
     /// <summary>
     /// Performs the initial reordering pass for Indic syllables, including base consonant
     /// identification, reph handling, matra reordering, and feature assignment.
     /// </summary>
-    /// <param name="collection">The glyph shaping collection.</param>
+    /// <param name="plan">The plan whose segment is being shaped.</param>
+    /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private void InitialReorder(IGlyphShapingCollection collection, int index, int count)
+    private void InitialReorder(ShapePlan plan, ShapingBuffer buffer, int index, int count)
     {
-        if (collection is not GlyphSubstitutionCollection substitutionCollection)
+        if (buffer.Role != ShapingBufferRole.Substitution)
         {
             return;
         }
 
-        // Create a reusable temporary substitution collection and buffer to allow checking whether
-        // certain combinations will be substituted.
-        GlyphSubstitutionCollection tempCollection = new(this.textOptions);
-        Span<GlyphShapingData> tempBuffer = new GlyphShapingData[3];
+        if (!this.probeLookupsResolved)
+        {
+            // The shaper and plan have the same lifetime. Capture these resolved
+            // feature lists once because consonant classification probes them
+            // repeatedly for every Indic segment shaped by the cached plan.
+            this.rphfProbeLookups = plan.TryGetGSubFeatureLookups(in RphfTag, out List<(Tag Feature, ushort Index, LookupTable LookupTable)>? rphfLookups) ? rphfLookups : null;
+            this.prefProbeLookups = plan.TryGetGSubFeatureLookups(in PrefTag, out List<(Tag Feature, ushort Index, LookupTable LookupTable)>? prefLookups) ? prefLookups : null;
+            this.blwfProbeLookups = plan.TryGetGSubFeatureLookups(in BlwfTag, out List<(Tag Feature, ushort Index, LookupTable LookupTable)>? blwfLookups) ? blwfLookups : null;
+            this.pstfProbeLookups = plan.TryGetGSubFeatureLookups(in PstfTag, out List<(Tag Feature, ushort Index, LookupTable LookupTable)>? pstfLookups) ? pstfLookups : null;
+            this.vatuProbeLookups = plan.TryGetGSubFeatureLookups(in VatuTag, out List<(Tag Feature, ushort Index, LookupTable LookupTable)>? vatuLookups) ? vatuLookups : null;
+            this.probeLookupsResolved = true;
+        }
+
+        // Feature assignment revisits these tags throughout every syllable. Resolve
+        // their plan masks once so the reorder loops do not repeatedly search the
+        // same small feature lists.
+        uint rphfMask = this.Features.GetMask(RphfTag);
+        uint halfMask = this.Features.GetMask(HalfTag);
+        uint blwfMask = this.Features.GetMask(BlwfTag);
+        uint abvfMask = this.Features.GetMask(AbvfTag);
+        uint pstfMask = this.Features.GetMask(PstfTag);
+        uint prefMask = this.Features.GetMask(PrefTag);
+        uint cfarMask = this.Features.GetMask(CfarTag);
+
+        // Reusable glyph id span for feature probes. Hoisted out of the syllable loop
+        // because a stack allocation inside the loop body would grow the stack once
+        // per syllable for the lifetime of the call.
+        Span<ushort> probeGlyphs = stackalloc ushort[3];
 
         ShapingConfiguration indicConfiguration = this.indicConfiguration;
         FontMetrics fontMetrics = this.fontMetrics;
@@ -330,29 +529,18 @@ internal sealed class IndicShaper : DefaultShaper
         {
             for (int i = 0; i < count; i++)
             {
-                GlyphShapingData data = substitutionCollection[i + index];
-                IndicShapingEngineInfo? info = data.IndicShapingEngineInfo;
+                ref GlyphShapingData data = ref buffer[i + index];
 
-                if (info?.Position == Positions.Base_C)
+                if (data.Syllable.IndicPosition == Positions.Base_C)
                 {
-                    GlyphShapingData virama = new(data, false)
-                    {
-                        GlyphId = viramaId,
-                        CodePoint = viramaPoint
-                    };
-
-                    tempBuffer[2] = virama;
-                    tempBuffer[1] = data;
-                    tempBuffer[0] = virama;
-
-                    info.Position = this.ConsonantPosition(tempCollection, tempBuffer);
+                    data.Syllable.IndicPosition = this.ConsonantPosition(viramaId, data.GlyphId);
                 }
             }
         }
 
         int max = index + count;
         int start = index;
-        int end = NextSyllable(substitutionCollection, index, max);
+        int end = NextSyllable(buffer, index, max);
 
         if (this.hasBrokenClusters)
         {
@@ -361,34 +549,29 @@ internal sealed class IndicShaper : DefaultShaper
                 Span<ushort> glyphs = stackalloc ushort[2];
                 while (start < max)
                 {
-                    GlyphShapingData data = substitutionCollection[start];
-                    IndicShapingEngineInfo? dataInfo = data.IndicShapingEngineInfo;
-                    string? type = dataInfo?.SyllableType;
-
-                    if (type == "broken_cluster")
+                    if (buffer[start].Syllable.Type == SyllableType.BrokenCluster)
                     {
                         // Insert after possible Repha.
                         int i = start;
                         for (i = start; i < end; i++)
                         {
-                            if (substitutionCollection[i].IndicShapingEngineInfo?.Category != Categories.Repha)
+                            if (buffer[i].Syllable.IndicCategory != Categories.Repha)
                             {
                                 break;
                             }
                         }
 
-                        GlyphShapingData current = substitutionCollection[i];
-                        IndicShapingEngineInfo currentInfo = current.IndicShapingEngineInfo!;
+                        ref GlyphShapingData current = ref buffer[i];
                         glyphs[0] = circleId;
                         glyphs[1] = current.GlyphId;
 
-                        substitutionCollection.Replace(i, glyphs, KnownFeatureTags.GlyphCompositionDecomposition);
+                        buffer.Replace(i, glyphs, KnownFeatureTags.GlyphCompositionDecomposition);
 
                         // The dotted circle is now at position i (inherits original shaping info).
                         // Update it to be a dotted circle base.
-                        GlyphShapingData dotted = substitutionCollection[i];
-                        dotted.IndicShapingEngineInfo!.Category = Categories.Dotted_Circle;
-                        dotted.IndicShapingEngineInfo.Position = Positions.End;
+                        ref GlyphShapingData dotted = ref buffer[i];
+                        dotted.Syllable.IndicCategory = Categories.Dotted_Circle;
+                        dotted.Syllable.IndicPosition = Positions.End;
 
                         // The original mark glyph is now at position i + 1 (copy of original info).
                         // Its shaping info is already correct from the copy.
@@ -397,24 +580,35 @@ internal sealed class IndicShaper : DefaultShaper
                     }
 
                     start = end;
-                    end = NextSyllable(substitutionCollection, start, max);
+                    end = NextSyllable(buffer, start, max);
                 }
 
                 start = index;
-                end = NextSyllable(substitutionCollection, index, max);
+                end = NextSyllable(buffer, index, max);
             }
         }
 
-        _ = fontMetrics.TryGetGSubTable(out GSubTable? gSubTable);
         while (start < max)
         {
-            GlyphShapingData data = substitutionCollection[start];
-            IndicShapingEngineInfo? dataInfo = data.IndicShapingEngineInfo;
-            string? type = dataInfo?.SyllableType;
-
-            if (type is "symbol_cluster" or "non_indic_cluster")
+            if (buffer[start].Syllable.Type is SyllableType.SymbolCluster or SyllableType.NonIndicCluster)
             {
                 goto Increment;
+            }
+
+            // Kannada preserves a legacy spelling in which Ra + Halant + ZWJ
+            // behaves as Ra + ZWJ + Halant. Move only the shaping records; source
+            // offsets remain attached to their logical text slots.
+            if (this.ScriptClass == ScriptClass.Kannada
+                && start + 3 <= end
+                && !buffer[start].IsLigated
+                && buffer[start].Syllable.IndicCategory == Categories.Ra
+                && !buffer[start + 1].IsLigated
+                && buffer[start + 1].Syllable.IndicCategory == Categories.H
+                && !buffer[start + 2].IsLigated
+                && buffer[start + 2].Syllable.IndicCategory == Categories.ZWJ)
+            {
+                buffer.CombineInputStarts(start + 1, start + 3);
+                buffer.MoveGlyph(start + 2, start + 1);
             }
 
             // 1. Find base consonant:
@@ -434,20 +628,20 @@ internal sealed class IndicShaper : DefaultShaper
             // base consonants.
             if (start + 3 <= end &&
                 indicConfiguration.RephPosition != Positions.Ra_To_Become_Reph &&
-                gSubTable?.TryGetFeatureLookups(fontMetrics, in RphfTag, this.ScriptClass, out _) == true &&
-                ((indicConfiguration.RephMode == RephMode.Implicit && !IsJoiner(substitutionCollection[start + 2])) ||
-                 (indicConfiguration.RephMode == RephMode.Explicit && substitutionCollection[start + 2].IndicShapingEngineInfo?.Category == Categories.ZWJ)))
+                this.rphfProbeLookups is not null &&
+                ((indicConfiguration.RephMode == RephMode.Implicit && !IsJoiner(ref buffer[start + 2])) ||
+                 (indicConfiguration.RephMode == RephMode.Explicit && buffer[start + 2].Syllable.IndicCategory == Categories.ZWJ)))
             {
                 // See if it matches the 'rphf' feature.
-                tempBuffer[2] = substitutionCollection[start + 2];
-                tempBuffer[1] = substitutionCollection[start + 1];
-                tempBuffer[0] = substitutionCollection[start];
+                probeGlyphs[0] = buffer[start].GlyphId;
+                probeGlyphs[1] = buffer[start + 1].GlyphId;
+                probeGlyphs[2] = buffer[start + 2].GlyphId;
 
-                if ((indicConfiguration.RephMode == RephMode.Explicit && this.WouldSubstitute(tempCollection, in RphfTag, tempBuffer)) ||
-                    this.WouldSubstitute(tempCollection, in RphfTag, tempBuffer[..2]))
+                if ((indicConfiguration.RephMode == RephMode.Explicit && this.WouldSubstitute(this.rphfProbeLookups, probeGlyphs)) ||
+                    this.WouldSubstitute(this.rphfProbeLookups, probeGlyphs[..2]))
                 {
                     limit += 2;
-                    while (limit < end && IsJoiner(substitutionCollection[limit]))
+                    while (limit < end && IsJoiner(ref buffer[limit]))
                     {
                         limit++;
                     }
@@ -457,10 +651,10 @@ internal sealed class IndicShaper : DefaultShaper
                 }
             }
             else if (indicConfiguration.RephMode == RephMode.Log_Repha &&
-                     substitutionCollection[start].IndicShapingEngineInfo?.Category == Categories.Repha)
+                     buffer[start].Syllable.IndicCategory == Categories.Repha)
             {
                 limit++;
-                while (limit < end && IsJoiner(substitutionCollection[limit]))
+                while (limit < end && IsJoiner(ref buffer[limit]))
                 {
                     limit++;
                 }
@@ -479,14 +673,14 @@ internal sealed class IndicShaper : DefaultShaper
 
                     do
                     {
-                        IndicShapingEngineInfo? prevInfo = substitutionCollection[--i].IndicShapingEngineInfo;
+                        ref GlyphShapingData prev = ref buffer[--i];
 
                         // Until a consonant is found
-                        if (IsConsonant(substitutionCollection[i]))
+                        if (IsConsonant(ref prev))
                         {
                             // that does not have a below-base or post-base form
                             // (post-base forms have to follow below-base forms),
-                            if (prevInfo?.Position != Positions.Below_C && (prevInfo?.Position != Positions.Post_C || seenBelow))
+                            if (prev.Syllable.IndicPosition != Positions.Below_C && (prev.Syllable.IndicPosition != Positions.Post_C || seenBelow))
                             {
                                 basePosition = i;
                                 break;
@@ -502,15 +696,15 @@ internal sealed class IndicShaper : DefaultShaper
 
                             // or arrive at the first consonant. The consonant stopped at will
                             // be the base.
-                            if (prevInfo?.Position == Positions.Below_C)
+                            if (prev.Syllable.Type != SyllableType.None && prev.Syllable.IndicPosition == Positions.Below_C)
                             {
                                 seenBelow = true;
                             }
 
                             basePosition = i;
                         }
-                        else if (start < i && prevInfo?.Category == Categories.ZWJ &&
-                                 substitutionCollection[i - 1].IndicShapingEngineInfo?.Category == Categories.H)
+                        else if (start < i && prev.Syllable.IndicCategory == Categories.ZWJ && prev.Syllable.Type != SyllableType.None &&
+                                 buffer[i - 1].Syllable.IndicCategory == Categories.H)
                         {
                             // A ZWJ after a Halant stops the base search, and requests an explicit
                             // half form.
@@ -532,10 +726,10 @@ internal sealed class IndicShaper : DefaultShaper
 
                     for (int i = basePosition + 1; i < end; i++)
                     {
-                        GlyphShapingData c = substitutionCollection[i];
-                        if (IsConsonant(c) && c.IndicShapingEngineInfo != null)
+                        ref GlyphShapingData c = ref buffer[i];
+                        if (IsConsonant(ref c))
                         {
-                            c.IndicShapingEngineInfo.Position = Positions.Below_C;
+                            c.Syllable.IndicPosition = Positions.Below_C;
                         }
                     }
 
@@ -584,19 +778,19 @@ internal sealed class IndicShaper : DefaultShaper
             // Reorder characters
             for (int i = start; i < basePosition; i++)
             {
-                IndicShapingEngineInfo? info = substitutionCollection[i].IndicShapingEngineInfo;
-                if (info != null)
+                ref GlyphShapingData item = ref buffer[i];
+                if (item.Syllable.Type != SyllableType.None)
                 {
-                    info.Position = (Positions)Math.Min((int)Positions.Pre_C, (int)info.Position);
+                    item.Syllable.IndicPosition = (Positions)Math.Min((int)Positions.Pre_C, (int)item.Syllable.IndicPosition);
                 }
             }
 
             if (basePosition < end)
             {
-                IndicShapingEngineInfo? info = substitutionCollection[basePosition].IndicShapingEngineInfo;
-                if (info != null)
+                ref GlyphShapingData item = ref buffer[basePosition];
+                if (item.Syllable.Type != SyllableType.None)
                 {
-                    info.Position = Positions.Base_C;
+                    item.Syllable.IndicPosition = Positions.Base_C;
                 }
             }
 
@@ -604,14 +798,14 @@ internal sealed class IndicShaper : DefaultShaper
             // like in Khmer.
             for (int i = basePosition + 1; i < end; i++)
             {
-                if (substitutionCollection[i].IndicShapingEngineInfo?.Category == Categories.M)
+                if (buffer[i].Syllable.IndicCategory == Categories.M)
                 {
                     for (int j = i + 1; j < end; j++)
                     {
-                        GlyphShapingData c = substitutionCollection[j];
-                        if (IsConsonant(c) && c.IndicShapingEngineInfo != null)
+                        ref GlyphShapingData c = ref buffer[j];
+                        if (IsConsonant(ref c))
                         {
-                            c.IndicShapingEngineInfo.Position = Positions.Final_C;
+                            c.Syllable.IndicPosition = Positions.Final_C;
                             break;
                         }
                     }
@@ -623,50 +817,43 @@ internal sealed class IndicShaper : DefaultShaper
             // Handle beginning Ra
             if (hasReph)
             {
-                GlyphShapingData c = substitutionCollection[start];
-                if (c.IndicShapingEngineInfo != null)
+                ref GlyphShapingData c = ref buffer[start];
+                if (c.Syllable.Type != SyllableType.None)
                 {
-                    c.IndicShapingEngineInfo.Position = Positions.Ra_To_Become_Reph;
+                    c.Syllable.IndicPosition = Positions.Ra_To_Become_Reph;
                 }
             }
 
             // For old-style Indic script tags, move the first post-base Halant after
-            // last consonant.
-            //
-            // Reports suggest that in some scripts Uniscribe does this only if there
-            // is *not* a Halant after last consonant already (eg. Kannada), while it
-            // does it unconditionally in other scripts (eg. Malayalam).  We don't
-            // currently know about other scripts, so we single out Malayalam for now.
-            //
-            // Kannada test case:
-            // U+0C9A,U+0CCD,U+0C9A,U+0CCD
-            // With some versions of Lohit Kannada.
-            // https://bugs.freedesktop.org/show_bug.cgi?id=59118
-            //
-            // Malayalam test case:
-            // U+0D38,U+0D4D,U+0D31,U+0D4D,U+0D31,U+0D4D
-            // With lohit-ttf-20121122/Lohit-Malayalam.ttf
+            // the last consonant. Kannada alone blocks the move when another halant
+            // already terminates the sequence; the other old-style scripts move it
+            // unconditionally.
             if (this.isOldSpec)
             {
-                bool disallowDoubleHalants = this.ScriptClass != ScriptClass.Malayalam;
+                bool disallowDoubleHalants = this.ScriptClass == ScriptClass.Kannada;
                 for (int i = basePosition + 1; i < end; i++)
                 {
-                    if (substitutionCollection[i].IndicShapingEngineInfo?.Category == Categories.H)
+                    if (buffer[i].Syllable.IndicCategory == Categories.H)
                     {
                         int j;
                         for (j = end - 1; j > i; j--)
                         {
-                            GlyphShapingData c = substitutionCollection[j];
-                            if (IsConsonant(c) || (disallowDoubleHalants && c.IndicShapingEngineInfo?.Category == Categories.H))
+                            ref GlyphShapingData c = ref buffer[j];
+                            if (IsConsonant(ref c) || (disallowDoubleHalants && c.Syllable.IndicCategory == Categories.H))
                             {
                                 break;
                             }
                         }
 
-                        if (j > i && substitutionCollection[j].IndicShapingEngineInfo?.Category != Categories.H)
+                        if (j > i)
                         {
-                            // Move Halant to after last consonant.
-                            substitutionCollection.MoveGlyph(i, j);
+                            // The old-spec sequence is one shaping input range even
+                            // when Kannada retains a final halant to avoid doubling it.
+                            buffer.CombineInputStarts(i, j + 1);
+                            if (buffer[j].Syllable.IndicCategory != Categories.H)
+                            {
+                                buffer.MoveGlyph(i, j);
+                            }
                         }
 
                         break;
@@ -678,13 +865,14 @@ internal sealed class IndicShaper : DefaultShaper
             Positions lastPosition = Positions.Start;
             for (int i = start; i < end; i++)
             {
-                IndicShapingEngineInfo? info = substitutionCollection[i].IndicShapingEngineInfo;
-                if (info != null)
+                ref GlyphShapingData item = ref buffer[i];
+                if (item.Syllable.Type != SyllableType.None)
                 {
-                    if ((FlagUnsafe(info.Category) & (JoinerFlags | Flag(Categories.N) | Flag(Categories.RS) | Flag(Categories.CM) | (HalantOrCoengFlags & FlagUnsafe(info.Category)))) != 0)
+                    Categories category = item.Syllable.IndicCategory;
+                    if ((FlagUnsafe(category) & (JoinerFlags | Flag(Categories.N) | Flag(Categories.RS) | Flag(Categories.CM) | (HalantFlags & FlagUnsafe(category)))) != 0)
                     {
-                        info.Position = lastPosition;
-                        if (info.Category == Categories.H && info.Position == Positions.Pre_M)
+                        item.Syllable.IndicPosition = lastPosition;
+                        if (category == Categories.H && item.Syllable.IndicPosition == Positions.Pre_M)
                         {
                             // Uniscribe doesn't move the Halant with Left Matra.
                             // TEST: U+092B,U+093F,U+094DE
@@ -695,27 +883,29 @@ internal sealed class IndicShaper : DefaultShaper
                             // TEST: U+0D9A,U+0DDA
                             for (int j = i; j > start; j--)
                             {
-                                Positions? pos = substitutionCollection[j - 1].IndicShapingEngineInfo?.Position;
-                                if (pos is not null and not Positions.Pre_M)
+                                // An unassigned record reads as position zero, matching
+                                // the previous null semantics: keep scanning.
+                                Positions pos = buffer[j - 1].Syllable.IndicPosition;
+                                if (pos is not 0 and not Positions.Pre_M)
                                 {
-                                    info.Position = pos.Value;
+                                    item.Syllable.IndicPosition = pos;
                                     break;
                                 }
                             }
                         }
                     }
-                    else if (info.Position != Positions.SMVD)
+                    else if (item.Syllable.IndicPosition != Positions.SMVD)
                     {
                         // If an MPst follows an SM, update the SM's position to match
                         // so they move together during reordering.
-                        if (info.Category == Categories.MPst
+                        if (category == Categories.MPst
                             && i > start
-                            && substitutionCollection[i - 1].IndicShapingEngineInfo?.Category == Categories.SM)
+                            && buffer[i - 1].Syllable.IndicCategory == Categories.SM)
                         {
-                            substitutionCollection[i - 1].IndicShapingEngineInfo!.Position = info.Position;
+                            buffer[i - 1].Syllable.IndicPosition = item.Syllable.IndicPosition;
                         }
 
-                        lastPosition = info.Position;
+                        lastPosition = item.Syllable.IndicPosition;
                     }
                 }
             }
@@ -725,44 +915,75 @@ internal sealed class IndicShaper : DefaultShaper
             int last = basePosition;
             for (int i = basePosition + 1; i < end; i++)
             {
-                GlyphShapingData current = substitutionCollection[i];
-                IndicShapingEngineInfo? info = current.IndicShapingEngineInfo;
-                if (info != null)
+                ref GlyphShapingData current = ref buffer[i];
+                if (current.Syllable.Type != SyllableType.None)
                 {
-                    if (IsConsonant(current))
+                    if (IsConsonant(ref current))
                     {
                         for (int j = last + 1; j < i; j++)
                         {
-                            IndicShapingEngineInfo? jInfo = substitutionCollection[j].IndicShapingEngineInfo;
-                            if (jInfo?.Position < Positions.SMVD)
+                            ref GlyphShapingData between = ref buffer[j];
+                            if (between.Syllable.Type != SyllableType.None && between.Syllable.IndicPosition < Positions.SMVD)
                             {
-                                jInfo.Position = info.Position;
+                                between.Syllable.IndicPosition = current.Syllable.IndicPosition;
                             }
                         }
 
                         last = i;
                     }
-                    else if ((FlagUnsafe(info.Category) & (Flag(Categories.M) | Flag(Categories.MPst))) != 0)
+                    else if ((FlagUnsafe(current.Syllable.IndicCategory) & (Flag(Categories.M) | Flag(Categories.MPst))) != 0)
                     {
                         last = i;
                     }
                 }
             }
 
-            substitutionCollection.Sort(start, end, (a, b) =>
+            buffer.Sort(start, end, (a, b) =>
             {
-                int pa = a.IndicShapingEngineInfo?.Position != null ? (int)a.IndicShapingEngineInfo.Position : 0;
-                int pb = b.IndicShapingEngineInfo?.Position != null ? (int)b.IndicShapingEngineInfo.Position : 0;
+                int pa = (int)a.Syllable.IndicPosition;
+                int pb = (int)b.Syllable.IndicPosition;
                 return pa - pb;
             });
 
-            // Find base again
+            // Stable position sorting groups every pre-base matra at the front but
+            // leaves adjacent split-matra pieces in logical order. Reverse the full
+            // pre-base range, then reverse each matra-led piece back independently;
+            // this reverses the pieces without reversing the marks within a piece.
+            int firstLeftMatra = end;
+            int lastLeftMatra = end;
+            basePosition = end;
             for (int i = start; i < end; i++)
             {
-                if (substitutionCollection[i].IndicShapingEngineInfo?.Position == Positions.Base_C)
+                if (buffer[i].Syllable.IndicPosition == Positions.Base_C)
                 {
                     basePosition = i;
                     break;
+                }
+
+                if (buffer[i].Syllable.IndicPosition == Positions.Pre_M)
+                {
+                    if (firstLeftMatra == end)
+                    {
+                        firstLeftMatra = i;
+                    }
+
+                    lastLeftMatra = i;
+                }
+            }
+
+            if (firstLeftMatra < lastLeftMatra)
+            {
+                buffer.ReverseRange(firstLeftMatra, lastLeftMatra + 1);
+
+                uint matraFlags = Flag(Categories.M) | Flag(Categories.MPst);
+                int pieceStart = firstLeftMatra;
+                for (int i = pieceStart; i <= lastLeftMatra; i++)
+                {
+                    if ((FlagUnsafe(buffer[i].Syllable.IndicCategory) & matraFlags) != 0)
+                    {
+                        buffer.ReverseRange(pieceStart, i + 1);
+                        pieceStart = i + 1;
+                    }
                 }
             }
 
@@ -771,32 +992,31 @@ internal sealed class IndicShaper : DefaultShaper
             // Reph.
             for (int i = start; i < end; i++)
             {
-                IndicShapingEngineInfo? info = substitutionCollection[i].IndicShapingEngineInfo;
-                if (info?.Position != Positions.Ra_To_Become_Reph)
+                if (buffer[i].Syllable.IndicPosition != Positions.Ra_To_Become_Reph)
                 {
                     break;
                 }
 
-                substitutionCollection.EnableShapingFeature(i, RphfTag);
+                buffer.EnableShapingFeature(i, rphfMask);
             }
 
             // Pre-base
             bool blwf = !this.isOldSpec && indicConfiguration.BlwfMode == BlwfMode.Pre_And_Post;
             for (int i = start; i < basePosition; i++)
             {
-                substitutionCollection.EnableShapingFeature(i, HalfTag);
+                buffer.EnableShapingFeature(i, halfMask);
                 if (blwf)
                 {
-                    substitutionCollection.EnableShapingFeature(i, BlwfTag);
+                    buffer.EnableShapingFeature(i, blwfMask);
                 }
             }
 
             // Post-base
             for (int i = basePosition + 1; i < end; i++)
             {
-                substitutionCollection.EnableShapingFeature(i, AbvfTag);
-                substitutionCollection.EnableShapingFeature(i, PstfTag);
-                substitutionCollection.EnableShapingFeature(i, BlwfTag);
+                buffer.EnableShapingFeature(i, abvfMask);
+                buffer.EnableShapingFeature(i, pstfMask);
+                buffer.EnableShapingFeature(i, blwfMask);
             }
 
             if (this.isOldSpec && this.ScriptClass == ScriptClass.Devanagari)
@@ -813,37 +1033,35 @@ internal sealed class IndicShaper : DefaultShaper
                 // Test case: U+0924,U+094D,U+0930,U+094d,U+0915
                 // with Sanskrit 2003 font.
                 //
-                // However, note that Ra,Halant,ZWJ is the correct way to
-                // request eyelash form of Ra, so we wouldn't inhibit it
-                // in that sequence.
-                //
-                // Test case: U+0924,U+094D,U+0930,U+094d,U+200D,U+0915
+                // Ra + Halant immediately before the base receives the below-base
+                // feature. Earlier pairs also receive it unless ZWJ follows, because
+                // that explicit joiner requests the eyelash form instead.
                 for (int i = start; i + 1 < basePosition; i++)
                 {
-                    if (substitutionCollection[i].IndicShapingEngineInfo?.Category == Categories.Ra &&
-                        substitutionCollection[i + 1].IndicShapingEngineInfo?.Category == Categories.H &&
-                        (i + 1 == basePosition || substitutionCollection[i + 2].IndicShapingEngineInfo?.Category == Categories.ZWJ))
+                    if (buffer[i].Syllable.IndicCategory == Categories.Ra
+                        && buffer[i + 1].Syllable.IndicCategory == Categories.H
+                        && (i + 2 == basePosition || buffer[i + 2].Syllable.IndicCategory != Categories.ZWJ))
                     {
-                        substitutionCollection.EnableShapingFeature(i, BlwfTag);
-                        substitutionCollection.EnableShapingFeature(i + 1, BlwfTag);
+                        buffer.EnableShapingFeature(i, blwfMask);
+                        buffer.EnableShapingFeature(i + 1, blwfMask);
                     }
                 }
             }
 
             const int prefLen = 2;
             if (basePosition + prefLen < end &&
-                gSubTable?.TryGetFeatureLookups(fontMetrics, in PrefTag, this.ScriptClass, out _) == true)
+                this.prefProbeLookups is not null)
             {
                 // Find a Halant,Ra sequence and mark it for pre-base reordering processing.
                 for (int i = basePosition + 1; i + prefLen - 1 < end; i++)
                 {
-                    tempBuffer[1] = substitutionCollection[i + 1];
-                    tempBuffer[0] = substitutionCollection[i];
-                    if (this.WouldSubstitute(tempCollection, in PrefTag, tempBuffer[..2]))
+                    probeGlyphs[0] = buffer[i].GlyphId;
+                    probeGlyphs[1] = buffer[i + 1].GlyphId;
+                    if (this.WouldSubstitute(this.prefProbeLookups, probeGlyphs[..2]))
                     {
                         for (int j = 0; j < prefLen; j++)
                         {
-                            substitutionCollection.EnableShapingFeature(i++, PrefTag);
+                            buffer.EnableShapingFeature(i++, prefMask);
                         }
 
                         // Mark the subsequent stuff with 'cfar'.  Used in Khmer.
@@ -851,11 +1069,11 @@ internal sealed class IndicShaper : DefaultShaper
                         // This allows distinguishing the following cases with MS Khmer fonts:
                         // U+1784,U+17D2,U+179A,U+17D2,U+1782
                         // U+1784,U+17D2,U+1782,U+17D2,U+179A
-                        if (gSubTable.TryGetFeatureLookups(fontMetrics, in CfarTag, this.ScriptClass, out _))
+                        if (plan.TryGetGSubFeatureLookups(in CfarTag, out _))
                         {
                             while (i < end)
                             {
-                                substitutionCollection.EnableShapingFeature(i, CfarTag);
+                                buffer.EnableShapingFeature(i, cfarMask);
                                 i++;
                             }
                         }
@@ -868,10 +1086,10 @@ internal sealed class IndicShaper : DefaultShaper
             // Apply ZWJ/ZWNJ effects
             for (int i = start + 1; i < end; i++)
             {
-                GlyphShapingData current = substitutionCollection[i];
-                if (IsJoiner(current))
+                ref GlyphShapingData current = ref buffer[i];
+                if (IsJoiner(ref current))
                 {
-                    bool nonJoiner = current.IndicShapingEngineInfo?.Category == Categories.ZWNJ;
+                    bool nonJoiner = current.Syllable.IndicCategory == Categories.ZWNJ;
                     int j = i;
 
                     do
@@ -885,42 +1103,50 @@ internal sealed class IndicShaper : DefaultShaper
                         // A ZWNJ disables HALF.
                         if (nonJoiner)
                         {
-                            substitutionCollection.DisableShapingFeature(j, HalfTag);
+                            buffer.DisableShapingFeature(j, halfMask);
                         }
                     }
-                    while (j > start && !IsConsonant(substitutionCollection[j]));
+                    while (j > start && !IsConsonant(ref buffer[j]));
                 }
             }
 
             Increment:
             start = end;
-            end = NextSyllable(substitutionCollection, start, max);
+            end = NextSyllable(buffer, start, max);
         }
     }
 
     /// <summary>
-    /// Determines the positional class of a consonant by testing whether it would be
-    /// substituted by below-base, post-base, or pre-base features.
+    /// Determines the positional class of a consonant by testing whether the
+    /// virama-consonant and consonant-virama pairs would be substituted by the
+    /// below-base, vattu, post-base, or pre-base forming features.
     /// </summary>
-    /// <param name="collection">A temporary substitution collection for testing.</param>
-    /// <param name="data">The consonant and virama glyph data to test.</param>
+    /// <param name="virama">The virama glyph id.</param>
+    /// <param name="consonant">The consonant glyph id.</param>
     /// <returns>The consonant's positional class.</returns>
-    private Positions ConsonantPosition(GlyphSubstitutionCollection collection, ReadOnlySpan<GlyphShapingData> data)
+    private Positions ConsonantPosition(ushort virama, ushort consonant)
     {
-        if (this.WouldSubstitute(collection, in BlwfTag, data[..2]) ||
-            this.WouldSubstitute(collection, in BlwfTag, data.Slice(1, 2)))
+        Span<ushort> glyphs = stackalloc ushort[3];
+        glyphs[0] = virama;
+        glyphs[1] = consonant;
+        glyphs[2] = virama;
+
+        if (this.WouldSubstitute(this.blwfProbeLookups, glyphs[..2]) ||
+            this.WouldSubstitute(this.blwfProbeLookups, glyphs.Slice(1, 2)) ||
+            this.WouldSubstitute(this.vatuProbeLookups, glyphs[..2]) ||
+            this.WouldSubstitute(this.vatuProbeLookups, glyphs.Slice(1, 2)))
         {
             return Positions.Below_C;
         }
 
-        if (this.WouldSubstitute(collection, in PstfTag, data[..2]) ||
-            this.WouldSubstitute(collection, in PstfTag, data.Slice(1, 2)))
+        if (this.WouldSubstitute(this.pstfProbeLookups, glyphs[..2]) ||
+            this.WouldSubstitute(this.pstfProbeLookups, glyphs.Slice(1, 2)))
         {
             return Positions.Post_C;
         }
 
-        if (this.WouldSubstitute(collection, in PrefTag, data[..2]) ||
-            this.WouldSubstitute(collection, in PrefTag, data.Slice(1, 2)))
+        if (this.WouldSubstitute(this.prefProbeLookups, glyphs[..2]) ||
+            this.WouldSubstitute(this.prefProbeLookups, glyphs.Slice(1, 2)))
         {
             return Positions.Post_C;
         }
@@ -929,51 +1155,25 @@ internal sealed class IndicShaper : DefaultShaper
     }
 
     /// <summary>
-    /// Tests whether applying a specific feature to the given glyphs would produce a substitution.
+    /// Tests whether any lookup for a shaping feature would substitute the given
+    /// glyph sequence without running the substitution.
     /// </summary>
-    /// <param name="collection">A temporary substitution collection for testing.</param>
-    /// <param name="featureTag">The feature tag to test.</param>
-    /// <param name="buffer">The glyph data to test.</param>
+    /// <param name="lookups">The feature's resolved substitution lookups.</param>
+    /// <param name="glyphs">The glyph id sequence to test.</param>
     /// <returns><see langword="true"/> if a substitution would occur.</returns>
-    private bool WouldSubstitute(GlyphSubstitutionCollection collection, in Tag featureTag, ReadOnlySpan<GlyphShapingData> buffer)
+    private bool WouldSubstitute(List<(Tag Feature, ushort Index, LookupTable LookupTable)>? lookups, ReadOnlySpan<ushort> glyphs)
     {
-        collection.Clear();
-        for (int i = 0; i < buffer.Length; i++)
+        if (lookups is null)
         {
-            collection.AddGlyph(buffer[i], i);
-            collection.EnableShapingFeature(i, featureTag);
+            return false;
         }
 
-        FontMetrics fontMetrics = this.fontMetrics;
-        if (fontMetrics.TryGetGSubTable(out GSubTable? gSubTable))
+        for (int i = 0; i < lookups.Count; i++)
         {
-            const int index = 0;
-            SkippingGlyphIterator iterator = new(fontMetrics, collection, index, default, 0);
-            int initialCount = collection.Count;
-            int collectionCount = initialCount;
-            int count = initialCount - index;
-            int i = index;
-
-            // Set max constraints to prevent OutOfMemoryException or infinite loops from attacks.
-            int maxCount = AdvancedTypographicUtils.GetMaxAllowableShapingCollectionCount(collection.Count);
-            int maxOperationsCount = AdvancedTypographicUtils.GetMaxAllowableShapingOperationsCount(collection.Count);
-            int currentOperations = 0;
-
-            gSubTable.ApplyFeature(
-                fontMetrics,
-                collection,
-                ref iterator,
-                in featureTag,
-                this.ScriptClass,
-                index,
-                ref count,
-                ref i,
-                ref collectionCount,
-                maxCount,
-                maxOperationsCount,
-                ref currentOperations);
-
-            return collection.Count != initialCount;
+            if (lookups[i].LookupTable.WouldApply(glyphs, this.zeroContext))
+            {
+                return true;
+            }
         }
 
         return false;
@@ -984,43 +1184,43 @@ internal sealed class IndicShaper : DefaultShaper
     /// </summary>
     /// <param name="data">The glyph shaping data.</param>
     /// <returns><see langword="true"/> if the glyph is a consonant.</returns>
-    private static bool IsConsonant(GlyphShapingData data)
-        => data.IndicShapingEngineInfo != null && (FlagUnsafe(data.IndicShapingEngineInfo.Category) & ConsonantFlags) != 0;
+    private static bool IsConsonant(ref GlyphShapingData data)
+        => (FlagUnsafe(data.Syllable.IndicCategory) & ConsonantFlags) != 0;
 
     /// <summary>
     /// Determines whether the glyph data represents a joiner (ZWJ or ZWNJ).
     /// </summary>
     /// <param name="data">The glyph shaping data.</param>
     /// <returns><see langword="true"/> if the glyph is a joiner.</returns>
-    private static bool IsJoiner(GlyphShapingData data)
-        => data.IndicShapingEngineInfo != null && (FlagUnsafe(data.IndicShapingEngineInfo.Category) & JoinerFlags) != 0;
+    private static bool IsJoiner(ref GlyphShapingData data)
+        => (FlagUnsafe(data.Syllable.IndicCategory) & JoinerFlags) != 0;
 
     /// <summary>
     /// Determines whether the glyph data represents a halant or coeng character.
     /// </summary>
     /// <param name="data">The glyph shaping data.</param>
     /// <returns><see langword="true"/> if the glyph is a halant or coeng.</returns>
-    private static bool IsHalantOrCoeng(GlyphShapingData data)
-        => data.IndicShapingEngineInfo != null && (FlagUnsafe(data.IndicShapingEngineInfo.Category) & HalantOrCoengFlags) != 0;
+    private static bool IsHalant(ref GlyphShapingData data)
+        => (FlagUnsafe(data.Syllable.IndicCategory) & HalantFlags) != 0;
 
     /// <summary>
-    /// Finds the start index of the next syllable in the collection.
+    /// Finds the start index of the next syllable in the buffer.
     /// </summary>
-    /// <param name="collection">The glyph substitution collection.</param>
+    /// <param name="buffer">The glyph substitution buffer.</param>
     /// <param name="index">The current index.</param>
     /// <param name="count">The maximum index bound.</param>
     /// <returns>The start index of the next syllable.</returns>
-    private static int NextSyllable(GlyphSubstitutionCollection collection, int index, int count)
+    private static int NextSyllable(ShapingBuffer buffer, int index, int count)
     {
         if (index >= count)
         {
             return index;
         }
 
-        int? syllable = collection[index].IndicShapingEngineInfo?.Syllable;
+        int? syllable = buffer[index].Syllable.Number;
         while (++index < count)
         {
-            if (collection[index].IndicShapingEngineInfo?.Syllable != syllable)
+            if (buffer[index].Syllable.Number != syllable)
             {
                 break;
             }
@@ -1033,21 +1233,24 @@ internal sealed class IndicShaper : DefaultShaper
     /// Performs the final reordering pass for Indic syllables, repositioning reph,
     /// pre-base consonants, and pre-base matras after basic shaping.
     /// </summary>
-    /// <param name="collection">The glyph shaping collection.</param>
+    /// <param name="plan">The plan whose segment is being shaped.</param>
+    /// <param name="buffer">The glyph shaping buffer.</param>
     /// <param name="index">The zero-based start index.</param>
     /// <param name="count">The number of elements to process.</param>
-    private void FinalReorder(IGlyphShapingCollection collection, int index, int count)
+    private void FinalReorder(ShapePlan plan, ShapingBuffer buffer, int index, int count)
     {
-        if (collection is not GlyphSubstitutionCollection substitutionCollection)
+        if (buffer.Role != ShapingBufferRole.Substitution)
         {
             return;
         }
 
         int max = index + count;
         int start = index;
-        int end = NextSyllable(substitutionCollection, index, max);
+        int end = NextSyllable(buffer, index, max);
         FontMetrics fontMetrics = this.fontMetrics;
-        _ = fontMetrics.TryGetGSubTable(out GSubTable? gSubTable);
+        uint prefMask = this.Features.GetMask(PrefTag);
+        uint initMask = this.Features.GetMask(InitTag);
+
         while (start < max)
         {
             // 4. Final reordering:
@@ -1056,35 +1259,36 @@ internal sealed class IndicShaper : DefaultShaper
             // applied (see below), the shaping engine performs some final glyph
             // reordering before applying all the remaining font features to the entire
             // cluster.
-            bool tryPref = gSubTable?.TryGetFeatureLookups(fontMetrics, in PrefTag, this.ScriptClass, out _) == true;
+            bool tryPref = this.prefProbeLookups is not null;
 
             // Find base consonant again.
             int basePosition = start;
             for (; basePosition < end; basePosition++)
             {
-                if (substitutionCollection[basePosition].IndicShapingEngineInfo?.Position >= Positions.Base_C)
+                if (buffer[basePosition].Syllable.IndicPosition >= Positions.Base_C)
                 {
                     if (tryPref && basePosition + 1 < end)
                     {
                         for (int i = basePosition + 1; i < end; i++)
                         {
-                            GlyphShapingData current = substitutionCollection[i];
-                            if (current.Features.FindIndex(x => x.Tag == PrefTag && x.Enabled) >= 0)
+                            ref GlyphShapingData current = ref buffer[i];
+                            if ((current.FeatureMask & prefMask) != 0)
                             {
-                                if (!current.IsSubstituted && current.IsLigated && !current.IsDecomposed)
+                                // A pre-base candidate that did not finish as a
+                                // ligature did not form. Treat the following glyph as
+                                // the base so later matra movement respects the block.
+                                if (!(current.IsSubstituted && current.IsLigated && !current.IsDecomposed))
                                 {
-                                    // Ok, this was a 'pref' candidate but didn't form any.
-                                    // Base is around here...
                                     basePosition = i;
-                                    while (basePosition < end && IsHalantOrCoeng(substitutionCollection[basePosition]))
+                                    while (basePosition < end && IsHalant(ref buffer[basePosition]))
                                     {
                                         basePosition++;
                                     }
 
-                                    IndicShapingEngineInfo? info = substitutionCollection[basePosition].IndicShapingEngineInfo;
-                                    if (info != null)
+                                    ref GlyphShapingData newBase = ref buffer[basePosition];
+                                    if (newBase.Syllable.Type != SyllableType.None)
                                     {
-                                        info.Position = Positions.Base_C;
+                                        newBase.Syllable.IndicPosition = Positions.Base_C;
                                         tryPref = false;
                                     }
                                 }
@@ -1099,39 +1303,39 @@ internal sealed class IndicShaper : DefaultShaper
                     {
                         for (int i = basePosition + 1; i < end; i++)
                         {
-                            while (i < end && IsJoiner(substitutionCollection[i]))
+                            while (i < end && IsJoiner(ref buffer[i]))
                             {
                                 i++;
                             }
 
-                            if (i == end || !IsHalantOrCoeng(substitutionCollection[i]))
+                            if (i == end || !IsHalant(ref buffer[i]))
                             {
                                 break;
                             }
 
                             i++; // Skip halant.
-                            while (i < end && IsJoiner(substitutionCollection[i]))
+                            while (i < end && IsJoiner(ref buffer[i]))
                             {
                                 i++;
                             }
 
                             if (i < end)
                             {
-                                GlyphShapingData current = substitutionCollection[i];
-                                if (IsConsonant(current) && current.IndicShapingEngineInfo?.Position == Positions.Below_C)
+                                ref GlyphShapingData current = ref buffer[i];
+                                if (IsConsonant(ref current) && current.Syllable.IndicPosition == Positions.Below_C)
                                 {
                                     basePosition = i;
-                                    IndicShapingEngineInfo? info = substitutionCollection[basePosition].IndicShapingEngineInfo;
-                                    if (info != null)
+                                    ref GlyphShapingData newBase = ref buffer[basePosition];
+                                    if (newBase.Syllable.Type != SyllableType.None)
                                     {
-                                        info.Position = Positions.Base_C;
+                                        newBase.Syllable.IndicPosition = Positions.Base_C;
                                     }
                                 }
                             }
                         }
                     }
 
-                    if (start < basePosition && substitutionCollection[basePosition].IndicShapingEngineInfo?.Position > Positions.Base_C)
+                    if (start < basePosition && buffer[basePosition].Syllable.IndicPosition > Positions.Base_C)
                     {
                         basePosition--;
                     }
@@ -1140,14 +1344,14 @@ internal sealed class IndicShaper : DefaultShaper
                 }
             }
 
-            if (basePosition == end && start < basePosition && substitutionCollection[basePosition - 1].IndicShapingEngineInfo?.Category == Categories.ZWJ)
+            if (basePosition == end && start < basePosition && buffer[basePosition - 1].Syllable.IndicCategory == Categories.ZWJ)
             {
                 basePosition--;
             }
 
             if (basePosition < end)
             {
-                while (start < basePosition && (FlagUnsafe(substitutionCollection[basePosition].IndicShapingEngineInfo?.Category) & (Flag(Categories.N) | HalantOrCoengFlags)) != 0)
+                while (start < basePosition && (FlagUnsafe(buffer[basePosition].Syllable.IndicCategory) & (Flag(Categories.N) | HalantFlags)) != 0)
                 {
                     basePosition--;
                 }
@@ -1159,8 +1363,10 @@ internal sealed class IndicShaper : DefaultShaper
             // features, the glyph can be moved closer to the main consonant based on
             // whether half-forms had been formed. Actual position for the matra is
             // defined as "after last standalone halant glyph, after initial matra
-            // position and before the main consonant". If ZWJ or ZWNJ follow this
-            // halant, position is moved after it.
+            // position and before the main consonant". A halant followed by ZWJ is
+            // not a valid destination, so the search continues toward the original
+            // matra position. Halant followed by ZWNJ terminates the syllable in the
+            // state machine and needs no special handling here.
             //
             // Otherwise there can't be any pre-base matra characters.
             if (start + 1 < end && start < basePosition)
@@ -1173,35 +1379,49 @@ internal sealed class IndicShaper : DefaultShaper
                 // We want to position matra after them.
                 if (this.ScriptClass is not ScriptClass.Malayalam and not ScriptClass.Tamil)
                 {
-                    while (newPos > start && (FlagUnsafe(substitutionCollection[newPos].IndicShapingEngineInfo?.Category) & (Flag(Categories.M) | HalantOrCoengFlags)) == 0)
+                    bool searchAgain;
+                    do
                     {
-                        newPos--;
-                    }
+                        searchAgain = false;
 
-                    // If we found no Halant we are done.
-                    // Otherwise only proceed if the Halant does
-                    // not belong to the Matra itself!
-                    GlyphShapingData current = substitutionCollection[newPos];
-                    if (IsHalantOrCoeng(current) && current.IndicShapingEngineInfo?.Position != Positions.Pre_M)
-                    {
-                        // If ZWJ or ZWNJ follow this halant, position is moved after it.
-                        if (newPos + 1 < end && IsJoiner(substitutionCollection[newPos + 1]))
+                        // Post-base matras also delimit the search even though their
+                        // category is distinct from ordinary matras.
+                        uint destinationFlags = Flag(Categories.M) | Flag(Categories.MPst) | HalantFlags;
+                        while (newPos > start && (FlagUnsafe(buffer[newPos].Syllable.IndicCategory) & destinationFlags) == 0)
                         {
-                            newPos++;
+                            newPos--;
+                        }
+
+                        ref GlyphShapingData current = ref buffer[newPos];
+                        if (IsHalant(ref current) && current.Syllable.IndicPosition != Positions.Pre_M)
+                        {
+                            // A ZWJ preserves the half-form request and prevents this
+                            // halant from pulling the matra inward. Continue searching
+                            // before the halant instead of moving past the joiner.
+                            if (newPos + 1 < end
+                                && buffer[newPos + 1].Syllable.IndicCategory == Categories.ZWJ
+                                && newPos > start)
+                            {
+                                newPos--;
+                                searchAgain = true;
+                            }
+                        }
+                        else
+                        {
+                            // No standalone halant was found, or this halant belongs
+                            // to the pre-base matra itself, so retain the initial order.
+                            newPos = start;
                         }
                     }
-                    else
-                    {
-                        newPos = start; // No move.
-                    }
+                    while (searchAgain);
                 }
 
-                if (start < newPos && substitutionCollection[newPos].IndicShapingEngineInfo?.Position != Positions.Pre_M)
+                if (start < newPos && buffer[newPos].Syllable.IndicPosition != Positions.Pre_M)
                 {
                     // Now go see if there's actually any matras...
                     for (int i = newPos; i > start; i--)
                     {
-                        if (substitutionCollection[i - 1].IndicShapingEngineInfo?.Position == Positions.Pre_M)
+                        if (buffer[i - 1].Syllable.IndicPosition == Positions.Pre_M)
                         {
                             int oldPos = i - 1;
                             if (oldPos < basePosition && basePosition <= newPos)
@@ -1210,8 +1430,20 @@ internal sealed class IndicShaper : DefaultShaper
                                 basePosition--;
                             }
 
-                            substitutionCollection.MoveGlyph(oldPos, newPos);
+                            buffer.MoveGlyph(oldPos, newPos);
+                            buffer.CombineInputStarts(newPos, Math.Min(end, basePosition + 1));
                             newPos--;
+                        }
+                    }
+                }
+                else
+                {
+                    for (int i = start; i < basePosition; i++)
+                    {
+                        if (buffer[i].Syllable.IndicPosition == Positions.Pre_M)
+                        {
+                            buffer.CombineInputStarts(i, Math.Min(end, basePosition + 1));
+                            break;
                         }
                     }
                 }
@@ -1233,10 +1465,10 @@ internal sealed class IndicShaper : DefaultShaper
             // - If repha is encoded separately and in the logical position, we should only
             //   move it if it did NOT ligate.  If it ligated, it's probably the font trying
             //   to make it work without the reordering.
-            GlyphShapingData original = substitutionCollection[start];
+            ref GlyphShapingData original = ref buffer[start];
             if (start + 1 < end &&
-                original.IndicShapingEngineInfo?.Position == Positions.Ra_To_Become_Reph &&
-                (original.IndicShapingEngineInfo?.Category == Categories.Repha != (original.IsLigated && !original.IsDecomposed)))
+                original.Syllable.IndicPosition == Positions.Ra_To_Become_Reph &&
+                (original.Syllable.IndicCategory == Categories.Repha != (original.IsLigated && !original.IsDecomposed)))
             {
                 int newRephPos = start;
                 Positions rephPos = this.indicConfiguration.RephPosition;
@@ -1257,15 +1489,15 @@ internal sealed class IndicShaper : DefaultShaper
                     //    fixed in shaping engine, there was no case where reph position
                     //    will be found on this step.
                     newRephPos = start + 1;
-                    while (newRephPos < basePosition && !IsHalantOrCoeng(substitutionCollection[newRephPos]))
+                    while (newRephPos < basePosition && !IsHalant(ref buffer[newRephPos]))
                     {
                         newRephPos++;
                     }
 
-                    if (newRephPos < basePosition && IsHalantOrCoeng(substitutionCollection[newRephPos]))
+                    if (newRephPos < basePosition && IsHalant(ref buffer[newRephPos]))
                     {
                         // ->If ZWJ or ZWNJ are following this halant, position is moved after it.
-                        if (newRephPos + 1 < basePosition && IsJoiner(substitutionCollection[newRephPos + 1]))
+                        if (newRephPos + 1 < basePosition && IsJoiner(ref buffer[newRephPos + 1]))
                         {
                             newRephPos++;
                         }
@@ -1279,7 +1511,7 @@ internal sealed class IndicShaper : DefaultShaper
                     if (!found && rephPos == Positions.After_Main)
                     {
                         newRephPos = basePosition;
-                        while (newRephPos + 1 < end && substitutionCollection[newRephPos + 1].IndicShapingEngineInfo?.Position <= Positions.After_Main)
+                        while (newRephPos + 1 < end && buffer[newRephPos + 1].Syllable.IndicPosition <= Positions.After_Main)
                         {
                             newRephPos++;
                         }
@@ -1296,7 +1528,8 @@ internal sealed class IndicShaper : DefaultShaper
                     if (!found && rephPos == Positions.After_Sub)
                     {
                         newRephPos = basePosition;
-                        while (newRephPos + 1 < end && (substitutionCollection[newRephPos + 1].IndicShapingEngineInfo?.Position & (Positions.Post_C | Positions.After_Post | Positions.SMVD)) == 0)
+                        while (newRephPos + 1 < end
+                            && buffer[newRephPos + 1].Syllable.IndicPosition is not Positions.Post_C and not Positions.After_Post and not Positions.SMVD)
                         {
                             newRephPos++;
                         }
@@ -1315,15 +1548,15 @@ internal sealed class IndicShaper : DefaultShaper
                 {
                     // Copied from step 2.
                     newRephPos = start + 1;
-                    while (newRephPos < basePosition && !IsHalantOrCoeng(substitutionCollection[newRephPos]))
+                    while (newRephPos < basePosition && !IsHalant(ref buffer[newRephPos]))
                     {
                         newRephPos++;
                     }
 
-                    if (newRephPos < basePosition && IsHalantOrCoeng(substitutionCollection[newRephPos]))
+                    if (newRephPos < basePosition && IsHalant(ref buffer[newRephPos]))
                     {
                         // ->If ZWJ or ZWNJ are following this halant, position is moved after it.
-                        if (newRephPos + 1 < basePosition && IsJoiner(substitutionCollection[newRephPos + 1]))
+                        if (newRephPos + 1 < basePosition && IsJoiner(ref buffer[newRephPos + 1]))
                         {
                             newRephPos++;
                         }
@@ -1336,7 +1569,7 @@ internal sealed class IndicShaper : DefaultShaper
                 if (!found)
                 {
                     newRephPos = end - 1;
-                    while (newRephPos > start && substitutionCollection[newRephPos].IndicShapingEngineInfo?.Position == Positions.SMVD)
+                    while (newRephPos > start && buffer[newRephPos].Syllable.IndicPosition == Positions.SMVD)
                     {
                         newRephPos--;
                     }
@@ -1346,11 +1579,11 @@ internal sealed class IndicShaper : DefaultShaper
                     // However, if it's a plain Consonant,Halant we shouldn't do that.
                     // Uniscribe doesn't do this.
                     // TEST: U+0930,U+094D,U+0915,U+094B,U+094D
-                    if (IsHalantOrCoeng(substitutionCollection[newRephPos]))
+                    if (IsHalant(ref buffer[newRephPos]))
                     {
                         for (int i = basePosition + 1; i < newRephPos; i++)
                         {
-                            if ((FlagUnsafe(substitutionCollection[i].IndicShapingEngineInfo?.Category) & Flag(Categories.M)) != 0)
+                            if ((FlagUnsafe(buffer[i].Syllable.IndicCategory) & Flag(Categories.M)) != 0)
                             {
                                 newRephPos--;
                             }
@@ -1360,7 +1593,8 @@ internal sealed class IndicShaper : DefaultShaper
 
                 if (newRephPos != start)
                 {
-                    substitutionCollection.MoveGlyph(start, newRephPos);
+                    buffer.CombineInputStarts(start, newRephPos + 1);
+                    buffer.MoveGlyph(start, newRephPos);
                 }
 
                 if (start < basePosition && basePosition <= newRephPos)
@@ -1377,8 +1611,8 @@ internal sealed class IndicShaper : DefaultShaper
             {
                 for (int i = basePosition + 1; i < end; i++)
                 {
-                    GlyphShapingData current = substitutionCollection[i];
-                    if (current.Features.FindIndex(x => x.Tag == PrefTag && x.Enabled) >= 0)
+                    ref GlyphShapingData current = ref buffer[i];
+                    if ((current.FeatureMask & prefMask) != 0)
                     {
                         // 1. Only reorder a glyph produced by substitution during application
                         //    of the <pref> feature. (Note that a font may shape a Ra consonant with
@@ -1402,7 +1636,7 @@ internal sealed class IndicShaper : DefaultShaper
                             // We want to position matra after them.
                             if (this.ScriptClass is not ScriptClass.Malayalam and not ScriptClass.Tamil)
                             {
-                                while (newPos > start && (FlagUnsafe(substitutionCollection[newPos - 1].IndicShapingEngineInfo?.Category) & (Flag(Categories.M) | HalantOrCoengFlags)) == 0)
+                                while (newPos > start && (FlagUnsafe(buffer[newPos - 1].Syllable.IndicCategory) & (Flag(Categories.M) | HalantFlags)) == 0)
                                 {
                                     newPos--;
                                 }
@@ -1410,12 +1644,12 @@ internal sealed class IndicShaper : DefaultShaper
                                 // TODO: Remove once we have Kmher shaper.
                                 // In Khmer coeng model, a H,Ra can go *after* matras.  If it goes after a
                                 // split matra, it should be reordered to *before* the left part of such matra.
-                                if (newPos > start && substitutionCollection[newPos - 1].IndicShapingEngineInfo?.Category == Categories.M)
+                                if (newPos > start && buffer[newPos - 1].Syllable.IndicCategory == Categories.M)
                                 {
                                     int oldPos = i;
                                     for (int j = basePosition + 1; j < oldPos; j++)
                                     {
-                                        if (substitutionCollection[j].IndicShapingEngineInfo?.Category == Categories.M)
+                                        if (buffer[j].Syllable.IndicCategory == Categories.M)
                                         {
                                             newPos--;
                                             break;
@@ -1424,16 +1658,17 @@ internal sealed class IndicShaper : DefaultShaper
                                 }
                             }
 
-                            if (newPos > start && IsHalantOrCoeng(substitutionCollection[newPos - 1]))
+                            if (newPos > start && IsHalant(ref buffer[newPos - 1]))
                             {
                                 // -> If ZWJ or ZWNJ follow this halant, position is moved after it.
-                                if (newPos < end && IsJoiner(substitutionCollection[newPos]))
+                                if (newPos < end && IsJoiner(ref buffer[newPos]))
                                 {
                                     newPos++;
                                 }
                             }
 
-                            substitutionCollection.MoveGlyph(i, newPos);
+                            buffer.CombineInputStarts(newPos, i + 1);
+                            buffer.MoveGlyph(i, newPos);
 
                             if (newPos <= basePosition && basePosition < i)
                             {
@@ -1446,15 +1681,36 @@ internal sealed class IndicShaper : DefaultShaper
                 }
             }
 
-            // Apply 'init' to the Left Matra if it's a word start.
-            if (substitutionCollection[start].IndicShapingEngineInfo?.Position == Positions.Pre_M &&
-                (start == 0 || CodePoint.GetGeneralCategory(substitutionCollection[start - 1].CodePoint) is not UnicodeCategory.NonSpacingMark and not UnicodeCategory.Format))
+            // Apply 'init' to a left matra only at the start of a word. Letters,
+            // marks, format controls, and the non-public character categories all
+            // continue the preceding word for this feature.
+            bool isInitialMatra = buffer[start].Syllable.IndicPosition == Positions.Pre_M;
+            bool isWordStart = start == 0;
+            if (isInitialMatra && !isWordStart)
             {
-                substitutionCollection.EnableShapingFeature(start, InitTag);
+                UnicodeCategory previousCategory = CodePoint.GetGeneralCategory(buffer[start - 1].CodePoint);
+                isWordStart = previousCategory is not (
+                    UnicodeCategory.Format
+                    or UnicodeCategory.OtherNotAssigned
+                    or UnicodeCategory.PrivateUse
+                    or UnicodeCategory.Surrogate
+                    or UnicodeCategory.LowercaseLetter
+                    or UnicodeCategory.ModifierLetter
+                    or UnicodeCategory.OtherLetter
+                    or UnicodeCategory.TitlecaseLetter
+                    or UnicodeCategory.UppercaseLetter
+                    or UnicodeCategory.SpacingCombiningMark
+                    or UnicodeCategory.EnclosingMark
+                    or UnicodeCategory.NonSpacingMark);
+            }
+
+            if (isInitialMatra && isWordStart)
+            {
+                buffer.EnableShapingFeature(start, initMask);
             }
 
             start = end;
-            end = NextSyllable(substitutionCollection, start, max);
+            end = NextSyllable(buffer, start, max);
         }
     }
 

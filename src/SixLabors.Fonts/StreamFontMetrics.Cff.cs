@@ -32,6 +32,7 @@ internal partial class StreamFontMetrics
         OS2Table os2 = reader.GetTable<OS2Table>();
         NameTable name = reader.GetTable<NameTable>();
         CMapTable cmap = reader.GetTable<CMapTable>();
+        cmap.SetSymbolFontPage(os2.FontPage);
         PostTable post = reader.GetTable<PostTable>();
         ICffTable? cff =
             (reader.TryGetTable<Cff1Table>() ?? (ICffTable?)reader.TryGetTable<Cff2Table>())
@@ -138,7 +139,7 @@ internal partial class StreamFontMetrics
         // Apply HVAR advance width adjustment if available.
         if (this.GlyphVariationProcessor is not null)
         {
-            advanceWidth = (ushort)(advanceWidth + MathF.Round(this.GlyphVariationProcessor.AdvanceAdjustment(glyphId)));
+            advanceWidth = (ushort)Math.Max(0, advanceWidth + this.GlyphVariationProcessor.AdvanceAdjustment(glyphId, 0));
         }
 
         IMetricsHeader metrics = isVerticalLayout ? this.VerticalMetrics : this.HorizontalMetrics;
@@ -153,7 +154,7 @@ internal partial class StreamFontMetrics
         // Apply VVAR advance height adjustment if available.
         if (this.GlyphVariationProcessor is not null)
         {
-            advancedHeight = (ushort)(advancedHeight + MathF.Round(this.GlyphVariationProcessor.VerticalAdvanceAdjustment(glyphId)));
+            advancedHeight = (ushort)Math.Max(0, advancedHeight + this.GlyphVariationProcessor.VerticalAdvanceAdjustment(glyphId, 0));
         }
 
         // TODO: Support CFF based COLR glyphs.

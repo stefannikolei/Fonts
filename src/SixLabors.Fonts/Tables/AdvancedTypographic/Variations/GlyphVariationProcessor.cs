@@ -20,6 +20,31 @@ namespace SixLabors.Fonts.Tables.AdvancedTypographic.Variations;
 internal class GlyphVariationProcessor
 {
     /// <summary>
+    /// The number of metric points appended to each glyph's outline points.
+    /// </summary>
+    private const int PhantomPointCount = 4;
+
+    /// <summary>
+    /// The horizontal leading-side point within the metric point suffix.
+    /// </summary>
+    private const int LeftPhantomPoint = 0;
+
+    /// <summary>
+    /// The horizontal trailing-side point within the metric point suffix.
+    /// </summary>
+    private const int RightPhantomPoint = 1;
+
+    /// <summary>
+    /// The vertical leading-side point within the metric point suffix.
+    /// </summary>
+    private const int TopPhantomPoint = 2;
+
+    /// <summary>
+    /// The vertical trailing-side point within the metric point suffix.
+    /// </summary>
+    private const int BottomPhantomPoint = 3;
+
+    /// <summary>
     /// The item variation store shared by CFF2 and other variation lookups.
     /// </summary>
     private readonly ItemVariationStore? itemStore;
@@ -124,8 +149,11 @@ internal class GlyphVariationProcessor
     /// </summary>
     /// <param name="glyphId">The glyph identifier.</param>
     /// <param name="glyphPoints">The glyph vector whose control points will be modified in-place.</param>
-    public void TransformPoints(ushort glyphId, ref GlyphVector glyphPoints)
+    /// <param name="advanceAdjustment">The horizontal and vertical advance adjustments encoded by the glyph's metric points.</param>
+    public void TransformPoints(ushort glyphId, ref GlyphVector glyphPoints, out Vector2 advanceAdjustment)
     {
+        advanceAdjustment = Vector2.Zero;
+
         if (this.gVar is null)
         {
             return;
@@ -144,11 +172,11 @@ internal class GlyphVariationProcessor
 
         if (glyphPoints.IsComposite && glyphPoints.CompositeComponents is not null)
         {
-            this.TransformCompositePoints(variationData, ref glyphPoints);
+            this.TransformCompositePoints(variationData, ref glyphPoints, ref advanceAdjustment);
         }
         else
         {
-            this.TransformSimplePoints(variationData, ref glyphPoints);
+            this.TransformSimplePoints(variationData, ref glyphPoints, ref advanceAdjustment);
         }
     }
 
@@ -157,15 +185,14 @@ internal class GlyphVariationProcessor
     /// </summary>
     /// <param name="variationData">The glyph's variation data from the gvar table.</param>
     /// <param name="glyphPoints">The glyph vector whose control points will be modified in-place.</param>
-    private void TransformSimplePoints(GlyphVariationData variationData, ref GlyphVector glyphPoints)
+    /// <param name="advanceAdjustment">The accumulated horizontal and vertical advance adjustments.</param>
+    private void TransformSimplePoints(GlyphVariationData variationData, ref GlyphVector glyphPoints, ref Vector2 advanceAdjustment)
     {
         IList<ControlPoint> controlPoints = glyphPoints.ControlPoints;
         int pointCount = controlPoints.Count;
 
-        // gvar encodes deltas for outline points + 4 phantom points (LSB, advance width,
-        // TSB, advance height). We must decode all of them so X/Y delta streams stay aligned,
-        // even though we only apply deltas to the outline points.
-        const int PhantomPointCount = 4;
+        // The tuple carries outline deltas followed by four metric-point deltas.
+        // Decode both groups together so the X and Y streams stay aligned.
         int totalPointCount = pointCount + PhantomPointCount;
 
         // Clone the original points for IUP reference (interpolation needs unmodified originals).
@@ -196,6 +223,8 @@ internal class GlyphVariationProcessor
             {
                 continue;
             }
+
+            ApplyPhantomDeltas(pointCount, pointNumbers, deltasX, deltasY, factor, ref advanceAdjustment);
 
             bool allPoints = pointNumbers is null or { Length: 0 };
 
@@ -267,13 +296,16 @@ internal class GlyphVariationProcessor
     /// After applying deltas, the offset changes are propagated to all assembled
     /// outline points belonging to each component.
     /// </summary>
-    private void TransformCompositePoints(GlyphVariationData variationData, ref GlyphVector glyphPoints)
+    /// <param name="variationData">The glyph's variation data from the gvar table.</param>
+    /// <param name="glyphPoints">The glyph vector whose control points will be modified in-place.</param>
+    /// <param name="advanceAdjustment">The accumulated horizontal and vertical advance adjustments.</param>
+    private void TransformCompositePoints(GlyphVariationData variationData, ref GlyphVector glyphPoints, ref Vector2 advanceAdjustment)
     {
         CompositeComponent[] components = glyphPoints.CompositeComponents!;
         int componentCount = components.Length;
 
         // gvar "point count" for composites = number of components + 4 phantom points.
-        int syntheticPointCount = componentCount + 4;
+        int syntheticPointCount = componentCount + PhantomPointCount;
 
         // Build synthetic points from component offsets.
         using Buffer<float> synXBuf = new(syntheticPointCount, clear: true);
@@ -312,6 +344,8 @@ internal class GlyphVariationProcessor
             {
                 continue;
             }
+
+            ApplyPhantomDeltas(componentCount, pointNumbers, deltasX, deltasY, factor, ref advanceAdjustment);
 
             bool allPoints = pointNumbers is null or { Length: 0 };
 
@@ -366,35 +400,37 @@ internal class GlyphVariationProcessor
     }
 
     /// <summary>
-    /// Gets the horizontal advance width adjustment for the given glyph from the HVAR table.
-    /// Returns 0 if no HVAR table is present.
+    /// Gets the rounded horizontal advance adjustment, preferring HVAR data over
+    /// the adjustment encoded by the glyph's metric points.
     /// </summary>
     /// <param name="glyphId">The glyph identifier.</param>
-    /// <returns>The advance width delta value.</returns>
-    public float AdvanceAdjustment(int glyphId)
+    /// <param name="glyphAdjustment">The adjustment encoded by the glyph's metric points.</param>
+    /// <returns>The rounded advance width adjustment.</returns>
+    public int AdvanceAdjustment(int glyphId, float glyphAdjustment)
     {
         if (this.hVar is null)
         {
-            return 0;
+            return RoundAdjustment(glyphAdjustment);
         }
 
-        return this.GetMetricDelta(glyphId, this.hVar.AdvanceWidthMapping, this.hVar.ItemVariationStore);
+        return RoundAdjustment(this.GetMetricDelta(glyphId, this.hVar.AdvanceWidthMapping, this.hVar.ItemVariationStore));
     }
 
     /// <summary>
-    /// Gets the vertical advance height adjustment for the given glyph from the VVAR table.
-    /// Returns 0 if no VVAR table is present.
+    /// Gets the rounded vertical advance adjustment, preferring VVAR data over
+    /// the adjustment encoded by the glyph's metric points.
     /// </summary>
     /// <param name="glyphId">The glyph identifier.</param>
-    /// <returns>The advance height delta value.</returns>
-    public float VerticalAdvanceAdjustment(int glyphId)
+    /// <param name="glyphAdjustment">The adjustment encoded by the glyph's metric points.</param>
+    /// <returns>The rounded advance height adjustment.</returns>
+    public int VerticalAdvanceAdjustment(int glyphId, float glyphAdjustment)
     {
         if (this.vVar is null)
         {
-            return 0;
+            return RoundAdjustment(glyphAdjustment);
         }
 
-        return this.GetMetricDelta(glyphId, this.vVar.AdvanceWidthMapping, this.vVar.ItemVariationStore);
+        return RoundAdjustment(this.GetMetricDelta(glyphId, this.vVar.AdvanceWidthMapping, this.vVar.ItemVariationStore));
     }
 
     /// <summary>
@@ -867,6 +903,70 @@ internal class GlyphVariationProcessor
 
         return this.ComputeDelta(store, outerIndex, innerIndex);
     }
+
+    /// <summary>
+    /// Accumulates the changes to the two advances from one tuple's metric-point deltas.
+    /// </summary>
+    /// <param name="phantomStart">The index of the first metric point.</param>
+    /// <param name="pointNumbers">The explicitly varied point indices, or <see langword="null"/> when every point is present.</param>
+    /// <param name="deltasX">The horizontal point deltas.</param>
+    /// <param name="deltasY">The vertical point deltas.</param>
+    /// <param name="factor">The tuple's scalar at the current variation coordinates.</param>
+    /// <param name="advanceAdjustment">The accumulated horizontal and vertical advance adjustments.</param>
+    private static void ApplyPhantomDeltas(int phantomStart, ushort[]? pointNumbers, short[] deltasX, short[] deltasY, float factor, ref Vector2 advanceAdjustment)
+    {
+        int left = phantomStart + LeftPhantomPoint;
+        int right = phantomStart + RightPhantomPoint;
+        int top = phantomStart + TopPhantomPoint;
+        int bottom = phantomStart + BottomPhantomPoint;
+
+        if (pointNumbers is null or { Length: 0 })
+        {
+            // Advances are the distance between each pair of metric points, so a
+            // leading-side movement subtracts while a trailing-side movement adds.
+            if (right < deltasX.Length)
+            {
+                advanceAdjustment.X += (deltasX[right] - deltasX[left]) * factor;
+            }
+
+            if (bottom < deltasY.Length)
+            {
+                advanceAdjustment.Y += (deltasY[top] - deltasY[bottom]) * factor;
+            }
+
+            return;
+        }
+
+        int deltaCount = Math.Min(pointNumbers.Length, Math.Min(deltasX.Length, deltasY.Length));
+        for (int i = 0; i < deltaCount; i++)
+        {
+            int point = pointNumbers[i];
+            if (point == left)
+            {
+                advanceAdjustment.X -= deltasX[i] * factor;
+            }
+            else if (point == right)
+            {
+                advanceAdjustment.X += deltasX[i] * factor;
+            }
+            else if (point == top)
+            {
+                advanceAdjustment.Y += deltasY[i] * factor;
+            }
+            else if (point == bottom)
+            {
+                advanceAdjustment.Y -= deltasY[i] * factor;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Rounds a variation adjustment to the integer design-unit grid.
+    /// </summary>
+    /// <param name="value">The unrounded adjustment.</param>
+    /// <returns>The nearest integer adjustment, with halfway values rounded toward positive infinity.</returns>
+    private static int RoundAdjustment(float value)
+        => (int)MathF.Floor(value + 0.5F);
 
     /// <summary>
     /// Decodes deferred delta data for the all-points case.

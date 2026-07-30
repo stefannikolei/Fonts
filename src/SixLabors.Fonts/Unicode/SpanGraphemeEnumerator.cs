@@ -18,6 +18,7 @@ public ref struct SpanGraphemeEnumerator
 {
     private ReadOnlySpan<char> source;
     private readonly TerminalWidthOptions terminalWidthOptions;
+    private readonly bool countOnly;
     private int sourceOffset;
 
     /// <summary>
@@ -38,14 +39,42 @@ public ref struct SpanGraphemeEnumerator
     {
         this.source = source;
         this.terminalWidthOptions = terminalWidthOptions;
+        this.countOnly = false;
         this.sourceOffset = 0;
         this.Current = default;
+        this.CurrentSpan = default;
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="SpanGraphemeEnumerator"/> struct
+    /// that walks cluster boundaries without producing cluster metadata.
+    /// </summary>
+    /// <param name="source">The buffer to read from.</param>
+    /// <param name="countOnly">
+    /// Whether enumeration only advances over boundaries. When set,
+    /// <see cref="Current"/> stays default and no width, emoji, or flag metadata is
+    /// computed, leaving a pure boundary walk for callers that only need a count.
+    /// </param>
+    internal SpanGraphemeEnumerator(ReadOnlySpan<char> source, bool countOnly)
+    {
+        this.source = source;
+        this.terminalWidthOptions = TerminalWidthOptions.Default;
+        this.countOnly = countOnly;
+        this.sourceOffset = 0;
+        this.Current = default;
+        this.CurrentSpan = default;
     }
 
     /// <summary>
     /// Gets the element in the collection at the current position of the enumerator.
     /// </summary>
     public GraphemeCluster Current { get; private set; }
+
+    /// <summary>
+    /// Gets the UTF-16 span of the grapheme at the current position without
+    /// requiring its terminal-width metadata to be produced.
+    /// </summary>
+    internal ReadOnlySpan<char> CurrentSpan { get; private set; }
 
     /// <summary>
     /// Returns an enumerator that iterates through the collection.
@@ -62,11 +91,49 @@ public ref struct SpanGraphemeEnumerator
     /// </returns>
     public bool MoveNext()
     {
+        if (this.source.IsEmpty)
+        {
+            return false;
+        }
+
+        // A printable ASCII value followed by another ASCII value, or by the end
+        // of the input, always forms a single-scalar cluster: no ASCII value
+        // extends, joins, or prepends, and any scalar that could attach to the
+        // cluster is necessarily non-ASCII. Such a cluster's metadata is fixed
+        // apart from the emoji flag carried by the keycap bases, so the boundary
+        // machine below never needs to run for it. The leading test is the
+        // printable range, deliberately narrower than the ASCII check used for
+        // the follower: ASCII controls carry real boundary rules (a carriage
+        // return joins a following line feed into one cluster) and must reach
+        // the machine.
+        char first = this.source[0];
+        if (first is >= ' ' and <= '~' && (this.source.Length == 1 || UnicodeUtility.IsAsciiCodePoint(this.source[1])))
+        {
+            ReadOnlySpan<char> asciiGrapheme = this.source[..1];
+            this.CurrentSpan = asciiGrapheme;
+            if (!this.countOnly)
+            {
+                CodePoint codePoint = new(first);
+                GraphemeClusterFlags flags = GraphemeClusterFlags.IsSingleCodePoint;
+                if ((CodePoint.GetEmojiProperties(codePoint) & EmojiProperties.Emoji) != 0)
+                {
+                    flags |= GraphemeClusterFlags.ContainsEmoji;
+                }
+
+                this.Current = new GraphemeCluster(asciiGrapheme, this.sourceOffset, 1, 1, flags, codePoint);
+            }
+
+            this.source = this.source[1..];
+            this.sourceOffset++;
+            return true;
+        }
+
         // GB9c is a stateful rule: whether the next consonant can join depends on
         // the InCB classes already consumed into the current cluster. Keep that state
         // outside Processor so Processor remains a simple UTF-16/code-point reader.
         IndicConjunctState indicConjunctState = default;
         TerminalWidthState terminalWidthState = new(this.terminalWidthOptions);
+        bool boundariesOnly = this.countOnly;
         int utf16Offset = this.sourceOffset;
 
         // Accept the current scalar into the cluster and advance to the next scalar.
@@ -74,7 +141,11 @@ public ref struct SpanGraphemeEnumerator
         void ConsumeCurrentAndAdvance(ref Processor p)
         {
             indicConjunctState.Consume(p.CurrentCodePoint);
-            terminalWidthState.Consume(p.CurrentCodePoint, p.CurrentType);
+            if (!boundariesOnly)
+            {
+                terminalWidthState.Consume(p.CurrentCodePoint, p.CurrentType);
+            }
+
             p.MoveNext();
         }
 
@@ -253,15 +324,19 @@ public ref struct SpanGraphemeEnumerator
 
         Return:
 
-        terminalWidthState.Complete();
         ReadOnlySpan<char> grapheme = this.source[..processor.CharsConsumed];
-        this.Current = new GraphemeCluster(
-            grapheme,
-            utf16Offset,
-            terminalWidthState.CodePointCount,
-            terminalWidthState.TerminalCellWidth,
-            terminalWidthState.Flags,
-            terminalWidthState.FirstCodePoint);
+        this.CurrentSpan = grapheme;
+        if (!boundariesOnly)
+        {
+            terminalWidthState.Complete();
+            this.Current = new GraphemeCluster(
+                grapheme,
+                utf16Offset,
+                terminalWidthState.CodePointCount,
+                terminalWidthState.TerminalCellWidth,
+                terminalWidthState.Flags,
+                terminalWidthState.FirstCodePoint);
+        }
 
         this.source = this.source[processor.CharsConsumed..];
         this.sourceOffset += processor.CharsConsumed;

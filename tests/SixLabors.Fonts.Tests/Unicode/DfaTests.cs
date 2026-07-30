@@ -1,12 +1,69 @@
 // Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
+using SixLabors.Fonts.Unicode;
+using SixLabors.Fonts.Unicode.Resources;
 using UnicodeTrieGenerator.StateAutomation;
 
 namespace SixLabors.Fonts.Tests.Unicode;
 
 public class DfaTests
 {
+    [Fact]
+    public void UniversalMachineKeepsSinhalaConjunctTogether()
+    {
+        string[] categories = UniversalShapingData.Categories;
+        int[] input =
+        [
+            Array.IndexOf(categories, "B"),
+            Array.IndexOf(categories, "HVM"),
+            Array.IndexOf(categories, "B")
+        ];
+
+        StateMachine stateMachine = new(UniversalShapingData.StateTable, UniversalShapingData.AcceptingStates, UniversalShapingData.Tags);
+        StateMatch match = Assert.Single(stateMachine.Match(input));
+
+        Assert.Equal(0, match.StartIndex);
+        Assert.Equal(2, match.EndIndex);
+        Assert.Contains("standard_cluster", match.Tags);
+    }
+
+    [Fact]
+    public void UniversalMachineSeparatesWordJoinerFromBrokenCluster()
+    {
+        int[] input =
+        [
+            UnicodeData.GetUniversalShapingSymbolCount(0x2060),
+            UnicodeData.GetUniversalShapingSymbolCount(0x11127)
+        ];
+
+        StateMachine stateMachine = new(UniversalShapingData.StateTable, UniversalShapingData.AcceptingStates, UniversalShapingData.Tags);
+        StateMatch[] matches = [.. stateMachine.Match(input)];
+
+        Assert.Equal(2, matches.Length);
+        Assert.Contains("non_cluster", matches[0].Tags);
+        Assert.Contains("broken_cluster", matches[1].Tags);
+    }
+
+    /// <summary>
+    /// Verifies representative source-only rules in the Universal Shaping Engine category table.
+    /// </summary>
+    /// <param name="codePoint">The character to classify.</param>
+    /// <param name="expected">The expected category name.</param>
+    [Theory]
+    [InlineData(0x0627, "O")]
+    [InlineData(0x0DCA, "HVM")]
+    [InlineData(0x200D, "CGJ")]
+    [InlineData(0x2015, "O")]
+    [InlineData(0xE0000, "WJ")]
+    public void UniversalCategoriesMatchReferenceTable(int codePoint, string expected)
+    {
+        string[] categories = UniversalShapingData.Categories;
+        int category = UnicodeData.GetUniversalShapingSymbolCount((uint)codePoint);
+
+        Assert.Equal(expected, categories[category]);
+    }
+
     [Fact]
     public void CanCompileWithSingleLiteral()
     {

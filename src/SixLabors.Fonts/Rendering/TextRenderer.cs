@@ -53,13 +53,23 @@ public class TextRenderer
         => new TextRenderer(renderer).Render(glyphId, options);
 
     /// <summary>
-    /// Renders glyph ids to the <paramref name="renderer"/>.
+    /// Renders positioned glyph ids to the <paramref name="renderer"/>.
     /// </summary>
     /// <param name="renderer">The target renderer.</param>
-    /// <param name="glyphRun">The glyph run.</param>
+    /// <param name="glyphIds">The glyph identifiers.</param>
+    /// <param name="points">The absolute glyph origins in pixel units.</param>
     /// <param name="options">The glyph options.</param>
-    public static void RenderTo(IGlyphRenderer renderer, GlyphRun glyphRun, GlyphOptions options)
-        => new TextRenderer(renderer).Render(glyphRun, options);
+    public static void RenderTo(IGlyphRenderer renderer, ReadOnlySpan<ushort> glyphIds, ReadOnlySpan<Vector2> points, GlyphOptions options)
+        => new TextRenderer(renderer).Render(glyphIds, points, options);
+
+    /// <summary>
+    /// Renders shaped glyphs to the <paramref name="renderer"/>.
+    /// </summary>
+    /// <param name="renderer">The target renderer.</param>
+    /// <param name="buffer">The buffer containing the shaped glyphs.</param>
+    /// <param name="options">The glyph options supplying the shaping font, resolution, and baseline origin.</param>
+    public static void RenderTo(IGlyphRenderer renderer, TextShapingBuffer buffer, GlyphOptions options)
+        => new TextRenderer(renderer).Render(buffer, options);
 
     /// <summary>
     /// Renders the text to the configured renderer.
@@ -83,8 +93,7 @@ public class TextRenderer
             return;
         }
 
-        ShapedText shaped = TextLayout.ShapeText(text, options);
-        LogicalTextLine logicalLine = TextLayout.ComposeLogicalLine(shaped, text, options);
+        LogicalTextLine logicalLine = TextLayout.ComposeLogicalLine(text, options);
         this.RenderText(logicalLine, options);
     }
 
@@ -130,8 +139,8 @@ public class TextRenderer
             // divided by DPI), so the ink box computed against it compares directly with the
             // scaled region. Inflating by the scaled line height for the glyph's orientation
             // gives em-box anchored decorations the same tolerance culled text receives, and
-            // rejecting here also skips the per-glyph metrics clone below.
-            FontRectangle box = metrics.GetBoundingBox(glyphLayoutMode, origin, options.Font.Size);
+            // rejecting here also skips creating the per-glyph text run below.
+            FontRectangle box = metrics.GetBoundingBox(glyphLayoutMode, origin, options.Font.Size, null, Vector2.Zero, new Vector2(metrics.AdvanceWidth, metrics.AdvanceHeight));
             IMetricsHeader metricsHeader = glyphLayoutMode == GlyphLayoutMode.Vertical
                 ? fontMetrics.VerticalMetrics
                 : fontMetrics.HorizontalMetrics;
@@ -148,9 +157,8 @@ public class TextRenderer
         }
 
         TextRun textRun = options.CreateTextRun();
-        FontGlyphMetrics renderMetrics = metrics.CloneForRendering(textRun);
 
-        renderMetrics.RenderTo(
+        metrics.RenderTo(
             this.renderer,
             options.GraphemeIndex,
             origin,
@@ -158,6 +166,8 @@ public class TextRenderer
             NoLayoutAdvance,
             glyphLayoutMode,
             textRun,
+            Vector2.Zero,
+            new Vector2(metrics.AdvanceWidth, metrics.AdvanceHeight),
             options.Font.Size,
             options.Dpi,
             options.HintingMode,
@@ -167,17 +177,16 @@ public class TextRenderer
     }
 
     /// <summary>
-    /// Renders glyph ids to the configured renderer.
+    /// Renders positioned glyph ids to the configured renderer.
     /// </summary>
-    /// <param name="glyphRun">The glyph run.</param>
+    /// <param name="glyphIds">The glyph identifiers.</param>
+    /// <param name="points">The absolute glyph origins in pixel units.</param>
     /// <param name="options">The glyph options.</param>
-    public void Render(GlyphRun glyphRun, GlyphOptions options)
+    public void Render(ReadOnlySpan<ushort> glyphIds, ReadOnlySpan<Vector2> points, GlyphOptions options)
     {
-        Guard.NotNull(glyphRun, nameof(glyphRun));
         Guard.NotNull(options, nameof(options));
+        Guard.IsTrue(glyphIds.Length == points.Length, nameof(points), "Glyph id and point counts must match.");
 
-        ReadOnlySpan<ushort> glyphIds = glyphRun.GlyphIds.Span;
-        ReadOnlySpan<Vector2> origins = glyphRun.Origins.Span;
         Vector2 originalOrigin = options.Origin;
         int originalGraphemeIndex = options.GraphemeIndex;
 
@@ -185,7 +194,9 @@ public class TextRenderer
         {
             for (int i = 0; i < glyphIds.Length; i++)
             {
-                options.Origin = origins[i];
+                // Positioned points already belong to the caller's output coordinate
+                // space; DPI continues to size the outline but does not move the point.
+                options.Origin = points[i];
                 options.GraphemeIndex = originalGraphemeIndex + i;
 
                 this.Render(glyphIds[i], options);
@@ -194,6 +205,95 @@ public class TextRenderer
         finally
         {
             options.Origin = originalOrigin;
+            options.GraphemeIndex = originalGraphemeIndex;
+        }
+    }
+
+    /// <summary>
+    /// Renders shaped glyphs to the configured renderer.
+    /// </summary>
+    /// <param name="buffer">The buffer containing the shaped glyphs.</param>
+    /// <param name="options">The glyph options supplying the shaping font, resolution, and baseline origin.</param>
+    public void Render(TextShapingBuffer buffer, GlyphOptions options)
+    {
+        Guard.NotNull(buffer, nameof(buffer));
+        Guard.NotNull(options, nameof(options));
+
+        ReadOnlySpan<ShapedGlyph> glyphs = buffer.Glyphs;
+        ReadOnlySpan<int> lineEnds = buffer.LineEnds;
+        Vector2 baselineOrigin = options.Origin;
+        int originalGraphemeIndex = options.GraphemeIndex;
+
+        // Shaped values are already scaled by Font.Size and remain in point units.
+        // Convert points to device pixels here exactly once.
+        float scale = options.Dpi / 72F;
+
+        try
+        {
+            if (lineEnds.IsEmpty)
+            {
+                float penX = 0;
+                float penY = 0;
+                for (int i = 0; i < glyphs.Length; i++)
+                {
+                    ShapedGlyph glyph = glyphs[i];
+
+                    // Public shaping values are Font.Size-scaled in Y-up shaping
+                    // space. Rendering converts them once to DPI-scaled Y-down origins.
+                    options.Origin = new Vector2(
+                        baselineOrigin.X + ((penX + glyph.Offset.X) * scale),
+                        baselineOrigin.Y - ((penY + glyph.Offset.Y) * scale));
+
+                    // Every glyph produced by one grapheme repeats its grapheme
+                    // index, preserving cluster identity through renderer callbacks.
+                    options.GraphemeIndex = originalGraphemeIndex + glyph.GraphemeIndex;
+                    this.Render(glyph.GlyphId, options);
+
+                    penX += glyph.AdvanceWidth;
+                    penY += glyph.AdvanceHeight;
+                }
+            }
+            else
+            {
+                FontMetrics fontMetrics = options.Font.FontMetrics;
+
+                // Hard line breaks reset the shaping pen. Baseline progression is
+                // a rendering concern, so derive it here from the supplied font and DPI.
+                float lineAdvance = fontMetrics.HorizontalMetrics.LineHeight * options.Font.Size * options.Dpi / fontMetrics.ScaleFactor;
+                float baselineY = baselineOrigin.Y;
+                int glyphStart = 0;
+                for (int lineIndex = 0; lineIndex <= lineEnds.Length; lineIndex++)
+                {
+                    int glyphEnd = lineIndex < lineEnds.Length ? lineEnds[lineIndex] : glyphs.Length;
+                    float penX = 0;
+                    float penY = 0;
+                    for (int i = glyphStart; i < glyphEnd; i++)
+                    {
+                        ShapedGlyph glyph = glyphs[i];
+
+                        // Public shaping values are Font.Size-scaled in Y-up shaping
+                        // space. Rendering converts them once to DPI-scaled Y-down origins.
+                        options.Origin = new Vector2(
+                            baselineOrigin.X + ((penX + glyph.Offset.X) * scale),
+                            baselineY - ((penY + glyph.Offset.Y) * scale));
+
+                        options.GraphemeIndex = originalGraphemeIndex + glyph.GraphemeIndex;
+                        this.Render(glyph.GlyphId, options);
+
+                        penX += glyph.AdvanceWidth;
+                        penY += glyph.AdvanceHeight;
+                    }
+
+                    glyphStart = glyphEnd;
+                    baselineY += lineAdvance;
+                }
+            }
+        }
+        finally
+        {
+            // GlyphOptions is caller-owned and temporarily reused to avoid creating
+            // one options object per glyph. Restore every mutated value on all exits.
+            options.Origin = baselineOrigin;
             options.GraphemeIndex = originalGraphemeIndex;
         }
     }

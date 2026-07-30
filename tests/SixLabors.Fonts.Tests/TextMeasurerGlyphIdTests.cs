@@ -1,4 +1,4 @@
-﻿// Copyright (c) Six Labors.
+// Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
 using System.Numerics;
@@ -98,38 +98,38 @@ public class TextMeasurerGlyphIdTests
     public void MeasureBounds_MatchesUnionOfRenderedGlyphBounds()
     {
         Font font = TestFonts.GetFont(TestFonts.OpenSansFile, 32);
-        (GlyphRun glyphRun, GlyphOptions options) = CreateRun(font);
+        (ushort[] glyphIds, Vector2[] origins, GlyphOptions options) = CreateRun(font);
 
         GlyphRenderer renderer = new();
-        TextRenderer.RenderTo(renderer, glyphRun, options);
+        TextRenderer.RenderTo(renderer, glyphIds, origins, options);
 
-        Assert.Equal(glyphRun.Count, renderer.GlyphRects.Count);
+        Assert.Equal(glyphIds.Length, renderer.GlyphRects.Count);
         FontRectangle expected = renderer.GlyphRects[0];
         for (int i = 1; i < renderer.GlyphRects.Count; i++)
         {
             expected = FontRectangle.Union(expected, renderer.GlyphRects[i]);
         }
 
-        Assert.Equal(expected, TextMeasurer.MeasureBounds(glyphRun, options));
+        Assert.Equal(expected, TextMeasurer.MeasureBounds(glyphIds, origins, options));
     }
 
     [Fact]
-    public void MeasureGlyphRun_MatchesUnionOfSingleGlyphMeasurements()
+    public void MeasurePositionedGlyphs_MatchesUnionOfSingleGlyphMeasurements()
     {
         Font font = TestFonts.GetFont(TestFonts.OpenSansFile, 32);
-        (GlyphRun glyphRun, GlyphOptions options) = CreateRun(font);
+        (ushort[] glyphIds, Vector2[] origins, GlyphOptions options) = CreateRun(font);
 
         FontRectangle expectedAdvance = default;
         FontRectangle expectedRenderable = default;
-        for (int i = 0; i < glyphRun.Count; i++)
+        for (int i = 0; i < glyphIds.Length; i++)
         {
             GlyphOptions positioned = new()
             {
                 Font = font,
-                Origin = glyphRun.Origins.Span[i]
+                Origin = origins[i]
             };
 
-            ushort glyphId = glyphRun.GlyphIds.Span[i];
+            ushort glyphId = glyphIds[i];
 
             // Per-glyph advances are zero-based; the run extent unions them at their origins,
             // exactly as the text-level composition does.
@@ -140,8 +140,8 @@ public class TextMeasurerGlyphIdTests
             expectedRenderable = i == 0 ? renderable : FontRectangle.Union(expectedRenderable, renderable);
         }
 
-        Assert.Equal(new FontRectangle(0, 0, expectedAdvance.Width, expectedAdvance.Height), TextMeasurer.MeasureAdvance(glyphRun, options));
-        Assert.Equal(expectedRenderable, TextMeasurer.MeasureRenderableBounds(glyphRun, options));
+        Assert.Equal(new FontRectangle(0, 0, expectedAdvance.Width, expectedAdvance.Height), TextMeasurer.MeasureAdvance(glyphIds, origins, options));
+        Assert.Equal(expectedRenderable, TextMeasurer.MeasureRenderableBounds(glyphIds, origins, options));
     }
 
     [Fact]
@@ -254,54 +254,53 @@ public class TextMeasurerGlyphIdTests
     }
 
     [Fact]
-    public void Run_MeasureBounds_MatchesRenderedUnion_ForEveryBaseline()
+    public void PositionedGlyphs_MeasureBounds_MatchesRenderedUnion_ForEveryBaseline()
     {
         Font font = TestFonts.GetFont(TestFonts.OpenSansFile, 32);
-        (GlyphRun glyphRun, GlyphOptions options) = CreateRun(font);
+        (ushort[] glyphIds, Vector2[] origins, GlyphOptions options) = CreateRun(font);
 
         foreach (TextBaseline baseline in Enum.GetValues<TextBaseline>())
         {
             options.TextBaseline = baseline;
 
             GlyphRenderer renderer = new();
-            TextRenderer.RenderTo(renderer, glyphRun, options);
+            TextRenderer.RenderTo(renderer, glyphIds, origins, options);
 
-            Assert.Equal(glyphRun.Count, renderer.GlyphRects.Count);
+            Assert.Equal(glyphIds.Length, renderer.GlyphRects.Count);
             FontRectangle expected = renderer.GlyphRects[0];
             for (int i = 1; i < renderer.GlyphRects.Count; i++)
             {
                 expected = FontRectangle.Union(expected, renderer.GlyphRects[i]);
             }
 
-            Assert.Equal(expected, TextMeasurer.MeasureBounds(glyphRun, options));
+            Assert.Equal(expected, TextMeasurer.MeasureBounds(glyphIds, origins, options));
         }
     }
 
     [Fact]
-    public void MeasureGlyphRun_RestoresOptionsOrigin()
+    public void MeasurePositionedGlyphs_RestoresOptionsOrigin()
     {
         Font font = TestFonts.GetFont(TestFonts.OpenSansFile, 32);
-        (GlyphRun glyphRun, GlyphOptions options) = CreateRun(font);
+        (ushort[] glyphIds, Vector2[] origins, GlyphOptions options) = CreateRun(font);
         options.Origin = new Vector2(5F, 7F);
 
-        _ = TextMeasurer.MeasureBounds(glyphRun, options);
+        _ = TextMeasurer.MeasureBounds(glyphIds, origins, options);
 
         Assert.Equal(new Vector2(5F, 7F), options.Origin);
     }
 
     [Fact]
-    public void MeasureGlyphRun_ReturnsEmpty_ForEmptyRun()
+    public void MeasurePositionedGlyphs_ReturnsEmpty_ForEmptyInput()
     {
         Font font = TestFonts.GetFont(TestFonts.OpenSansFile, 32);
-        GlyphRun glyphRun = new(ReadOnlyMemory<ushort>.Empty, ReadOnlyMemory<Vector2>.Empty);
         GlyphOptions options = new()
         {
             Font = font
         };
 
-        Assert.Equal(FontRectangle.Empty, TextMeasurer.MeasureBounds(glyphRun, options));
-        Assert.Equal(FontRectangle.Empty, TextMeasurer.MeasureAdvance(glyphRun, options));
-        Assert.Equal(FontRectangle.Empty, TextMeasurer.MeasureRenderableBounds(glyphRun, options));
+        Assert.Equal(FontRectangle.Empty, TextMeasurer.MeasureBounds(ReadOnlySpan<ushort>.Empty, ReadOnlySpan<Vector2>.Empty, options));
+        Assert.Equal(FontRectangle.Empty, TextMeasurer.MeasureAdvance(ReadOnlySpan<ushort>.Empty, ReadOnlySpan<Vector2>.Empty, options));
+        Assert.Equal(FontRectangle.Empty, TextMeasurer.MeasureRenderableBounds(ReadOnlySpan<ushort>.Empty, ReadOnlySpan<Vector2>.Empty, options));
     }
 
     [Fact]
@@ -323,6 +322,7 @@ public class TextMeasurerGlyphIdTests
         Assert.Equal(TextMeasurer.MeasureBounds(glyphId, options), metrics.Bounds);
         Assert.Equal(TextMeasurer.MeasureRenderableBounds(glyphId, options), metrics.RenderableBounds);
         Assert.Equal(new CodePoint('g'), metrics.CodePoint);
+        Assert.Equal(glyphId, metrics.GlyphId);
         Assert.Equal(7, metrics.GraphemeIndex);
         Assert.Equal(0, metrics.StringIndex);
         Assert.Equal(font, metrics.Font);
@@ -332,23 +332,24 @@ public class TextMeasurerGlyphIdTests
     public void GetGlyphMetrics_ReturnsOneIndexCorrelatedEntryPerRunGlyph()
     {
         Font font = TestFonts.GetFont(TestFonts.OpenSansFile, 32);
-        (GlyphRun glyphRun, GlyphOptions options) = CreateRun(font);
+        (ushort[] glyphIds, Vector2[] origins, GlyphOptions options) = CreateRun(font);
 
-        ReadOnlySpan<GlyphMetrics> entries = TextMeasurer.GetGlyphMetrics(glyphRun, options).Span;
+        ReadOnlySpan<GlyphMetrics> entries = TextMeasurer.GetGlyphMetrics(glyphIds, origins, options).Span;
 
-        Assert.Equal(glyphRun.Count, entries.Length);
+        Assert.Equal(glyphIds.Length, entries.Length);
         for (int i = 0; i < entries.Length; i++)
         {
             GlyphOptions positioned = new()
             {
                 Font = font,
-                Origin = glyphRun.Origins.Span[i]
+                Origin = origins[i]
             };
 
-            ushort glyphId = glyphRun.GlyphIds.Span[i];
+            ushort glyphId = glyphIds[i];
             Assert.Equal(TextMeasurer.MeasureAdvance(glyphId, positioned), entries[i].Advance);
             Assert.Equal(TextMeasurer.MeasureBounds(glyphId, positioned), entries[i].Bounds);
             Assert.Equal(TextMeasurer.MeasureRenderableBounds(glyphId, positioned), entries[i].RenderableBounds);
+            Assert.Equal(glyphId, entries[i].GlyphId);
             Assert.Equal(i, entries[i].GraphemeIndex);
             Assert.Equal(i, entries[i].StringIndex);
         }
@@ -360,22 +361,21 @@ public class TextMeasurerGlyphIdTests
         Font font = TestFonts.GetFont(TestFonts.OpenSansFile, 32);
         ushort[] glyphIds = [GetGlyphId(font, 'A'), ushort.MaxValue, GetGlyphId(font, 'B')];
         Vector2[] origins = [new(0F, 40F), new(25F, 40F), new(50F, 40F)];
-        GlyphRun glyphRun = new(glyphIds, origins);
         GlyphOptions options = new()
         {
             Font = font
         };
 
-        ReadOnlySpan<GlyphMetrics> entries = TextMeasurer.GetGlyphMetrics(glyphRun, options).Span;
+        ReadOnlySpan<GlyphMetrics> entries = TextMeasurer.GetGlyphMetrics(glyphIds, origins, options).Span;
 
         Assert.Equal(3, entries.Length);
         Assert.NotEqual(FontRectangle.Empty, entries[0].Bounds);
         Assert.Equal(FontRectangle.Empty, entries[1].Advance);
         Assert.Equal(FontRectangle.Empty, entries[1].Bounds);
         Assert.Equal(FontRectangle.Empty, entries[1].RenderableBounds);
+        Assert.Equal(ushort.MaxValue, entries[1].GlyphId);
         Assert.NotEqual(FontRectangle.Empty, entries[2].Bounds);
     }
-
 
     [Fact]
     public void GetIntersections_DescenderBand_IsNarrowerThanInkBounds()
@@ -431,18 +431,18 @@ public class TextMeasurerGlyphIdTests
     }
 
     [Fact]
-    public void GetIntersections_Run_MatchesUnionOfSingleGlyphIntersections()
+    public void GetIntersections_PositionedGlyphs_MatchesUnionOfSingleGlyphIntersections()
     {
         Font font = TestFonts.GetFont(TestFonts.OpenSansFile, 64);
         ushort glyphId = GetGlyphId(font, 'p');
+        ushort[] glyphIds = [glyphId, glyphId];
         Vector2[] origins = [new(10F, 100F), new(60F, 100F)];
-        GlyphRun glyphRun = new(new[] { glyphId, glyphId }, origins);
         GlyphOptions options = new()
         {
             Font = font
         };
 
-        ReadOnlySpan<float> run = TextMeasurer.GetIntersections(glyphRun, options, 103F, 106F).Span;
+        ReadOnlySpan<float> run = TextMeasurer.GetIntersections(glyphIds, origins, options, 103F, 106F).Span;
 
         GlyphOptions first = new() { Font = font, Origin = origins[0] };
         GlyphOptions second = new() { Font = font, Origin = origins[1] };
@@ -463,11 +463,11 @@ public class TextMeasurerGlyphIdTests
     }
 
     /// <summary>
-    /// Creates a small positioned run with fractional origins and a whitespace glyph.
+    /// Creates small positioned glyph collections with fractional origins and a whitespace glyph.
     /// </summary>
     /// <param name="font">The font to resolve glyph ids against.</param>
-    /// <returns>The positioned run and matching options.</returns>
-    private static (GlyphRun GlyphRun, GlyphOptions Options) CreateRun(Font font)
+    /// <returns>The positioned glyph collections and matching options.</returns>
+    private static (ushort[] GlyphIds, Vector2[] Origins, GlyphOptions Options) CreateRun(Font font)
     {
         ushort[] glyphIds =
         [
@@ -487,7 +487,7 @@ public class TextMeasurerGlyphIdTests
             new(80F, 38F)
         ];
 
-        return (new GlyphRun(glyphIds, origins), new GlyphOptions { Font = font });
+        return (glyphIds, origins, new GlyphOptions { Font = font });
     }
 
     /// <summary>

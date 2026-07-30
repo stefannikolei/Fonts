@@ -12,11 +12,17 @@ namespace SixLabors.Fonts;
 public readonly struct Glyph
 {
     private readonly float pointSize;
+    private readonly TextRun textRun;
+    private readonly Vector2 positionOffset;
+    private readonly Vector2 positionedAdvance;
 
-    internal Glyph(FontGlyphMetrics glyphMetrics, float pointSize)
+    internal Glyph(FontGlyphMetrics glyphMetrics, float pointSize, TextRun textRun, Vector2 positionOffset, Vector2 positionedAdvance)
     {
         this.GlyphMetrics = glyphMetrics;
         this.pointSize = pointSize;
+        this.textRun = textRun;
+        this.positionOffset = positionOffset;
+        this.positionedAdvance = positionedAdvance;
     }
 
     /// <summary>
@@ -32,7 +38,7 @@ public readonly struct Glyph
     /// <param name="dpi">The DPI to measure the glyph at.</param>
     /// <returns>The rendered glyph bounds.</returns>
     public FontRectangle BoundingBox(GlyphLayoutMode mode, Vector2 glyphOrigin, float dpi)
-        => this.GlyphMetrics.GetBoundingBox(mode, glyphOrigin, this.pointSize * dpi);
+        => this.GlyphMetrics.GetBoundingBox(mode, glyphOrigin, this.pointSize * dpi, this.textRun, this.positionOffset, this.positionedAdvance);
 
     /// <summary>
     /// Renders the glyph to the render surface.
@@ -57,7 +63,7 @@ public readonly struct Glyph
         GlyphLayoutMode mode,
         TextOptions options)
     {
-        TextRun textRun = this.GlyphMetrics.TextRun;
+        TextRun textRun = this.textRun;
         float pointSize = textRun.Font?.Size ?? options.Font.Size;
 
         this.GlyphMetrics.RenderTo(
@@ -68,6 +74,8 @@ public readonly struct Glyph
             layoutAdvance,
             mode,
             textRun,
+            this.positionOffset,
+            this.positionedAdvance,
             pointSize,
             options.Dpi,
             options.HintingMode,

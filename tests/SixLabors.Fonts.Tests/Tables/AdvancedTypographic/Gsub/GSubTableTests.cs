@@ -78,10 +78,105 @@ public partial class GSubTableTests
         Font font = TestFonts.GetFont(TestFonts.RobotoRegular, 12);
         ColorGlyphRenderer renderer = new();
         string testStr = "9⁄2";
-        int[] expectedGlyphIndices = [580, 404, 453];
+
+        // Explicitly requested numerator and denominator features apply over the
+        // whole run, so the leading digit takes the denominator form the font
+        // maps last; the automatic fraction masking adds to that rather than
+        // replacing it. Verified against HarfBuzz 14.2.1.
+        int[] expectedGlyphIndices = [549, 404, 453];
 
         // act
         TextRenderer.RenderTo(renderer, testStr, new TextOptions(font) { FeatureTags = new Tag[] { KnownFeatureTags.Numerators, KnownFeatureTags.Denominators } });
+
+        // assert
+        Assert.Equal(expectedGlyphIndices.Length, renderer.GlyphKeys.Count);
+        for (int i = 0; i < expectedGlyphIndices.Length; i++)
+        {
+            Assert.Equal(expectedGlyphIndices[i], renderer.GlyphKeys[i].GlyphId);
+        }
+    }
+
+    [Fact]
+    public void ContextualFractions_FractionSlash_FormsWithoutRequestedFeatures()
+    {
+        // arrange
+        Font font = TestFonts.GetFont(TestFonts.RobotoRegular, 12);
+        ColorGlyphRenderer renderer = new();
+        string testStr = "9⁄2";
+
+        // The fraction slash forms a fraction from the digits surrounding it
+        // with no feature requested by the caller. Verified against HarfBuzz 14.2.1.
+        int[] expectedGlyphIndices = [580, 404, 453];
+
+        // act
+        TextRenderer.RenderTo(renderer, testStr, new TextOptions(font));
+
+        // assert
+        Assert.Equal(expectedGlyphIndices.Length, renderer.GlyphKeys.Count);
+        for (int i = 0; i < expectedGlyphIndices.Length; i++)
+        {
+            Assert.Equal(expectedGlyphIndices[i], renderer.GlyphKeys[i].GlyphId);
+        }
+    }
+
+    [Fact]
+    public void ContextualFractions_Solidus_FormsNoFraction()
+    {
+        // arrange
+        Font font = TestFonts.GetFont(TestFonts.RobotoRegular, 12);
+        ColorGlyphRenderer renderer = new();
+        string testStr = "9/2";
+
+        // Only the fraction slash forms fractions automatically; the solidus is
+        // an ordinary character. Verified against HarfBuzz 14.2.1.
+        int[] expectedGlyphIndices = [29, 19, 22];
+
+        // act
+        TextRenderer.RenderTo(renderer, testStr, new TextOptions(font));
+
+        // assert
+        Assert.Equal(expectedGlyphIndices.Length, renderer.GlyphKeys.Count);
+        for (int i = 0; i < expectedGlyphIndices.Length; i++)
+        {
+            Assert.Equal(expectedGlyphIndices[i], renderer.GlyphKeys[i].GlyphId);
+        }
+    }
+
+    [Fact]
+    public void ContextualFractions_FractionSlashWithoutDigits_FormsNoFraction()
+    {
+        // arrange
+        Font font = TestFonts.GetFont(TestFonts.RobotoRegular, 12);
+        ColorGlyphRenderer renderer = new();
+        string testStr = "abc⁄def";
+
+        // A fraction slash needs digits on both sides. Verified against HarfBuzz 14.2.1.
+        int[] expectedGlyphIndices = [69, 70, 71, 404, 72, 73, 74];
+
+        // act
+        TextRenderer.RenderTo(renderer, testStr, new TextOptions(font));
+
+        // assert
+        Assert.Equal(expectedGlyphIndices.Length, renderer.GlyphKeys.Count);
+        for (int i = 0; i < expectedGlyphIndices.Length; i++)
+        {
+            Assert.Equal(expectedGlyphIndices[i], renderer.GlyphKeys[i].GlyphId);
+        }
+    }
+
+    [Fact]
+    public void ContextualFractions_MultiDigitRuns_FormFraction()
+    {
+        // arrange
+        Font font = TestFonts.GetFont(TestFonts.RobotoRegular, 12);
+        ColorGlyphRenderer renderer = new();
+        string testStr = "12⁄34";
+
+        // Both digit runs are consumed whole. Verified against HarfBuzz 14.2.1.
+        int[] expectedGlyphIndices = [122, 115, 404, 543, 544];
+
+        // act
+        TextRenderer.RenderTo(renderer, testStr, new TextOptions(font));
 
         // assert
         Assert.Equal(expectedGlyphIndices.Length, renderer.GlyphKeys.Count);
@@ -330,8 +425,11 @@ public partial class GSubTableTests
         // arrange
         Font font = TestFonts.GetFont(TestFonts.GSubTestFontFile2, 12);
         ColorGlyphRenderer renderer = new();
-        string testStr = "X89"; // X89 -> XYZ
-        int[] expectedGlyphIndices = [57, 58, 59];
+        string testStr = "X889";
+
+        // The first eight is covered, preceded by X, and followed by the required
+        // eight-nine lookahead, so only that covered glyph changes to Y.
+        int[] expectedGlyphIndices = [57, 58, 25, 26];
 
         // act
         TextRenderer.RenderTo(renderer, testStr, new TextOptions(font));
@@ -365,6 +463,48 @@ public partial class GSubTableTests
         for (int i = 0; i < expectedGlyphIndices.Length; i++)
         {
             Assert.Equal(expectedGlyphIndices[i], renderer.GlyphKeys[i].GlyphId);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that an explicit run feature list replaces the whole-text list
+    /// without affecting adjacent text.
+    /// </summary>
+    [Fact]
+    public void TextRunFeatureTags_OverrideTextOptionsFeatureTags()
+    {
+        Font font = TestFonts.GetFont(TestFonts.EbGaramond, 12);
+        const string text = "123456";
+
+        ColorGlyphRenderer oldStyle = new();
+        TextRenderer.RenderTo(oldStyle, text, new TextOptions(font)
+        {
+            FeatureTags = [KnownFeatureTags.OldstyleFigures]
+        });
+
+        ColorGlyphRenderer normal = new();
+        TextRenderer.RenderTo(normal, text, new TextOptions(font));
+
+        ColorGlyphRenderer mixed = new();
+        TextRenderer.RenderTo(mixed, text, new TextOptions(font)
+        {
+            FeatureTags = [KnownFeatureTags.OldstyleFigures],
+            TextRuns =
+            [
+                new TextRun
+                {
+                    Start = 3,
+                    End = 6,
+                    FeatureTags = []
+                }
+            ]
+        });
+
+        Assert.Equal(text.Length, mixed.GlyphKeys.Count);
+        for (int i = 0; i < mixed.GlyphKeys.Count; i++)
+        {
+            ushort expected = i < 3 ? oldStyle.GlyphKeys[i].GlyphId : normal.GlyphKeys[i].GlyphId;
+            Assert.Equal(expected, mixed.GlyphKeys[i].GlyphId);
         }
     }
 

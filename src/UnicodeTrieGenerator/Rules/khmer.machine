@@ -1,0 +1,17 @@
+c = C | Ra | V;
+cn = c ((ZWJ | ZWNJ)? Robatic)?;
+joiner = ZWJ | ZWNJ;
+xgroup = (joiner* Xgroup)*;
+ygroup = Ygroup*;
+
+matra_group = VPre? xgroup VBlw? xgroup (joiner? VAbv)? xgroup VPst?;
+syllable_tail = xgroup matra_group xgroup (H c)? ygroup;
+
+broken_cluster = Robatic? (H cn)* (H | syllable_tail);
+consonant_syllable = (cn | Placeholder | Dotted_Circle) broken_cluster;
+
+Main =
+    consonant_syllable:consonant_syllable
+  | broken_cluster:broken_cluster
+  | non_khmer_cluster:X
+;

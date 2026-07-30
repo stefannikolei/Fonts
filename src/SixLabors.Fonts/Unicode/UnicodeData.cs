@@ -9,22 +9,23 @@ namespace SixLabors.Fonts.Unicode;
 
 internal static class UnicodeData
 {
-    private static readonly Lazy<UnicodeTrie> LazyBidiTrie = new(() => GetBidiTrie(), true);
-    private static readonly Lazy<UnicodeTrie> LazyBidiMirrorTrie = new(() => GetBidiMirrorTrie(), true);
-    private static readonly Lazy<UnicodeTrie> LazyEastAsianWidthTrie = new(() => GetEastAsianWidthTrie(), true);
-    private static readonly Lazy<UnicodeTrie> LazyEmojiTrie = new(() => GetEmojiTrie(), true);
-    private static readonly Lazy<UnicodeTrie> LazyGraphemeTrie = new(() => GetGraphemeTrie(), true);
-    private static readonly Lazy<UnicodeTrie> LazyLineBreakTrie = new(() => GetLineBreakTrie(), true);
-    private static readonly Lazy<UnicodeTrie> LazyWordBreakTrie = new(() => GetWordBreakTrie(), true);
-    private static readonly Lazy<UnicodeTrie> LazyScriptTrie = new(() => GetScriptTrie(), true);
-    private static readonly Lazy<UnicodeTrie> LazyCategoryTrie = new(() => GetCategoryTrie(), true);
-    private static readonly Lazy<UnicodeTrie> LazyArabicShapingTrie = new(() => GetArabicShapingTrie(), true);
-    private static readonly Lazy<UnicodeTrie> LazyIndicConjunctBreakTrie = new(() => GetIndicConjunctBreakTrie(), true);
-    private static readonly Lazy<UnicodeTrie> LazyIndicSyllabicCategoryTrie = new(() => GetIndicSyllabicCategoryTrie(), true);
-    private static readonly Lazy<UnicodeTrie> LazyIndicPositionalCategoryTrie = new(() => GetIndicPositionalCategoryTrie(), true);
-    private static readonly Lazy<UnicodeTrie> LazyVerticalOrientationTrie = new(() => GetVerticalOrientationTrie(), true);
-    private static readonly Lazy<UnicodeTrie> LazyUniversalShapingTrie = new(() => GetUniversalShapingTrie(), true);
-    private static readonly Lazy<UnicodeTrie> LazyIndicShapingTrie = new(() => GetIndicShapingTrie(), true);
+    private static readonly Lazy<UnicodeTrie> LazyBidiTrie = new(GetBidiTrie, true);
+    private static readonly Lazy<UnicodeTrie> LazyBidiMirrorTrie = new(GetBidiMirrorTrie, true);
+    private static readonly Lazy<UnicodeTrie> LazyEastAsianWidthTrie = new(GetEastAsianWidthTrie, true);
+    private static readonly Lazy<UnicodeTrie> LazyEmojiTrie = new(GetEmojiTrie, true);
+    private static readonly Lazy<UnicodeTrie> LazyGraphemeTrie = new(GetGraphemeTrie, true);
+    private static readonly Lazy<UnicodeTrie> LazyLineBreakTrie = new(GetLineBreakTrie, true);
+    private static readonly Lazy<UnicodeTrie> LazyWordBreakTrie = new(GetWordBreakTrie, true);
+    private static readonly Lazy<UnicodeTrie> LazyScriptTrie = new(GetScriptTrie, true);
+    private static readonly Lazy<UnicodeTrie> LazyCategoryTrie = new(GetCategoryTrie, true);
+    private static readonly Lazy<UnicodeTrie> LazyArabicShapingTrie = new(GetArabicShapingTrie, true);
+    private static readonly Lazy<UnicodeTrie> LazyIndicConjunctBreakTrie = new(GetIndicConjunctBreakTrie, true);
+    private static readonly Lazy<UnicodeTrie> LazyIndicSyllabicCategoryTrie = new(GetIndicSyllabicCategoryTrie, true);
+    private static readonly Lazy<UnicodeTrie> LazyIndicPositionalCategoryTrie = new(GetIndicPositionalCategoryTrie, true);
+    private static readonly Lazy<UnicodeTrie> LazyVerticalOrientationTrie = new(GetVerticalOrientationTrie, true);
+    private static readonly Lazy<UnicodeTrie> LazyUniversalShapingTrie = new(GetUniversalShapingTrie, true);
+    private static readonly Lazy<UnicodeTrie> LazyIndicShapingTrie = new(GetIndicShapingTrie, true);
+    private static readonly Lazy<UnicodeTrie> LazyCanonicalCombiningClassTrie = new(GetCanonicalCombiningClassTrie, true);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static uint GetBidiData(uint codePoint) => LazyBidiTrie.Value.Get(codePoint);
@@ -74,6 +75,36 @@ internal static class UnicodeData
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int GetIndicShapingProperties(uint codePoint) => (int)LazyIndicShapingTrie.Value.Get(codePoint);
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static int GetCanonicalCombiningClass(uint codePoint) => (int)LazyCanonicalCombiningClassTrie.Value.Get(codePoint);
+
+    /// <summary>
+    /// Gets the class that orders a mark against the marks around it: the
+    /// canonical combining class with the classes of several scripts renumbered so
+    /// that sorting by it leaves their marks in the order they are drawn.
+    /// </summary>
+    /// <param name="codePoint">The code point to evaluate.</param>
+    /// <returns>The ordering class.</returns>
+    public static int GetMarkOrderingClass(uint codePoint)
+    {
+        // A few characters order by where they are drawn rather than by their class,
+        // so they are resolved before the table is consulted.
+        if (MarkOrderingData.TryGetOverride(codePoint, out byte order))
+        {
+            return order;
+        }
+
+        return MarkOrderingData.Classes[GetCanonicalCombiningClass(codePoint)];
+    }
+
+    /// <summary>
+    /// Determines whether an Arabic mark modifies the combining mark that follows it.
+    /// </summary>
+    /// <param name="codePoint">The code point to evaluate.</param>
+    /// <returns><see langword="true"/> when the character is a modifier combining mark; otherwise, <see langword="false"/>.</returns>
+    public static bool IsArabicModifierCombiningMark(uint codePoint)
+        => MarkOrderingData.IsArabicModifierCombiningMark(codePoint);
+
     private static UnicodeTrie GetBidiTrie() => new(BidiTrie.Data);
 
     private static UnicodeTrie GetBidiMirrorTrie() => new(BidiMirrorTrie.Data);
@@ -93,6 +124,8 @@ internal static class UnicodeData
     private static UnicodeTrie GetCategoryTrie() => new(UnicodeCategoryTrie.Data);
 
     private static UnicodeTrie GetArabicShapingTrie() => new(ArabicShapingTrie.Data);
+
+    private static UnicodeTrie GetCanonicalCombiningClassTrie() => new(CanonicalCombiningClassTrie.Data);
 
     private static UnicodeTrie GetIndicConjunctBreakTrie() => new(IndicConjunctBreakTrie.Data);
 

@@ -29,36 +29,6 @@ internal readonly struct BidiRun : IEquatable<BidiRun>
 
     public override string ToString() => $"{this.Start} - {this.End} - {this.Direction}";
 
-    public static IEnumerable<BidiRun> CoalesceLevels(ReadOnlyArraySlice<sbyte> levels)
-    {
-        if (levels.Length == 0)
-        {
-            yield break;
-        }
-
-        int startRun = 0;
-        sbyte runLevel = levels[0];
-        BidiCharacterType direction;
-        for (int i = 1; i < levels.Length; i++)
-        {
-            if (levels[i] == runLevel)
-            {
-                continue;
-            }
-
-            // End of this run
-            direction = (runLevel & 0x01) == 0 ? BidiCharacterType.LeftToRight : BidiCharacterType.RightToLeft;
-            yield return new BidiRun(direction, runLevel, startRun, i - startRun);
-
-            // Move to next run
-            startRun = i;
-            runLevel = levels[i];
-        }
-
-        direction = (runLevel & 0x01) == 0 ? BidiCharacterType.LeftToRight : BidiCharacterType.RightToLeft;
-        yield return new BidiRun(direction, runLevel, startRun, levels.Length - startRun);
-    }
-
     public override bool Equals(object? obj)
         => obj is BidiRun run && this.Equals(run);
 

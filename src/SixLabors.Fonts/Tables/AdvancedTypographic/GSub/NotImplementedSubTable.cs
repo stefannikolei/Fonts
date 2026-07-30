@@ -21,9 +21,14 @@ internal class NotImplementedSubTable : LookupSubTable
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,
-        GlyphSubstitutionCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
+        uint lookupMask,
         int index,
         int count)
+        => false;
+
+    /// <inheritdoc />
+    public override bool WouldApply(ReadOnlySpan<ushort> glyphs, bool zeroContext)
         => false;
 }

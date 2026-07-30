@@ -1,6 +1,7 @@
 // Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
+using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using SixLabors.Fonts.Tables.AdvancedTypographic.GSub;
 using SixLabors.Fonts.Tables.AdvancedTypographic.Shapers;
@@ -16,9 +17,21 @@ namespace SixLabors.Fonts.Tables.AdvancedTypographic;
 internal class GSubTable : Table
 {
     /// <summary>
+    /// Caches resolved feature lookups per stage feature, script, and language
+    /// candidates. See <see cref="TryGetFeatureLookups"/> for the variable-font bypass
+    /// and the read-only contract on cached lists.
+    /// </summary>
+    private readonly ConcurrentDictionary<FeatureLookupsKey, List<(Tag Feature, ushort Index, LookupTable LookupTable)>> featureLookupsCache = new();
+
+    /// <summary>
     /// The OpenType table tag for the GSUB table.
     /// </summary>
-    internal const string TableName = "GSUB";
+    public const string TableName = "GSUB";
+
+    /// <summary>
+    /// The invalid but widely shipped language system record tag 'dflt'.
+    /// </summary>
+    private static readonly Tag DefaultLangSysTag = Tag.Parse("dflt");
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GSubTable"/> class.
@@ -78,7 +91,7 @@ internal class GSubTable : Table
     /// </summary>
     /// <param name="reader">The big endian binary reader.</param>
     /// <returns>The <see cref="GSubTable"/>.</returns>
-    internal static GSubTable Load(BigEndianBinaryReader reader)
+    public static GSubTable Load(BigEndianBinaryReader reader)
     {
         // GSUB Header, Version 1.0
         // +----------+-------------------+-----------------------------------------------------------+
@@ -134,84 +147,65 @@ internal class GSubTable : Table
     }
 
     /// <summary>
-    /// Applies glyph substitution to the collection using GSUB lookup rules.
+    /// Applies glyph substitution to the buffer using GSUB lookup rules.
     /// </summary>
     /// <param name="fontMetrics">The font metrics.</param>
-    /// <param name="collection">The glyph substitution collection.</param>
-    public void ApplySubstitution(FontMetrics fontMetrics, GlyphSubstitutionCollection collection)
+    /// <param name="buffer">The glyph substitution buffer.</param>
+    public void ApplySubstitution(FontMetrics fontMetrics, ShapingBuffer buffer)
     {
         // Set max constraints to prevent OutOfMemoryException or infinite loops from attacks.
-        int maxCount = AdvancedTypographicUtils.GetMaxAllowableShapingCollectionCount(collection.Count);
-        int maxOperationsCount = AdvancedTypographicUtils.GetMaxAllowableShapingOperationsCount(collection.Count);
+        int maxCount = AdvancedTypographicUtils.GetMaxAllowableShapingCollectionCount(buffer.Count);
+        int maxOperationsCount = AdvancedTypographicUtils.GetMaxAllowableShapingOperationsCount(buffer.Count);
         int currentOperations = 0;
 
-        for (int i = 0; i < collection.Count; i++)
+        for (int i = 0; i < buffer.Count; i++)
         {
             // Choose a shaper based on the script.
             // This determines which features to apply to which glyphs.
-            ScriptClass current = this.GetScriptClass(CodePoint.GetScriptClass(collection[i].CodePoint));
-
             int index = i;
-            int count = 1;
-            while (i < collection.Count - 1)
-            {
-                // We want to assign the same feature lookups to individual sections of the text rather
-                // than the text as a whole to ensure that different language shapers do not interfere
-                // with each other when the text contains multiple languages.
-                ScriptClass next = this.GetScriptClass(CodePoint.GetScriptClass(collection[i + 1].CodePoint));
-                if (next != current &&
-                    current is not ScriptClass.Common and not ScriptClass.Unknown and not ScriptClass.Inherited &&
-                    next is not ScriptClass.Common and not ScriptClass.Unknown and not ScriptClass.Inherited)
-                {
-                    break;
-                }
+            ScriptItemizer.ShapingRun run = ScriptItemizer.ReadRun(buffer, ref i, maxCount, out int count);
 
-                if (current is ScriptClass.Common or ScriptClass.Unknown or ScriptClass.Inherited)
-                {
-                    current = next;
-                }
+            Tag unicodeScriptTag = this.GetUnicodeScriptTag(run.Script);
+            ShapePlan shapePlan = buffer.GetOrCreatePlan(run.Script, unicodeScriptTag, fontMetrics, run.Culture, run.FeatureTags);
 
-                i++;
-                count++;
-
-                if (i >= maxCount)
-                {
-                    break;
-                }
-            }
-
-            Tag unicodeScriptTag = this.GetUnicodeScriptTag(current);
-            BaseShaper shaper = ShaperFactory.Create(current, unicodeScriptTag, fontMetrics, collection.TextOptions);
+            BaseShaper shaper = shapePlan.Shaper;
 
             // Plan substitution features for each glyph.
             // Shapers can adjust the count during initialization and feature processing so we must capture
             // the current count to allow resetting indexes and processing counts.
-            int collectionCount = collection.Count;
-            shaper.Plan(collection, index, count);
-            int delta = collection.Count - collectionCount;
+            int collectionCount = buffer.Count;
+            shaper.Plan(fontMetrics, buffer, index, count);
+            int delta = buffer.Count - collectionCount;
             i += delta;
             count += delta;
 
-            IEnumerable<ShapingStage> stages = shaper.GetShapingStages();
-            SkippingGlyphIterator iterator = new(fontMetrics, collection, index, default, 0);
-            foreach (ShapingStage stage in stages)
+            // Stages are applied in pause-delimited groups: a stage action is a
+            // synchronization point, and between two actions every registered
+            // feature's lookups apply together in lookup-list order, the order the
+            // specification defines for lookups within a single application pass. A
+            // lookup registered by several of the group's features applies once with
+            // their glyph masks combined. Group boundaries, merged lookup lists, and
+            // entry masks are all prebuilt on the plan.
+            List<ShapePlanStageGroup<LookupTable>> groups = shapePlan.GetOrBuildGSubStageGroups();
+            List<ShapingStage> stages = shapePlan.Stages;
+            SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, default, 0);
+            for (int g = 0; g < groups.Count; g++)
             {
-                collectionCount = collection.Count;
-                stage.PreProcessFeature(collection, index, count);
+                ShapePlanStageGroup<LookupTable> group = groups[g];
 
-                // Account for substitutions changing the length of the collection.
-                delta = collection.Count - collectionCount;
+                collectionCount = buffer.Count;
+                stages[group.Start].PreProcessFeature(shapePlan, buffer, index, count);
+
+                // Account for substitutions changing the length of the buffer.
+                delta = buffer.Count - collectionCount;
                 count += delta;
                 i += delta;
 
-                Tag featureTag = stage.FeatureTag;
-
-                this.ApplyFeature(
+                this.ApplyMergedLookups(
                     fontMetrics,
-                    collection,
+                    buffer,
                     ref iterator,
-                    in featureTag,
-                    current,
+                    group.Lookups,
                     index,
                     ref count,
                     ref i,
@@ -220,38 +214,45 @@ internal class GSubTable : Table
                     maxOperationsCount,
                     ref currentOperations);
 
-                collectionCount = collection.Count;
-                stage.PostProcessFeature(collection, index, count);
+                collectionCount = buffer.Count;
+                stages[group.End - 1].PostProcessFeature(shapePlan, buffer, index, count);
 
-                // Account for substitutions changing the length of the collection.
-                delta = collection.Count - collectionCount;
+                // Account for substitutions changing the length of the buffer.
+                delta = buffer.Count - collectionCount;
                 count += delta;
                 i += delta;
             }
+
+            // Record the segment with its post-substitution range so the in-place
+            // positioning pass can reuse the plan; one plan then drives both tables.
+            // Mark after GSUB because substitutions can change the number and order
+            // of glyph records to which layout will later apply tracking.
+            ScriptItemizer.MarkCursiveTrackingRun(buffer, index, count, run.Script);
+            buffer.SegmentPlans.Add((index, count, run.Script, shapePlan));
         }
     }
 
     /// <summary>
-    /// Applies a specific feature's lookups to the glyph substitution collection.
+    /// Applies a stage group's merged lookups to the glyph substitution buffer in
+    /// lookup-index order. Each entry's mask combines every group feature that
+    /// registered the lookup, so the per-glyph gate stays a single bitwise AND.
     /// </summary>
     /// <param name="fontMetrics">The font metrics.</param>
-    /// <param name="collection">The glyph substitution collection.</param>
+    /// <param name="buffer">The glyph substitution buffer.</param>
     /// <param name="iterator">The skipping glyph iterator.</param>
-    /// <param name="featureTag">The feature tag to apply.</param>
-    /// <param name="current">The current script class.</param>
-    /// <param name="index">The starting index in the collection.</param>
+    /// <param name="merged">The group's lookups, sorted by lookup index.</param>
+    /// <param name="index">The starting index in the buffer.</param>
     /// <param name="count">The number of glyphs to process (updated by substitutions).</param>
     /// <param name="i">The outer loop index (updated by substitutions).</param>
-    /// <param name="collectionCount">The tracked collection count (updated by substitutions).</param>
-    /// <param name="maxCount">The maximum allowable collection count.</param>
+    /// <param name="collectionCount">The tracked buffer count (updated by substitutions).</param>
+    /// <param name="maxCount">The maximum allowable buffer count.</param>
     /// <param name="maxOperationsCount">The maximum allowable operations count.</param>
     /// <param name="currentOperations">The current operations counter.</param>
-    internal void ApplyFeature(
+    private void ApplyMergedLookups(
         FontMetrics fontMetrics,
-        GlyphSubstitutionCollection collection,
+        ShapingBuffer buffer,
         ref SkippingGlyphIterator iterator,
-        in Tag featureTag,
-        ScriptClass current,
+        List<(Tag Feature, ushort Index, LookupTable LookupTable, uint Mask, bool AutoZwnj, bool AutoZwj, bool Random, bool PerSyllable)> merged,
         int index,
         ref int count,
         ref int i,
@@ -260,53 +261,158 @@ internal class GSubTable : Table
         int maxOperationsCount,
         ref int currentOperations)
     {
-        if (this.TryGetFeatureLookups(fontMetrics, in featureTag, current, out List<(Tag Feature, ushort Index, LookupTable LookupTable)>? lookups))
+        for (int m = 0; m < merged.Count; m++)
         {
-            // Apply features in order.
-            foreach ((Tag Feature, ushort Index, LookupTable LookupTable) featureLookup in lookups)
-            {
-                Tag feature = featureLookup.Feature;
-                LookupTable featureLookupTable = featureLookup.LookupTable;
-                iterator.Reset(index, featureLookupTable.LookupFlags, featureLookupTable.MarkFilteringSet);
+            (Tag feature, ushort _, LookupTable featureLookupTable, uint featureMask, bool autoZwnj, bool autoZwj, bool random, bool perSyllable) = merged[m];
 
-                while (iterator.Index < index + count)
+            // Skip the whole lookup when its coverage cannot intersect any glyph id
+            // the buffer has ever contained; most fonts carry many lookups for
+            // glyphs a given text never produces.
+            // A lookup whose mask no record carries cannot match anything, so
+            // the whole pass is skipped rather than walked. Features that are
+            // registered for every plan but enabled only by particular text,
+            // such as the fraction trio, cost nothing elsewhere.
+            if ((featureMask & buffer.EnabledFeatureMaskUnion) == 0
+                || !featureLookupTable.Digest.MightIntersect(buffer.GlyphDigest))
+            {
+                continue;
+            }
+
+            buffer.SetLookupMatchState(featureMask, autoZwnj, autoZwj, random, perSyllable);
+            iterator.Reset(index, featureLookupTable.LookupFlags, featureLookupTable.MarkFilteringSet);
+
+            if (featureLookupTable.IsReverse)
+            {
+                // Each replacement may create the context needed by a glyph to its
+                // left, so reverse lookups walk the segment end-to-start in place.
+                int reverseSegmentEnd = index + count;
+                for (int position = reverseSegmentEnd - 1; position >= index; position--)
                 {
-                    if (collection.Count >= maxCount || currentOperations++ >= maxOperationsCount)
+                    if (buffer.Count >= maxCount || currentOperations++ >= maxOperationsCount)
                     {
+                        collectionCount = buffer.Count;
                         return;
                     }
 
-                    if (!collection[iterator.Index].EnabledFeatureTags.Contains(feature))
+                    ref GlyphShapingData glyphData = ref buffer[position];
+                    if ((glyphData.FeatureMask & featureMask) == 0
+                        || !featureLookupTable.Digest.MightContain(glyphData.GlyphId)
+                        || iterator.IsIgnored(position))
                     {
-                        iterator.Next();
                         continue;
                     }
 
-                    collectionCount = collection.Count;
-                    featureLookup.LookupTable.TrySubstitution(fontMetrics, this, collection, featureLookup.Feature, iterator.Index, count - (iterator.Index - index));
-                    iterator.Next();
+                    featureLookupTable.TrySubstitution(fontMetrics, this, buffer, feature, featureMask, position, reverseSegmentEnd - position);
+                }
 
-                    // Account for substitutions changing the length of the collection.
-                    int delta = collection.Count - collectionCount;
-                    count += delta;
-                    i += delta;
+                collectionCount = buffer.Count;
+                continue;
+            }
+
+            // One output pass per lookup: the cursor consumes the input side and
+            // every record streams to the output side exactly once, so a length
+            // change costs one streaming pass instead of one shift per mutation.
+            // The pass begins at the segment, adopting everything before it, and
+            // a pass that changes nothing closes without touching the tail.
+            // Input-side indices are stable for the whole pass, which the
+            // matchers rely on.
+            buffer.BeginOutputPass(index);
+
+            // The segment's end is held as the number of records that follow it,
+            // which nothing the pass does can disturb: replacements, insertions,
+            // and the room a rewind opens all land before the tail. An absolute
+            // index would have to be corrected after each of them.
+            int totalBefore = buffer.Count;
+            int segmentEnd = index + count;
+            while (buffer.ReadIndex < segmentEnd && buffer.ReadIndex < buffer.Count)
+            {
+                // The digest cheaply rejects glyphs no subtable of this lookup can
+                // affect; a maybe falls through to the exact coverage test inside.
+                // Masked and ignored records still stream to the output unchanged,
+                // preserving every record. Consecutive rejections are adopted as
+                // one range so the output pass moves its cursors once.
+                int position = buffer.ReadIndex;
+                bool operationsLimitReached = false;
+                while (position < segmentEnd && position < buffer.Count)
+                {
+                    if (buffer.Count >= maxCount || currentOperations++ >= maxOperationsCount)
+                    {
+                        operationsLimitReached = true;
+                        break;
+                    }
+
+                    ref GlyphShapingData candidate = ref buffer[position];
+                    if ((candidate.FeatureMask & featureMask) != 0
+                        && featureLookupTable.Digest.MightContain(candidate.GlyphId)
+                        && !iterator.IsIgnored(position))
+                    {
+                        break;
+                    }
+
+                    position++;
+                }
+
+                buffer.CopyGlyphs(position - buffer.ReadIndex);
+
+                if (operationsLimitReached)
+                {
+                    // The pass must always close: stream the remainder and
+                    // reconcile the segment bookkeeping before bailing out.
+                    buffer.EndOutputPass();
+                    count += buffer.Count - totalBefore;
+                    i += buffer.Count - totalBefore;
+                    collectionCount = buffer.Count;
+                    return;
+                }
+
+                if (buffer.ReadIndex >= segmentEnd || buffer.ReadIndex >= buffer.Count)
+                {
+                    break;
+                }
+
+                position = buffer.ReadIndex;
+                int lengthBefore = buffer.Count;
+                featureLookupTable.TrySubstitution(fontMetrics, this, buffer, feature, featureMask, position, segmentEnd - position);
+
+                // Anything that lengthened the input side moved the records
+                // after the segment along with it: an in-place mutation, or the
+                // room a rewind opened. Both shift the segment's end by the
+                // same amount, so the bound stays a plain comparison.
+                segmentEnd += buffer.Count - lengthBefore;
+
+                if (buffer.ReadIndex == position)
+                {
+                    buffer.CopyGlyph();
                 }
             }
+
+            buffer.EndOutputPass();
+
+            // The pass closed, so the buffer holds the records it produced: the
+            // whole segment's change surfaces once, here.
+            count += buffer.Count - totalBefore;
+            i += buffer.Count - totalBefore;
+            collectionCount = buffer.Count;
         }
     }
 
     /// <summary>
-    /// Tries to get the feature lookups for the given stage feature and script.
+    /// Tries to get the feature lookups for the given stage feature, script, and language.
     /// </summary>
     /// <param name="fontMetrics">The font metrics.</param>
     /// <param name="stageFeature">The feature tag for the current shaping stage.</param>
     /// <param name="script">The script class.</param>
+    /// <param name="languageTags">
+    /// The candidate OpenType language system tags, most specific first. An empty array
+    /// selects the default language system.
+    /// </param>
     /// <param name="value">When this method returns, contains the list of feature lookups if found.</param>
     /// <returns><see langword="true"/> if lookups were found; otherwise, <see langword="false"/>.</returns>
-    internal bool TryGetFeatureLookups(
+    public bool TryGetFeatureLookups(
         FontMetrics fontMetrics,
         in Tag stageFeature,
         ScriptClass script,
+        Tag[] languageTags,
         [NotNullWhen(true)] out List<(Tag Feature, ushort Index, LookupTable LookupTable)>? value)
     {
         if (this.ScriptList is null)
@@ -315,11 +421,52 @@ internal class GSubTable : Table
             return false;
         }
 
+        // Feature variations resolve against the font's live variation coordinates, so
+        // caching would mix results across differently configured variable fonts.
+        if (this.FeatureVariations is not null)
+        {
+            value = this.ResolveFeatureLookups(fontMetrics, stageFeature, script, languageTags);
+            return value.Count > 0;
+        }
+
+        // Resolution depends only on this table's data for a given feature, script,
+        // and language candidates, so results, including empty ones, are cached for
+        // the table's lifetime. The cached list is shared: consumers must not mutate
+        // it. A concurrent first-resolution race only duplicates deterministic work.
+        FeatureLookupsKey key = new(stageFeature, script, languageTags);
+        if (!this.featureLookupsCache.TryGetValue(key, out value))
+        {
+            value = this.ResolveFeatureLookups(fontMetrics, stageFeature, script, languageTags);
+            this.featureLookupsCache.TryAdd(key, value);
+        }
+
+        return value.Count > 0;
+    }
+
+    /// <summary>
+    /// Resolves the feature lookups for the given stage feature, script, and language
+    /// through the selection ladder documented inline.
+    /// </summary>
+    /// <param name="fontMetrics">The font metrics.</param>
+    /// <param name="stageFeature">The feature tag for the current shaping stage.</param>
+    /// <param name="script">The script class.</param>
+    /// <param name="languageTags">The candidate OpenType language system tags, most specific first.</param>
+    /// <returns>The resolved lookups; empty when the feature yields none.</returns>
+    private List<(Tag Feature, ushort Index, LookupTable LookupTable)> ResolveFeatureLookups(
+        FontMetrics fontMetrics,
+        Tag stageFeature,
+        ScriptClass script,
+        Tag[] languageTags)
+    {
         // Resolve feature substitutions from FeatureVariations (variable fonts).
         FeatureTableSubstitutionRecord[]? substitutions = this.FeatureVariations
             ?.FindMatchingSubstitutions(fontMetrics.GetNormalizedCoordinates());
 
-        ScriptListTable scriptListTable = this.ScriptList.Default();
+        // Step 1: script selection. Map the Unicode script class onto the font's
+        // script table, falling back to the font's first script when the font does not
+        // declare the script.
+        // The caching entry point rejects a null script list before dispatching here.
+        ScriptListTable scriptListTable = this.ScriptList!.Default();
         Tag[] tags = UnicodeScriptTagMap.Instance[script];
         for (int i = 0; i < tags.Length; i++)
         {
@@ -330,15 +477,52 @@ internal class GSubTable : Table
             }
         }
 
+        // Step 2: language selection. Walk the culture's candidate tags in priority
+        // order, most specific first, scanning the script's named language systems for
+        // a tag match; the first candidate the font declares wins, so a zh-HK run
+        // selects ZHH before ZHT. A match commits even when the selected language
+        // system lacks this stage feature: per the specification a LangSys table is the
+        // complete feature set for its language, so falling through to the default
+        // below would merge two languages' features, exactly the output language
+        // systems exist to prevent. An empty candidate array skips this step entirely.
+        LangSysTable[] langSysTables = scriptListTable.LangSysTables;
+        for (int i = 0; i < languageTags.Length; i++)
+        {
+            uint language = languageTags[i].Value;
+            for (int j = 0; j < langSysTables.Length; j++)
+            {
+                if (langSysTables[j].LangSysTag == language)
+                {
+                    return this.GetFeatureLookups(stageFeature, substitutions, langSysTables[j]);
+                }
+            }
+        }
+
+        // Step 3: no culture, or no candidate the font declares. A language system
+        // record explicitly tagged dflt is preferred over the true default: the tag is
+        // invalid per the specification, but fonts built from old documentation typos
+        // carry one, and the reference engines honor it.
+        LangSysTable[] langSysRecords = scriptListTable.LangSysTables;
+        for (int i = 0; i < langSysRecords.Length; i++)
+        {
+            if (langSysRecords[i].LangSysTag == DefaultLangSysTag.Value)
+            {
+                return this.GetFeatureLookups(stageFeature, substitutions, langSysRecords[i]);
+            }
+        }
+
         LangSysTable? defaultLangSysTable = scriptListTable.DefaultLangSysTable;
         if (defaultLangSysTable != null)
         {
-            value = this.GetFeatureLookups(stageFeature, substitutions, defaultLangSysTable);
-            return value.Count > 0;
+            return this.GetFeatureLookups(stageFeature, substitutions, defaultLangSysTable);
         }
 
-        value = this.GetFeatureLookups(stageFeature, substitutions, scriptListTable.LangSysTables);
-        return value.Count > 0;
+        // Step 4: no default language system either. Nothing applies: the font scoped
+        // every feature to specific languages, and the reference engines agree that no
+        // language system means no lookups. Features such as SimSun's vertical
+        // alternates, which live only under its Chinese language systems, are reached by
+        // setting TextOptions.Culture to a Chinese culture.
+        return [];
     }
 
     /// <summary>
@@ -430,37 +614,5 @@ internal class GSubTable : Table
         }
 
         return featureList.FeatureTables[featureIndex];
-    }
-
-    /// <summary>
-    /// Maps a script class to an effective script class, checking whether the font supports it.
-    /// Falls back to <see cref="ScriptClass.Default"/> if the script is not present in the font.
-    /// </summary>
-    /// <param name="current">The script class to check.</param>
-    /// <returns>The effective script class.</returns>
-    private ScriptClass GetScriptClass(ScriptClass current)
-    {
-        if (current is ScriptClass.Common or ScriptClass.Unknown or ScriptClass.Inherited)
-        {
-            return current;
-        }
-
-        if (this.ScriptList is null)
-        {
-            return ScriptClass.Default;
-        }
-
-        Tag[] tags = UnicodeScriptTagMap.Instance[current];
-
-        for (int i = 0; i < tags.Length; i++)
-        {
-            if (this.ScriptList.TryGetValue(tags[i].Value, out ScriptListTable? _))
-            {
-                return current;
-            }
-        }
-
-        // Script for `current` not present in the font: use default shaper.
-        return ScriptClass.Default;
     }
 }

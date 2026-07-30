@@ -79,16 +79,20 @@ internal sealed class LookupType5Format1SubTable : LookupSubTable
         return new LookupType5Format1SubTable(coverageTable, seqRuleSets, lookupFlags, markFilteringSet);
     }
 
-    /// <inheritdoc />
+    /// <inheritdoc/>
+    public override void CollectDigest(ref GlyphSetDigest digest) => this.coverageTable.CollectDigest(ref digest);
+
+    /// <inheritdoc/>
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,
-        GlyphSubstitutionCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
+        uint lookupMask,
         int index,
         int count)
     {
-        ushort glyphId = collection[index].GlyphId;
+        ushort glyphId = buffer[index].GlyphId;
         if (glyphId == 0)
         {
             return false;
@@ -103,7 +107,12 @@ internal sealed class LookupType5Format1SubTable : LookupSubTable
         // TODO: Check this.
         // https://docs.microsoft.com/en-us/typography/opentype/spec/gsub#example-7-contextual-substitution-format-1
         SequenceRuleSetTable ruleSetTable = this.seqRuleSetTables[offset];
-        SkippingGlyphIterator iterator = new(fontMetrics, collection, index, this.LookupFlags, this.MarkFilteringSet);
+        SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
+
+        // Slot zero holds the coverage-matched glyph; the sequence match fills
+        // the rest, so nested lookups address the records the match consumed.
+        Span<int> matchPositions = buffer.GetContextMatchPositions();
+        matchPositions[0] = index;
         foreach (SequenceRuleTable ruleTable in ruleSetTable.SequenceRuleTables)
         {
             int remaining = count - 1;
@@ -113,7 +122,7 @@ internal sealed class LookupType5Format1SubTable : LookupSubTable
                 continue;
             }
 
-            if (!AdvancedTypographicUtils.MatchSequence(iterator, 1, ruleTable.InputSequence))
+            if (!AdvancedTypographicUtils.MatchSequence(iterator, 1, ruleTable.InputSequence, lookupMask, false, matchPositions[1..], out int matchEnd))
             {
                 continue;
             }
@@ -123,12 +132,48 @@ internal sealed class LookupType5Format1SubTable : LookupSubTable
                 fontMetrics,
                 table,
                 feature,
-                this.LookupFlags,
-                this.MarkFilteringSet,
+                lookupMask,
                 ruleTable.SequenceLookupRecords,
-                collection,
-                index,
-                count);
+                buffer,
+                matchPositions,
+                seqLength + 1,
+                matchEnd);
+        }
+
+        return false;
+    }
+
+    /// <inheritdoc />
+    public override bool WouldApply(ReadOnlySpan<ushort> glyphs, bool zeroContext)
+    {
+        int offset = this.coverageTable.CoverageIndexOf(glyphs[0]);
+        if (offset < 0 || offset >= this.seqRuleSetTables.Length)
+        {
+            return false;
+        }
+
+        foreach (SequenceRuleTable rule in this.seqRuleSetTables[offset].SequenceRuleTables)
+        {
+            ushort[] input = rule.InputSequence;
+            if (input.Length + 1 != glyphs.Length)
+            {
+                continue;
+            }
+
+            bool matched = true;
+            for (int i = 0; i < input.Length; i++)
+            {
+                if (glyphs[i + 1] != input[i])
+                {
+                    matched = false;
+                    break;
+                }
+            }
+
+            if (matched)
+            {
+                return true;
+            }
         }
 
         return false;
@@ -193,16 +238,20 @@ internal sealed class LookupType5Format2SubTable : LookupSubTable
         return new LookupType5Format2SubTable(classSeqRuleSets, classDefTable, coverageTable, lookupFlags, markFilteringSet);
     }
 
-    /// <inheritdoc />
+    /// <inheritdoc/>
+    public override void CollectDigest(ref GlyphSetDigest digest) => this.coverageTable.CollectDigest(ref digest);
+
+    /// <inheritdoc/>
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,
-        GlyphSubstitutionCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
+        uint lookupMask,
         int index,
         int count)
     {
-        ushort glyphId = collection[index].GlyphId;
+        ushort glyphId = buffer[index].GlyphId;
         if (glyphId == 0)
         {
             return false;
@@ -213,11 +262,11 @@ internal sealed class LookupType5Format2SubTable : LookupSubTable
             return false;
         }
 
-        // TODO: Check this.
-        // https://docs.microsoft.com/en-us/typography/opentype/spec/gsub#52-context-substitution-format-2-class-based-glyph-contexts
         int offset = this.classDefinitionTable.ClassIndexOf(glyphId);
-        if (offset < 0)
+        if (offset < 0 || offset >= this.sequenceRuleSetTables.Length)
         {
+            // A font may assign a class without supplying a corresponding rule set.
+            // The absent set has no substitutions rather than indexing past the table.
             return false;
         }
 
@@ -227,7 +276,12 @@ internal sealed class LookupType5Format2SubTable : LookupSubTable
             return false;
         }
 
-        SkippingGlyphIterator iterator = new(fontMetrics, collection, index, this.LookupFlags, this.MarkFilteringSet);
+        SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
+
+        // Slot zero holds the coverage-matched glyph; the sequence match fills
+        // the rest, so nested lookups address the records the match consumed.
+        Span<int> matchPositions = buffer.GetContextMatchPositions();
+        matchPositions[0] = index;
         foreach (ClassSequenceRuleTable ruleTable in ruleSetTable.SequenceRuleTables)
         {
             int remaining = count - 1;
@@ -237,7 +291,7 @@ internal sealed class LookupType5Format2SubTable : LookupSubTable
                 continue;
             }
 
-            if (!AdvancedTypographicUtils.MatchClassSequence(iterator, 1, ruleTable.InputSequence, this.classDefinitionTable))
+            if (!AdvancedTypographicUtils.MatchClassSequence(iterator, 1, ruleTable.InputSequence, this.classDefinitionTable, lookupMask, false, matchPositions[1..], out int matchEnd))
             {
                 continue;
             }
@@ -247,12 +301,52 @@ internal sealed class LookupType5Format2SubTable : LookupSubTable
                 fontMetrics,
                 table,
                 feature,
-                this.LookupFlags,
-                this.MarkFilteringSet,
+                lookupMask,
                 ruleTable.SequenceLookupRecords,
-                collection,
-                index,
-                count);
+                buffer,
+                matchPositions,
+                seqLength + 1,
+                matchEnd);
+        }
+
+        return false;
+    }
+
+    /// <inheritdoc />
+    public override bool WouldApply(ReadOnlySpan<ushort> glyphs, bool zeroContext)
+    {
+        int classId = this.classDefinitionTable.ClassIndexOf(glyphs[0]);
+        ClassSequenceRuleTable[]? rules = classId >= 0 && classId < this.sequenceRuleSetTables.Length
+            ? this.sequenceRuleSetTables[classId]?.SequenceRuleTables
+            : null;
+
+        if (rules is null)
+        {
+            return false;
+        }
+
+        foreach (ClassSequenceRuleTable rule in rules)
+        {
+            ushort[] input = rule.InputSequence;
+            if (input.Length + 1 != glyphs.Length)
+            {
+                continue;
+            }
+
+            bool matched = true;
+            for (int i = 0; i < input.Length; i++)
+            {
+                if (this.classDefinitionTable.ClassIndexOf(glyphs[i + 1]) != input[i])
+                {
+                    matched = false;
+                    break;
+                }
+            }
+
+            if (matched)
+            {
+                return true;
+            }
         }
 
         return false;
@@ -309,24 +403,42 @@ internal sealed class LookupType5Format3SubTable : LookupSubTable
         return new LookupType5Format3SubTable(coverageTables, seqLookupRecords, lookupFlags, markFilteringSet);
     }
 
-    /// <inheritdoc />
+    /// <inheritdoc/>
+    public override void CollectDigest(ref GlyphSetDigest digest)
+    {
+        if (this.coverageTables.Length == 0)
+        {
+            // Degenerate table data: without a first position coverage the gate
+            // cannot be known, so the lookup is always attempted.
+            digest.AddAll();
+            return;
+        }
+
+        this.coverageTables[0].CollectDigest(ref digest);
+    }
+
+    /// <inheritdoc/>
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,
-        GlyphSubstitutionCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
+        uint lookupMask,
         int index,
         int count)
     {
-        ushort glyphId = collection[index].GlyphId;
+        ushort glyphId = buffer[index].GlyphId;
         if (glyphId == 0)
         {
             return false;
         }
 
         // https://docs.microsoft.com/en-us/typography/opentype/spec/gsub#53-context-substitution-format-3-coverage-based-glyph-contexts
-        SkippingGlyphIterator iterator = new(fontMetrics, collection, index, this.LookupFlags, this.MarkFilteringSet);
-        if (!AdvancedTypographicUtils.MatchCoverageSequence(iterator, this.coverageTables, index, index + count))
+        // The input coverage array covers the whole input including its first
+        // glyph, so the match fills every position nested lookups address.
+        SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
+        Span<int> matchPositions = buffer.GetContextMatchPositions()[..AdvancedTypographicUtils.MaxContextLength];
+        if (!AdvancedTypographicUtils.MatchCoverageSequence(iterator, this.coverageTables, index, index + count, lookupMask, false, matchPositions, out int matchEnd))
         {
             return false;
         }
@@ -336,11 +448,31 @@ internal sealed class LookupType5Format3SubTable : LookupSubTable
             fontMetrics,
             table,
             feature,
-            this.LookupFlags,
-            this.MarkFilteringSet,
+            lookupMask,
             this.sequenceLookupRecords,
-            collection,
-            index,
-            count);
+            buffer,
+            matchPositions,
+            this.coverageTables.Length,
+            matchEnd);
+    }
+
+    /// <inheritdoc />
+    public override bool WouldApply(ReadOnlySpan<ushort> glyphs, bool zeroContext)
+    {
+        CoverageTable[] coverages = this.coverageTables;
+        if (coverages.Length != glyphs.Length)
+        {
+            return false;
+        }
+
+        for (int i = 1; i < glyphs.Length; i++)
+        {
+            if (coverages[i].CoverageIndexOf(glyphs[i]) < 0)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

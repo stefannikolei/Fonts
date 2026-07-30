@@ -110,17 +110,23 @@ internal static class LookupType4SubTable
         }
 
         /// <inheritdoc/>
+        public override void CollectDigest(ref GlyphSetDigest digest) => this.markCoverage.CollectDigest(ref digest);
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// The backward search and multiple-substitution acceptance rule are transcribed from HarfBuzz 14.2.1, <c>src/OT/Layout/GPOS/MarkBasePosFormat1.hh</c>, symbol <c>MarkBasePosFormat1_2::apply</c>. Default-ignorable transparency is defined by <c>matcher_t::may_skip</c> in <c>src/hb-ot-layout-gsubgpos.hh</c>. These rules are shaping behavior and are not derivable from the Unicode Character Database.
+        /// </remarks>
         public override bool TryUpdatePosition(
             FontMetrics fontMetrics,
             GPosTable table,
-            GlyphPositioningCollection collection,
+            ShapingBuffer buffer,
             Tag feature,
             int index,
             int count)
         {
             // Mark-to-Base Attachment Positioning Subtable.
             // Implements: https://docs.microsoft.com/en-us/typography/opentype/spec/gpos#lookup-type-4-mark-to-base-attachment-positioning-subtable
-            ushort glyphId = collection[index].GlyphId;
+            ushort glyphId = buffer[index].GlyphId;
             if (glyphId == 0)
             {
                 return false;
@@ -132,15 +138,29 @@ internal static class LookupType4SubTable
                 return false;
             }
 
-            // Search backward for a base glyph.
-            int baseGlyphIndex = index;
-            while (--baseGlyphIndex >= 0)
+            SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, LookupFlags.IgnoreMarks, 0);
+            iterator.SetMatchContext(buffer.LookupMask, false);
+
+            int baseGlyphIndex = iterator.Prev();
+            while (baseGlyphIndex >= 0)
             {
-                GlyphShapingData data = collection[baseGlyphIndex];
-                if (!AdvancedTypographicUtils.IsMarkGlyph(fontMetrics, data.GlyphId, data) && data.LigatureComponent <= 0)
+                ref GlyphShapingData candidate = ref buffer[baseGlyphIndex];
+                bool acceptsCandidate = !candidate.IsDecomposed
+                    || candidate.LigatureComponent == 0
+                    || baseGlyphIndex == 0
+                    || AdvancedTypographicUtils.IsMarkGlyph(fontMetrics, buffer[baseGlyphIndex - 1].GlyphId, ref buffer[baseGlyphIndex - 1])
+                    || !buffer[baseGlyphIndex - 1].IsDecomposed
+                    || candidate.LigatureId != buffer[baseGlyphIndex - 1].LigatureId
+                    || candidate.LigatureComponent != buffer[baseGlyphIndex - 1].LigatureComponent + 1;
+
+                // A later component may still be accepted when the font explicitly
+                // covers it; otherwise continue to the first component.
+                if (acceptsCandidate || this.baseCoverage.CoverageIndexOf(candidate.GlyphId) >= 0)
                 {
                     break;
                 }
+
+                baseGlyphIndex = iterator.Prev();
             }
 
             if (baseGlyphIndex < 0)
@@ -148,7 +168,7 @@ internal static class LookupType4SubTable
                 return false;
             }
 
-            ushort baseGlyphId = collection[baseGlyphIndex].GlyphId;
+            ushort baseGlyphId = buffer[baseGlyphIndex].GlyphId;
             int baseIndex = this.baseCoverage.CoverageIndexOf(baseGlyphId);
             if (baseIndex < 0 || baseIndex >= this.baseArrayTable.BaseRecords.Length)
             {
@@ -157,7 +177,7 @@ internal static class LookupType4SubTable
 
             MarkRecord markRecord = this.markArrayTable.MarkRecords[markIndex];
             AnchorTable baseAnchor = this.baseArrayTable.BaseRecords[baseIndex].BaseAnchorTables[markRecord.MarkClass];
-            AdvancedTypographicUtils.ApplyAnchor(fontMetrics, collection, index, baseAnchor, markRecord, baseGlyphIndex, feature);
+            AdvancedTypographicUtils.ApplyAnchor(fontMetrics, buffer, index, baseAnchor, markRecord, baseGlyphIndex, feature);
 
             return true;
         }

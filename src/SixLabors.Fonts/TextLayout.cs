@@ -3,7 +3,6 @@
 
 using System.Numerics;
 using SixLabors.Fonts.Tables.AdvancedTypographic;
-using SixLabors.Fonts.Unicode;
 
 namespace SixLabors.Fonts;
 
@@ -21,265 +20,6 @@ internal static partial class TextLayout
     /// The tag for the ideographic-under baseline ('ideo') in the font's baseline table.
     /// </summary>
     private static readonly Tag IdeographicBaselineTag = Tag.Parse("ideo");
-
-    /// <summary>
-    /// Resolves the ordered sequence of <see cref="TextRun"/> instances that cover <paramref name="text"/>.
-    /// </summary>
-    /// <remarks>
-    /// If <see cref="TextOptions.TextRuns"/> is <see langword="null"/> or empty, a single run covering the entire
-    /// grapheme range of <paramref name="text"/> using <see cref="TextOptions.Font"/> is returned. Otherwise the
-    /// supplied runs are ordered, gaps are filled with default-font runs, and overlapping ranges are trimmed.
-    /// </remarks>
-    /// <param name="text">The text to partition into runs.</param>
-    /// <param name="options">The text options supplying the default font and optional user-defined runs.</param>
-    /// <returns>The resolved runs that together cover the entire grapheme range of <paramref name="text"/>.</returns>
-    public static IReadOnlyList<TextRun> BuildTextRuns(ReadOnlySpan<char> text, TextOptions options)
-    {
-        int start = 0;
-        int end = text.GetGraphemeCount();
-        if (end == 0)
-        {
-            return [];
-        }
-
-        if (options.TextRuns is null || options.TextRuns.Count == 0)
-        {
-            TextRun textRun = new()
-            {
-                Start = 0,
-                End = text.GetGraphemeCount(),
-                Font = options.Font
-            };
-
-            textRun.ResolveFontWeight(options.FontWeight);
-            return [textRun];
-        }
-
-        List<TextRun> textRuns = [];
-        foreach (TextRun textRun in options.TextRuns.OrderBy(x => x.Start))
-        {
-            // Fill gaps within runs.
-            if (textRun.Start > start)
-            {
-                textRuns.Add(new()
-                {
-                    Start = start,
-                    End = textRun.Start,
-                    Font = options.Font
-                });
-            }
-
-            // Add the current run, ensuring the font is not null.
-            textRun.Font ??= options.Font;
-
-            if (textRun.Placeholder.HasValue && textRun.End != textRun.Start)
-            {
-                throw new ArgumentException("Placeholder text runs must be zero-length insertion runs.", nameof(options));
-            }
-
-            // Ensure that the previous run does not overlap the current.
-            if (textRuns.Count > 0)
-            {
-                int prevIndex = textRuns.Count - 1;
-                TextRun previous = textRuns[prevIndex];
-                previous.End = Math.Min(previous.End, textRun.Start);
-            }
-
-            textRuns.Add(textRun);
-            start = textRun.End;
-        }
-
-        // Add a final run if required.
-        if (start < end)
-        {
-            textRuns.Add(new()
-            {
-                Start = start,
-                End = end,
-                Font = options.Font
-            });
-        }
-
-        foreach (TextRun textRun in textRuns)
-        {
-            textRun.ResolveFontWeight(options.FontWeight);
-        }
-
-        return textRuns;
-    }
-
-    /// <summary>
-    /// Shapes <paramref name="text"/> into shaping state that is independent of the wrapping length.
-    /// </summary>
-    /// <remarks>
-    /// Performs the font-run build, bidi analysis, GSUB/GPOS shaping (including fallback font
-    /// resolution for unmapped codepoints). The result contains the positioned glyph collection
-    /// and bidi state used by logical line composition.
-    /// </remarks>
-    /// <param name="text">The text to process.</param>
-    /// <param name="options">The text options used while shaping.</param>
-    /// <returns>The wrapping-independent shaping state.</returns>
-    public static ShapedText ShapeText(ReadOnlySpan<char> text, TextOptions options)
-    {
-        // Gather the font and fallbacks.
-        Font[] fallbackFonts = (options.FallbackFontFamilies?.Count > 0)
-            ? [.. options.FallbackFontFamilies.Select(x => new Font(x, options.Font.Size, options.Font.RequestedStyle))]
-            : [];
-
-        LayoutMode layoutMode = options.LayoutMode;
-        GlyphSubstitutionCollection substitutions = new(options);
-        GlyphPositioningCollection positionings = new(options);
-
-        // Analyse the text for bidi directional runs.
-        BidiAlgorithm bidi = BidiAlgorithm.Instance.Value!;
-        BidiData bidiData = new();
-        bidiData.Init(text, (sbyte)options.TextDirection);
-
-        if (options.TextBidiMode == TextBidiMode.Override)
-        {
-            BidiCharacterType overrideType = options.TextDirection == TextDirection.Auto
-                ? (bidi.ResolveEmbeddingLevel(bidiData.Types) == 1 ? BidiCharacterType.RightToLeft : BidiCharacterType.LeftToRight)
-                : (options.TextDirection == TextDirection.RightToLeft ? BidiCharacterType.RightToLeft : BidiCharacterType.LeftToRight);
-
-            for (int i = 0; i < bidiData.Types.Length; i++)
-            {
-                // Bidi override is a higher-level protocol override: real text behaves as the requested
-                // strong direction, while separators and explicit bidi controls keep their structural role.
-                bidiData.Types[i] = bidiData.Types[i] switch
-                {
-                    BidiCharacterType.ParagraphSeparator
-                    or BidiCharacterType.SegmentSeparator
-                    or BidiCharacterType.BoundaryNeutral
-                    or BidiCharacterType.LeftToRightEmbedding
-                    or BidiCharacterType.RightToLeftEmbedding
-                    or BidiCharacterType.LeftToRightOverride
-                    or BidiCharacterType.RightToLeftOverride
-                    or BidiCharacterType.PopDirectionalFormat
-                    or BidiCharacterType.LeftToRightIsolate
-                    or BidiCharacterType.RightToLeftIsolate
-                    or BidiCharacterType.FirstStrongIsolate
-                    or BidiCharacterType.PopDirectionalIsolate => bidiData.Types[i],
-                    _ => overrideType,
-                };
-            }
-        }
-
-        bidi.Process(bidiData);
-
-        // Get the list of directional runs
-        BidiRun[] bidiRuns = [.. BidiRun.CoalesceLevels(bidi.ResolvedLevels)];
-        Dictionary<int, int> bidiMap = [];
-
-        // Incrementally build out collection of glyphs.
-        IReadOnlyList<TextRun> textRuns = BuildTextRuns(text, options);
-
-        // First do multiple font runs using the individual text runs.
-        bool complete = true;
-        int textRunIndex = 0;
-        int codePointIndex = 0;
-        int bidiRunIndex = 0;
-        foreach (TextRun textRun in textRuns)
-        {
-            if (textRun.Placeholder.HasValue)
-            {
-                substitutions.Clear();
-
-                while (bidiRunIndex < bidiRuns.Length && codePointIndex == bidiRuns[bidiRunIndex].End)
-                {
-                    bidiRunIndex++;
-                }
-
-                // Placeholder direction comes from the bidi region at the insertion
-                // point. If the insertion point is after all source text, use the
-                // default even/LTR embedding level.
-                BidiRun placeholderBidiRun = bidiRunIndex < bidiRuns.Length
-                    ? bidiRuns[bidiRunIndex]
-                    : new(BidiCharacterType.LeftToRight, 2, codePointIndex, 0);
-
-                // Placeholder runs are inserted into the layout stream and do not consume
-                // source graphemes, source codepoints, or bidi runs.
-                substitutions.AddPlaceholder(
-                    CodePoint.ObjectReplacementChar,
-                    placeholderBidiRun,
-                    textRun,
-                    codePointIndex);
-
-                complete &= positionings.TryAdd(textRun.ResolvedFont, substitutions);
-                textRunIndex++;
-                continue;
-            }
-
-            if (!DoFontRun(
-                textRun.Slice(text),
-                textRun.Start,
-                textRuns,
-                ref textRunIndex,
-                ref codePointIndex,
-                ref bidiRunIndex,
-                false,
-                textRun.ResolvedFont,
-                bidiRuns,
-                bidiMap,
-                substitutions,
-                positionings))
-            {
-                complete = false;
-            }
-        }
-
-        if (!complete)
-        {
-            // Finally try our fallback fonts.
-            // We do a complete run here across the whole collection.
-            foreach (Font font in fallbackFonts)
-            {
-                textRunIndex = 0;
-                codePointIndex = 0;
-                bidiRunIndex = 0;
-                if (DoFontRun(
-                    text,
-                    0,
-                    textRuns,
-                    ref textRunIndex,
-                    ref codePointIndex,
-                    ref bidiRunIndex,
-                    true,
-                    font,
-                    bidiRuns,
-                    bidiMap,
-                    substitutions,
-                    positionings))
-                {
-                    break;
-                }
-            }
-        }
-
-        // Update the positions of the glyphs in the completed collection.
-        // Each set of metrics is associated with single font and will only be updated
-        // by that font so it's safe to use a single collection.
-        Font? lastFont = null;
-        for (int i = 0; i < textRuns.Count; i++)
-        {
-            TextRun textRun = textRuns[i];
-
-            Font font = textRun.ResolvedFont;
-            if (font == lastFont)
-            {
-                continue;
-            }
-
-            font.FontMetrics.UpdatePositions(positionings);
-            lastFont = font;
-        }
-
-        foreach (Font font in fallbackFonts)
-        {
-            font.FontMetrics.UpdatePositions(positionings);
-        }
-
-        return new ShapedText(positionings, bidiRuns, bidiMap, layoutMode);
-    }
 
     /// <summary>
     /// Lays out the supplied <see cref="TextBox"/>, streaming each laid-out glyph through the
@@ -515,7 +255,7 @@ internal static partial class TextLayout
     /// Use <see cref="float.PositiveInfinity"/> to disable culling at this edge.
     /// </param>
     /// <param name="visitor">The visitor that receives each positioned glyph.</param>
-    internal static void LayoutText<TVisitor>(
+    public static void LayoutText<TVisitor>(
         TextBox textBox,
         TextOptions options,
         float wrappingLength,
@@ -835,7 +575,8 @@ internal static partial class TextLayout
 
             if (data.IsNewLine)
             {
-                FontGlyphMetrics metric = data.Metrics[0];
+                PositionedGlyphMetrics hardBreakPositioned = data.Metrics.Span[0];
+                FontGlyphMetrics metric = hardBreakPositioned.Metrics;
 
                 // Hard breaks bypass the normal glyph loop, but still need the
                 // current pen position plus the same baseline origin used by glyphs.
@@ -843,7 +584,7 @@ internal static partial class TextLayout
 
                 visitor.Visit(
                     new GlyphLayout(
-                    new Glyph(metric, data.PointSize),
+                    new Glyph(metric, data.PointSize, hardBreakPositioned.TextRun, hardBreakPositioned.Offset, new Vector2(hardBreakPositioned.AdvanceWidth, hardBreakPositioned.AdvanceHeight)),
                     data.Font,
                     boundsLocation,
                     hardBreakGlyphOrigin,
@@ -865,28 +606,45 @@ internal static partial class TextLayout
                 return;
             }
 
-            // Index rather than enumerate: the interface-typed metrics list would allocate a
-            // heap enumerator per glyph on this per-glyph hot path.
-            IReadOnlyList<FontGlyphMetrics> metrics = data.Metrics;
-            for (int j = 0; j < metrics.Count; j++)
+            // The entry's slice is the shaper's visual glyph stream; index it as a
+            // span so the per-glyph hot path performs no interface dispatch.
+            ReadOnlySpan<PositionedGlyphMetrics> metrics = data.Metrics.Span;
+            float glyphAdvanceX = 0;
+            for (int j = 0; j < metrics.Length; j++)
             {
-                FontGlyphMetrics metric = metrics[j];
-                Vector2 glyphOrigin = penLocation + new Vector2(0, textLine.ScaledMaxAscender);
+                PositionedGlyphMetrics positioned = metrics[j];
+                FontGlyphMetrics metric = positioned.Metrics;
+                float positionedAdvanceX = positioned.AdvanceWidth * (data.PointSize / metric.ScaleFactor.X);
+
+                // Browsers supply the current accumulated advance to each glyph
+                // before adding that glyph's own advance. Preserve that positioned
+                // walk when several glyphs share one layout entry.
+                Vector2 advanceOrigin = boundsLocation + new Vector2(glyphAdvanceX, 0);
+                Vector2 glyphOrigin = penLocation + new Vector2(glyphAdvanceX, textLine.ScaledMaxAscender);
+
+                // Tracking and justification live on the layout entry rather than
+                // in shaping. Assign their residual to the final positioned glyph
+                // so per-glyph logical boxes still sum to the entry's exact advance.
+                float glyphLayoutAdvance = j == metrics.Length - 1
+                    ? data.ScaledAdvance - glyphAdvanceX
+                    : positionedAdvanceX;
 
                 visitor.Visit(
                     new GlyphLayout(
-                    new Glyph(metric, data.PointSize),
+                    new Glyph(metric, data.PointSize, positioned.TextRun, positioned.Offset, new Vector2(positioned.AdvanceWidth, positioned.AdvanceHeight)),
                     data.Font,
-                    boundsLocation,
+                    advanceOrigin,
                     glyphOrigin,
                     glyphOrigin,
-                    data.ScaledAdvance,
+                    glyphLayoutAdvance,
                     advanceY,
                     GlyphLayoutMode.Horizontal,
                     data.BidiRun.Level,
                     i == 0 && j == 0,
                     data.GraphemeIndex,
                     data.StringIndex));
+
+                glyphAdvanceX += positionedAdvanceX;
             }
 
             boxLocation.X += layoutAdvance;
@@ -903,8 +661,7 @@ internal static partial class TextLayout
     /// <summary>
     /// Positions one line of vertical text (<see cref="LayoutMode.VerticalLeftRight"/> and
     /// <see cref="LayoutMode.VerticalRightLeft"/>). All glyphs are treated as naturally vertical —
-    /// transformed (rotated) graphemes receive grapheme-level horizontal centering based on the
-    /// collective ink width of every entry sharing a grapheme index.
+    /// every shaped glyph is positioned at its running vertical advance.
     /// </summary>
     /// <typeparam name="TVisitor">The concrete visitor struct type.</typeparam>
     /// <param name="textBox">The containing text box (used to look up sibling lines for block alignment).</param>
@@ -1045,23 +802,7 @@ internal static partial class TextLayout
             return;
         }
 
-        float lineOriginX = penLocation.X;
         Vector2 boundsLocation = boxLocation;
-        float boundsLineOriginX = boundsLocation.X;
-
-        // Grapheme-scoped state for transformed glyph alignment.
-        //
-        // IMPORTANT: GlyphLayoutData is per-codepoint, not per-grapheme.
-        // Complex scripts can therefore produce multiple entries for a single grapheme.
-        // For example Devanagari "र्कि" can end up as two entries ("र्" and "कि") even though it
-        // visually shapes as a single cluster.
-        //
-        // - Compute a single alignX for the whole grapheme (across all entries with the same GraphemeIndex).
-        // - Apply that alignX as a positional offset only, never as part of pen/box advance.
-        // - Transformed entries still advance along X within the grapheme (horizontal glyphs inside a vertical flow),
-        //   then X is reset at the end of the grapheme.
-        float currentGraphemeAlignX = 0;
-        bool currentGraphemeIsTransformed = false;
 
         for (int i = 0; i < textLine.Count; i++)
         {
@@ -1071,7 +812,8 @@ internal static partial class TextLayout
 
             if (data.IsNewLine)
             {
-                FontGlyphMetrics metric = data.Metrics[0];
+                PositionedGlyphMetrics hardBreakPositioned = data.Metrics.Span[0];
+                FontGlyphMetrics metric = hardBreakPositioned.Metrics;
                 Vector2 scale = new Vector2(data.PointSize) / metric.ScaleFactor;
 
                 // Hard breaks bypass the normal glyph loop, but still need the
@@ -1081,7 +823,7 @@ internal static partial class TextLayout
 
                 visitor.Visit(
                     new GlyphLayout(
-                    new Glyph(metric, data.PointSize),
+                    new Glyph(metric, data.PointSize, hardBreakPositioned.TextRun, hardBreakPositioned.Offset, new Vector2(hardBreakPositioned.AdvanceWidth, hardBreakPositioned.AdvanceHeight)),
                     data.Font,
                     boundsLocation,
                     hardBreakGlyphOrigin,
@@ -1105,184 +847,74 @@ internal static partial class TextLayout
 
             int j = 0;
 
-            bool isFirstInGrapheme = data.GraphemeCodePointIndex == 0;
-            float alignX = 0;
-            float entryScaledAdvanceWidth = 0;
-
-            if (isFirstInGrapheme)
+            // The entry's slice is the shaper's visual glyph stream; index it as a
+            // span so the per-glyph hot path performs no interface dispatch.
+            ReadOnlySpan<PositionedGlyphMetrics> metrics = data.Metrics.Span;
+            float glyphAdvanceY = 0;
+            for (int metricIndex = 0; metricIndex < metrics.Length; metricIndex++)
             {
-                // Reset grapheme-scoped state at the start of each grapheme.
-                currentGraphemeAlignX = 0;
-                currentGraphemeIsTransformed = false;
+                PositionedGlyphMetrics positioned = metrics[metricIndex];
+                FontGlyphMetrics metric = positioned.Metrics;
 
-                // Determine whether this grapheme contains any transformed entries.
-                // This is intentionally done at grapheme scope because individual entries can differ.
-                int graphemeIndex = data.GraphemeIndex;
-
-                for (int k = i; k < textLine.Count; k++)
-                {
-                    GlyphLayoutData g = textLine[k];
-
-                    if (g.GraphemeIndex != graphemeIndex)
-                    {
-                        break;
-                    }
-
-                    if (g.IsTransformed)
-                    {
-                        currentGraphemeIsTransformed = true;
-                        break;
-                    }
-                }
-
-                if (currentGraphemeIsTransformed)
-                {
-                    // In vertical layout, glyphs with a vertical orientation of TransformRotate/TransformUpright are
-                    // rendered as "horizontal" glyphs inside a vertical flow.
-                    //
-                    // Their horizontal metrics (including LSB) are still expressed in the font's horizontal writing mode,
-                    // so without an adjustment these glyphs appear shifted within the column.
-                    //
-                    // To make transformed glyphs align visually with naturally-vertical glyphs, we center the ink bounds
-                    // of the ENTIRE grapheme (across all entries with the same GraphemeIndex) within the column width
-                    // (`scaledMaxLineHeight`).
-                    float minX = float.PositiveInfinity;
-                    float maxX = float.NegativeInfinity;
-
-                    for (int k = i; k < textLine.Count; k++)
-                    {
-                        GlyphLayoutData g = textLine[k];
-
-                        if (g.GraphemeIndex != graphemeIndex)
-                        {
-                            break;
-                        }
-
-                        // Index rather than enumerate to avoid a heap enumerator per grapheme.
-                        IReadOnlyList<FontGlyphMetrics> inkMetrics = g.Metrics;
-                        for (int m = 0; m < inkMetrics.Count; m++)
-                        {
-                            FontGlyphMetrics inkMetric = inkMetrics[m];
-                            Vector2 s = new Vector2(g.PointSize) / inkMetric.ScaleFactor;
-
-                            float glyphMinX = inkMetric.Bounds.Min.X * s.X;
-                            float glyphMaxX = inkMetric.Bounds.Max.X * s.X;
-
-                            if (glyphMinX < minX)
-                            {
-                                minX = glyphMinX;
-                            }
-
-                            if (glyphMaxX > maxX)
-                            {
-                                maxX = glyphMaxX;
-                            }
-                        }
-                    }
-
-                    float inkWidth = maxX - minX;
-
-                    // Normalize ink minX to 0 and center within the entry's own line box.
-                    // The decoration origin has already centered that entry line box within
-                    // the widest line box, so using the widest line box here would apply the
-                    // mixed-size offset twice.
-                    // This is grapheme-correct and avoids centering based only on the "first" entry,
-                    // which is not representative for marks like reph in Devanagari.
-                    currentGraphemeAlignX = -minX + ((scaledLineHeight - inkWidth) * .5F);
-                }
-            }
-
-            if (currentGraphemeIsTransformed)
-            {
-                // Apply the grapheme-level horizontal centering offset to every entry in the grapheme.
-                // This is positional only and must never be folded into any advance.
-                alignX = currentGraphemeAlignX;
-
-                // Transformed glyphs are still positioned using horizontal metrics (`AdvanceWidth`) even though
-                // they participate in a vertical flow. `AdvanceWidth` gives us the horizontal pen advance we must
-                // apply between entries inside the transformed grapheme.
-                // Index rather than enumerate to avoid a heap enumerator per glyph.
-                IReadOnlyList<FontGlyphMetrics> transformedMetrics = data.Metrics;
-                for (int m = 0; m < transformedMetrics.Count; m++)
-                {
-                    FontGlyphMetrics transformedMetric = transformedMetrics[m];
-                    Vector2 s = new Vector2(data.PointSize) / transformedMetric.ScaleFactor;
-                    entryScaledAdvanceWidth += transformedMetric.AdvanceWidth * s.X;
-                }
-            }
-
-            // Index rather than enumerate: the interface-typed metrics list would allocate a
-            // heap enumerator per glyph on this per-glyph hot path.
-            IReadOnlyList<FontGlyphMetrics> metrics = data.Metrics;
-            for (int metricIndex = 0; metricIndex < metrics.Count; metricIndex++)
-            {
-                FontGlyphMetrics metric = metrics[metricIndex];
-
-                // Align the glyph horizontally and vertically centering vertically around the baseline.
+                // Browsers retain each shaped glyph and advance the vertical pen after
+                // positioning it; source grouping only controls added letter spacing.
                 Vector2 scale = new Vector2(data.PointSize) / metric.ScaleFactor;
-                float glyphAlignX = alignX;
 
-                if (!currentGraphemeIsTransformed)
+                // Upright glyphs use a vertical origin centered on half their
+                // nominal horizontal advance, even when shaping zeroed a mark's
+                // positioned advance, so center that nominal width in the line box.
+                float glyphAlignX = (scaledLineHeight - (metric.AdvanceWidth * scale.X)) * .5F;
+                float verticalOriginY = (metric.Bounds.Max.Y + metric.TopSideBearing) * scale.Y;
+                float positionedAdvanceY = positioned.AdvanceHeight * scale.Y;
+                VerticalMetrics verticalMetrics = metric.FontMetrics.VerticalMetrics;
+                if (verticalMetrics.Synthesized && positioned.AdvanceHeight != 0)
                 {
-                    // Vertical origin fallback places the vertical origin at half the
-                    // horizontal advance. The decoration origin has already centered this
-                    // entry's line box in the column, so center the glyph advance inside it.
-                    glyphAlignX = (scaledLineHeight - (metric.AdvanceWidth * scale.X)) * .5F;
+                    // Browsers round the synthesized nominal height before shaping.
+                    // Replace that component after shaping while retaining any
+                    // positioning delta carried by this glyph.
+                    float nominalAdvance = metric.AdvanceHeight * scale.Y;
+                    float browserAdvance = (MathF.Floor((verticalMetrics.Ascender * scale.Y * options.Dpi) + .5F)
+                        + MathF.Floor((-verticalMetrics.Descender * scale.Y * options.Dpi) + .5F)) / options.Dpi;
+                    positionedAdvanceY += browserAdvance - nominalAdvance;
                 }
 
                 // Move the glyph origin without changing the advance or decoration origin.
-                Vector2 glyphOffset = new(glyphAlignX, (metric.Bounds.Max.Y + metric.TopSideBearing) * scale.Y);
-                Vector2 decorationOrigin = penLocation + new Vector2((unscaledLineHeight - scaledLineHeight) * .5F, 0);
+                Vector2 glyphOffset = new(glyphAlignX, verticalOriginY);
+                Vector2 advanceOrigin = boundsLocation + new Vector2(0, glyphAdvanceY);
+                Vector2 decorationOrigin = penLocation + new Vector2((unscaledLineHeight - scaledLineHeight) * .5F, glyphAdvanceY);
                 Vector2 glyphOrigin = decorationOrigin + glyphOffset;
 
-                float advanceW = advanceX;
-
-                if (currentGraphemeIsTransformed && !isFirstInGrapheme)
-                {
-                    // For transformed glyphs after the first in the grapheme we advance
-                    // horizontally using the horizontal advance not the line height.
-                    // This gives us the correct total advance across the grapheme.
-                    advanceW = scale.X * metric.AdvanceWidth;
-                }
+                // The final positioned glyph owns tracking and justification so the
+                // logical boxes cover the exact entry advance without changing the
+                // HarfBuzz-derived origins of any preceding glyph.
+                float glyphLayoutAdvance = metricIndex == metrics.Length - 1
+                    ? data.ScaledAdvance - glyphAdvanceY
+                    : positionedAdvanceY;
 
                 visitor.Visit(
                     new GlyphLayout(
-                    new Glyph(metric, data.PointSize),
+                    new Glyph(metric, data.PointSize, positioned.TextRun, positioned.Offset, new Vector2(positioned.AdvanceWidth, positioned.AdvanceHeight)),
                     data.Font,
-                    boundsLocation,
+                    advanceOrigin,
                     glyphOrigin,
                     decorationOrigin,
-                    advanceW,
-                    data.ScaledAdvance,
+                    advanceX,
+                    glyphLayoutAdvance,
                     GlyphLayoutMode.Vertical,
                     data.BidiRun.Level,
                     i == 0 && j == 0,
                     data.GraphemeIndex,
                     data.StringIndex));
 
+                // Several glyphs may share one source position. Advance after each
+                // visit so marks and decomposed forms retain their shaped
+                // relative positions instead of being painted on one origin.
+                glyphAdvanceY += positionedAdvanceY;
                 j++;
             }
 
-            if (currentGraphemeIsTransformed)
-            {
-                // Advance horizontally between entries inside the transformed grapheme.
-                boxLocation.X += entryScaledAdvanceWidth;
-                penLocation.X += entryScaledAdvanceWidth;
-            }
-
-            if (currentGraphemeIsTransformed)
-            {
-                boundsLocation.X += entryScaledAdvanceWidth;
-            }
-
-            if (data.IsLastInGrapheme)
-            {
-                penLocation.Y += layoutAdvance;
-                boxLocation.X = lineOriginX;
-                penLocation.X = lineOriginX;
-                boundsLocation.Y += data.ScaledAdvance;
-                boundsLocation.X = boundsLineOriginX;
-            }
+            penLocation.Y += layoutAdvance;
+            boundsLocation.Y += data.ScaledAdvance;
         }
 
         boxLocation.Y = originY;
@@ -1446,7 +1078,8 @@ internal static partial class TextLayout
 
             if (data.IsNewLine)
             {
-                FontGlyphMetrics metric = data.Metrics[0];
+                PositionedGlyphMetrics hardBreakPositioned = data.Metrics.Span[0];
+                FontGlyphMetrics metric = hardBreakPositioned.Metrics;
                 Vector2 scale = new Vector2(data.PointSize) / metric.ScaleFactor;
 
                 // Hard breaks bypass the normal glyph loop, but still need the
@@ -1456,7 +1089,7 @@ internal static partial class TextLayout
 
                 visitor.Visit(
                     new GlyphLayout(
-                    new Glyph(metric, data.PointSize),
+                    new Glyph(metric, data.PointSize, hardBreakPositioned.TextRun, hardBreakPositioned.Offset, new Vector2(hardBreakPositioned.AdvanceWidth, hardBreakPositioned.AdvanceHeight)),
                     data.Font,
                     boundsLocation,
                     hardBreakGlyphOrigin,
@@ -1480,78 +1113,117 @@ internal static partial class TextLayout
 
             if (data.IsTransformed)
             {
-                // Index rather than enumerate: the interface-typed metrics list would allocate a
-                // heap enumerator per glyph on this per-glyph hot path.
-                IReadOnlyList<FontGlyphMetrics> metrics = data.Metrics;
-                for (int j = 0; j < metrics.Count; j++)
+                // Browsers derive the text origin from the primary font of the styled run, then
+                // paints every fallback glyph at that shared baseline. Using each fallback
+                // font's ascender and descender here would shift scripts with different metrics
+                // across the column even though they belong to the same styled run.
+                FontMetrics baselineFontMetrics = data.Metrics.Span[0].TextRun.ResolvedFont.FontMetrics;
+                HorizontalMetrics baselineMetrics = baselineFontMetrics.HorizontalMetrics;
+                float baselineScale = data.PointSize / baselineFontMetrics.ScaleFactor;
+                float centralOffset = (baselineMetrics.Ascender + baselineMetrics.Descender) * .5F * baselineScale;
+                float baselineX = (unscaledLineHeight * .5F) - centralOffset;
+
+                // The entry's slice is the shaper's visual glyph stream; index it as
+                // a span so the per-glyph hot path performs no interface dispatch.
+                ReadOnlySpan<PositionedGlyphMetrics> metrics = data.Metrics.Span;
+                float glyphAdvanceY = 0;
+                for (int j = 0; j < metrics.Length; j++)
                 {
-                    FontGlyphMetrics metric = metrics[j];
+                    PositionedGlyphMetrics positioned = metrics[j];
+                    FontGlyphMetrics metric = positioned.Metrics;
+                    float positionedAdvanceY = positioned.AdvanceWidth * (data.PointSize / metric.ScaleFactor.X);
 
                     // The glyph will be rotated 90 degrees for vertical mixed layout.
-                    // We still advance along Y, but the glyphs are laid out sideways in X.
+                    // Its horizontal shaped advance therefore becomes a positive
+                    // vertical device-space advance after the clockwise rotation.
+                    Vector2 advanceOrigin = boundsLocation + new Vector2(0, glyphAdvanceY);
+                    Vector2 glyphOrigin = penLocation + new Vector2(baselineX, glyphAdvanceY);
 
-                    // Rotated glyphs sit on the line's alphabetic baseline, which lies half
-                    // the ascender-plus-descender span toward the under side of the central
-                    // column axis at the middle of the line. Upright glyphs in the same line
-                    // center on that axis, so both orientations share the column lines the
-                    // horizontal metrics synthesize, which is also how browsers position
-                    // mixed-orientation runs.
-                    Vector2 rotatedScale = new Vector2(data.PointSize) / metric.ScaleFactor;
-                    HorizontalMetrics rotatedMetrics = metric.FontMetrics.HorizontalMetrics;
-                    float centralOffset = (rotatedMetrics.Ascender + rotatedMetrics.Descender) * .5F * rotatedScale.Y;
-
-                    float baselineX = (unscaledLineHeight * .5F) - centralOffset;
-                    Vector2 glyphOrigin = penLocation + new Vector2(baselineX, 0);
+                    // Preserve the positioned-glyph walk and attach any layout-only
+                    // spacing to its final glyph, exactly as in the horizontal path.
+                    float glyphLayoutAdvance = j == metrics.Length - 1
+                        ? data.ScaledAdvance - glyphAdvanceY
+                        : positionedAdvanceY;
 
                     visitor.Visit(
                         new GlyphLayout(
-                        new Glyph(metric, data.PointSize),
+                        new Glyph(metric, data.PointSize, positioned.TextRun, positioned.Offset, new Vector2(positioned.AdvanceWidth, positioned.AdvanceHeight)),
                         data.Font,
-                        boundsLocation,
+                        advanceOrigin,
                         glyphOrigin,
                         glyphOrigin,
                         advanceX,
-                        data.ScaledAdvance,
+                        glyphLayoutAdvance,
                         GlyphLayoutMode.VerticalRotated,
                         data.BidiRun.Level,
                         i == 0 && j == 0,
                         data.GraphemeIndex,
                         data.StringIndex));
+
+                    glyphAdvanceY += positionedAdvanceY;
                 }
             }
             else
             {
-                // Index rather than enumerate to avoid a heap enumerator per glyph.
-                IReadOnlyList<FontGlyphMetrics> metrics = data.Metrics;
-                for (int j = 0; j < metrics.Count; j++)
+                // The entry's slice is the shaper's visual glyph stream; index it as
+                // a span so the per-glyph hot path performs no interface dispatch.
+                ReadOnlySpan<PositionedGlyphMetrics> metrics = data.Metrics.Span;
+                float glyphAdvanceY = 0;
+                for (int j = 0; j < metrics.Length; j++)
                 {
-                    FontGlyphMetrics metric = metrics[j];
+                    PositionedGlyphMetrics positioned = metrics[j];
+                    FontGlyphMetrics metric = positioned.Metrics;
 
-                    // Align the glyph horizontally and vertically centering vertically around the baseline.
+                    // Each glyph from one source position retains its shaped origin and
+                    // contributes its positioned advance to the following glyph.
                     Vector2 scale = new Vector2(data.PointSize) / metric.ScaleFactor;
 
                     // Vertical origin fallback places the vertical origin at half the
-                    // horizontal advance. The decoration origin has already centered this
-                    // entry's line box in the column, so center the glyph advance inside it.
+                    // nominal horizontal advance. Positioned mark advances can be zero,
+                    // but that must not move their vertical origin across the column.
                     float glyphAlignX = (scaledLineHeight - (metric.AdvanceWidth * scale.X)) * .5F;
-                    Vector2 glyphOffset = new(glyphAlignX, (metric.Bounds.Max.Y + metric.TopSideBearing) * scale.Y);
-                    Vector2 decorationOrigin = penLocation + new Vector2((unscaledLineHeight - scaledLineHeight) * .5F, 0);
+                    float verticalOriginY = (metric.Bounds.Max.Y + metric.TopSideBearing) * scale.Y;
+                    float positionedAdvanceY = positioned.AdvanceHeight * scale.Y;
+                    VerticalMetrics verticalMetrics = metric.FontMetrics.VerticalMetrics;
+                    if (verticalMetrics.Synthesized && positioned.AdvanceHeight != 0)
+                    {
+                        // Preserve the shaper's positioning delta while replacing the
+                        // nominal synthesized height with the device-rounded browser value.
+                        float nominalAdvance = metric.AdvanceHeight * scale.Y;
+                        float browserAdvance = (MathF.Floor((verticalMetrics.Ascender * scale.Y * options.Dpi) + .5F)
+                            + MathF.Floor((-verticalMetrics.Descender * scale.Y * options.Dpi) + .5F)) / options.Dpi;
+                        positionedAdvanceY += browserAdvance - nominalAdvance;
+                    }
+
+                    Vector2 glyphOffset = new(glyphAlignX, verticalOriginY);
+                    Vector2 advanceOrigin = boundsLocation + new Vector2(0, glyphAdvanceY);
+                    Vector2 decorationOrigin = penLocation + new Vector2((unscaledLineHeight - scaledLineHeight) * .5F, glyphAdvanceY);
                     Vector2 glyphOrigin = decorationOrigin + glyphOffset;
+
+                    // Layout-only spacing belongs to the final positioned glyph,
+                    // preserving exact per-glyph origins and the aggregate advance.
+                    float glyphLayoutAdvance = j == metrics.Length - 1
+                        ? data.ScaledAdvance - glyphAdvanceY
+                        : positionedAdvanceY;
 
                     visitor.Visit(
                         new GlyphLayout(
-                        new Glyph(metric, data.PointSize),
+                        new Glyph(metric, data.PointSize, positioned.TextRun, positioned.Offset, new Vector2(positioned.AdvanceWidth, positioned.AdvanceHeight)),
                         data.Font,
-                        boundsLocation,
+                        advanceOrigin,
                         glyphOrigin,
                         decorationOrigin,
                         advanceX,
-                        data.ScaledAdvance,
+                        glyphLayoutAdvance,
                         GlyphLayoutMode.Vertical,
                         data.BidiRun.Level,
                         i == 0 && j == 0,
                         data.GraphemeIndex,
                         data.StringIndex));
+
+                    // Browser paint walks every positioned glyph in visual order;
+                    // source membership controls spacing, not whether the pen advances.
+                    glyphAdvanceY += positionedAdvanceY;
                 }
             }
 
@@ -1563,182 +1235,6 @@ internal static partial class TextLayout
         penLocation.Y = originY;
         boxLocation.X += advanceX;
         penLocation.X += xLineAdvance;
-    }
-
-    /// <summary>
-    /// Shapes a single font run — maps codepoints in <paramref name="text"/> to glyph ids using
-    /// <paramref name="font"/>, then runs GSUB substitution and GPOS positioning. Codepoints that
-    /// the font cannot map are recorded for a later fallback pass.
-    /// </summary>
-    /// <param name="text">The run-relative text slice to shape.</param>
-    /// <param name="start">The starting grapheme index (absolute within the original input).</param>
-    /// <param name="textRuns">The ordered list of resolved text runs.</param>
-    /// <param name="textRunIndex">The index of the current text run; advanced as the enumerator crosses run boundaries.</param>
-    /// <param name="codePointIndex">The running codepoint index (absolute within the original input).</param>
-    /// <param name="bidiRunIndex">The running bidi run index.</param>
-    /// <param name="isFallbackRun">
-    /// <see langword="true"/> if this call is the fallback-font pass (in which case unmapped codepoints
-    /// may still emit <c>.notdef</c> glyphs).
-    /// </param>
-    /// <param name="font">The font to shape with.</param>
-    /// <param name="bidiRuns">The resolved bidi runs covering the whole input.</param>
-    /// <param name="bidiMap">A codepoint → bidi-run mapping accumulated across shaping passes.</param>
-    /// <param name="substitutions">The GSUB substitution collection to write into.</param>
-    /// <param name="positionings">The GPOS positioning collection to write into.</param>
-    /// <returns>
-    /// <see langword="true"/> if every codepoint mapped successfully; <see langword="false"/> if any
-    /// codepoint remains unmapped (so a fallback-font pass is needed).
-    /// </returns>
-    private static bool DoFontRun(
-        ReadOnlySpan<char> text,
-        int start,
-        IReadOnlyList<TextRun> textRuns,
-        ref int textRunIndex,
-        ref int codePointIndex,
-        ref int bidiRunIndex,
-        bool isFallbackRun,
-        Font font,
-        BidiRun[] bidiRuns,
-        Dictionary<int, int> bidiMap,
-        GlyphSubstitutionCollection substitutions,
-        GlyphPositioningCollection positionings)
-    {
-        // For each run we start with a fresh substitution collection to avoid
-        // overwriting the glyph ids.
-        substitutions.Clear();
-
-        // Enumerate through each grapheme in the text.
-        int graphemeIndex = start;
-        SpanGraphemeEnumerator graphemeEnumerator = new(text);
-        while (graphemeEnumerator.MoveNext())
-        {
-            ReadOnlySpan<char> grapheme = graphemeEnumerator.Current.Span;
-            int graphemeMax = grapheme.Length - 1;
-            int graphemeCodePointIndex = 0;
-            int charIndex = 0;
-
-            while (textRunIndex < textRuns.Count - 1 && graphemeIndex == textRuns[textRunIndex].End)
-            {
-                textRunIndex++;
-            }
-
-            // Now enumerate through each codepoint in the grapheme.
-            bool skipNextCodePoint = false;
-            SpanCodePointEnumerator codePointEnumerator = new(grapheme);
-            while (codePointEnumerator.MoveNext())
-            {
-                if (codePointIndex == bidiRuns[bidiRunIndex].End)
-                {
-                    bidiRunIndex++;
-                }
-
-                if (skipNextCodePoint)
-                {
-                    codePointIndex++;
-                    graphemeCodePointIndex++;
-                    continue;
-                }
-
-                bidiMap[codePointIndex] = bidiRunIndex;
-
-                int charsConsumed = 0;
-                CodePoint current = codePointEnumerator.Current;
-                charIndex += current.Utf16SequenceLength;
-                CodePoint? next = graphemeCodePointIndex < graphemeMax
-                    ? CodePoint.DecodeFromUtf16At(grapheme, charIndex, out charsConsumed)
-                    : null;
-
-                charIndex += charsConsumed;
-
-                // Get the glyph id for the codepoint and add to the collection.
-                bool hasGlyph = font.FontMetrics.TryGetGlyphId(current, next, out ushort glyphId, out skipNextCodePoint);
-
-                // Unsupported default-ignorable code points such as FE0F should not block
-                // GSUB sequences like emoji ZWJ ligatures. Preserve joiners explicitly.
-                if (!hasGlyph &&
-                    UnicodeUtility.IsDefaultIgnorableCodePoint((uint)current.Value) &&
-                    !UnicodeUtility.ShouldRenderWhiteSpaceOnly(current) &&
-                    !CodePoint.IsZeroWidthJoiner(current) &&
-                    !CodePoint.IsZeroWidthNonJoiner(current))
-                {
-                    codePointIndex++;
-                    graphemeCodePointIndex++;
-                    continue;
-                }
-
-                substitutions.AddGlyph(glyphId, current, (TextDirection)bidiRuns[bidiRunIndex].Direction, textRuns[textRunIndex], codePointIndex);
-
-                codePointIndex++;
-                graphemeCodePointIndex++;
-            }
-
-            graphemeIndex++;
-        }
-
-        // Apply the simple and complex substitutions.
-        // TODO: Investigate HarfBuzz normalizer.
-        SubstituteBidiMirrors(font.FontMetrics, substitutions);
-        font.FontMetrics.ApplySubstitution(substitutions);
-
-        return !isFallbackRun
-            ? positionings.TryAdd(font, substitutions)
-            : positionings.TryUpdate(font, substitutions);
-    }
-
-    /// <summary>
-    /// Substitutes mirrored bracket glyphs (for example <c>(</c> ↔ <c>)</c>) inside right-to-left
-    /// bidi runs, per Unicode Bidirectional Algorithm rule L4. Relies on the font's <c>rtlm</c>
-    /// feature when available and falls back to the Unicode mirror table otherwise.
-    /// </summary>
-    /// <param name="fontMetrics">The font metrics used to look up mirrored glyph ids.</param>
-    /// <param name="collection">The substitution collection whose glyphs will be rewritten in place.</param>
-    private static void SubstituteBidiMirrors(FontMetrics fontMetrics, GlyphSubstitutionCollection collection)
-    {
-        for (int i = 0; i < collection.Count; i++)
-        {
-            GlyphShapingData data = collection[i];
-
-            if (data.Direction != TextDirection.RightToLeft)
-            {
-                continue;
-            }
-
-            if (!CodePoint.TryGetBidiMirror(data.CodePoint, out CodePoint mirror))
-            {
-                continue;
-            }
-
-            if (fontMetrics.TryGetGlyphId(mirror, out ushort glyphId))
-            {
-                collection.Replace(i, glyphId, KnownFeatureTags.RightToLeftMirroredForms);
-            }
-        }
-
-        // TODO: This only replaces certain glyphs. We should investigate the specification further.
-        // https://www.unicode.org/reports/tr50/#vertical_alternates
-        if (collection.TextOptions.LayoutMode.IsHorizontal())
-        {
-            return;
-        }
-
-        for (int i = 0; i < collection.Count; i++)
-        {
-            GlyphShapingData data = collection[i];
-            if (CodePoint.GetVerticalOrientationType(data.CodePoint) is VerticalOrientationType.Upright or VerticalOrientationType.TransformUpright)
-            {
-                continue;
-            }
-
-            if (!CodePoint.TryGetVerticalMirror(data.CodePoint, out CodePoint mirror))
-            {
-                continue;
-            }
-
-            if (fontMetrics.TryGetGlyphId(mirror, out ushort glyphId))
-            {
-                collection.Replace(i, glyphId, KnownFeatureTags.VerticalAlternates);
-            }
-        }
     }
 
     /// <summary>
@@ -1756,7 +1252,7 @@ internal static partial class TextLayout
     /// <param name="textAlignment">Per-line alignment within the block.</param>
     /// <param name="direction">The resolved text direction for this line.</param>
     /// <returns>The X offset to add to the line's pen location.</returns>
-    internal static float CalculateLineOffsetX(
+    public static float CalculateLineOffsetX(
         float lineAdvance,
         float maxScaledAdvance,
         HorizontalAlignment horizontalAlignment,
@@ -1820,7 +1316,7 @@ internal static partial class TextLayout
     /// <param name="textAlignment">Per-line alignment within the block.</param>
     /// <param name="direction">The resolved text direction for this line.</param>
     /// <returns>The Y offset to add to the line's pen location.</returns>
-    internal static float CalculateLineOffsetY(
+    public static float CalculateLineOffsetY(
         float lineAdvance,
         float maxScaledAdvance,
         VerticalAlignment verticalAlignment,

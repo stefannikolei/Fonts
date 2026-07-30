@@ -42,9 +42,9 @@ internal abstract class AnchorTable
     /// </summary>
     /// <param name="fontMetrics">The font metrics.</param>
     /// <param name="data">The glyph shaping data.</param>
-    /// <param name="collection">The glyph positioning collection.</param>
+    /// <param name="buffer">The glyph positioning buffer.</param>
     /// <returns>The resolved anchor coordinates.</returns>
-    public abstract AnchorXY GetAnchor(FontMetrics fontMetrics, GlyphShapingData data, GlyphPositioningCollection collection);
+    public abstract AnchorXY GetAnchor(FontMetrics fontMetrics, ref GlyphShapingData data, ShapingBuffer buffer);
 
     /// <summary>
     /// Loads the anchor table.
@@ -106,7 +106,7 @@ internal abstract class AnchorTable
         }
 
         /// <inheritdoc/>
-        public override AnchorXY GetAnchor(FontMetrics fontMetrics, GlyphShapingData data, GlyphPositioningCollection collection)
+        public override AnchorXY GetAnchor(FontMetrics fontMetrics, ref GlyphShapingData data, ShapingBuffer buffer)
             => new(this.XCoordinate, this.YCoordinate);
     }
 
@@ -152,14 +152,15 @@ internal abstract class AnchorTable
         }
 
         /// <inheritdoc/>
-        public override AnchorXY GetAnchor(FontMetrics fontMetrics, GlyphShapingData data, GlyphPositioningCollection collection)
+        public override AnchorXY GetAnchor(FontMetrics fontMetrics, ref GlyphShapingData data, ShapingBuffer buffer)
         {
-            if (collection.TextOptions.HintingMode != HintingMode.None)
+            if (buffer.TextOptions.HintingMode != HintingMode.None)
             {
-                TextAttributes textAttributes = data.TextRun.TextAttributes;
-                TextDecorations textDecorations = data.TextRun.TextDecorations;
-                LayoutMode layoutMode = collection.TextOptions.LayoutMode;
-                ColorFontSupport colorFontSupport = collection.TextOptions.ColorFontSupport;
+                TextRun textRun = buffer.TextRuns[data.TextRunIndex];
+                TextAttributes textAttributes = textRun.TextAttributes;
+                TextDecorations textDecorations = textRun.TextDecorations;
+                LayoutMode layoutMode = buffer.TextOptions.LayoutMode;
+                ColorFontSupport colorFontSupport = buffer.TextOptions.ColorFontSupport;
                 if (fontMetrics.TryGetGlyphMetrics(data.CodePoint, textAttributes, textDecorations, layoutMode, colorFontSupport, out FontGlyphMetrics? metrics))
                 {
                     if (metrics is TrueTypeGlyphMetrics ttmetric)
@@ -247,7 +248,7 @@ internal abstract class AnchorTable
         }
 
         /// <inheritdoc/>
-        public override AnchorXY GetAnchor(FontMetrics fontMetrics, GlyphShapingData data, GlyphPositioningCollection collection)
+        public override AnchorXY GetAnchor(FontMetrics fontMetrics, ref GlyphShapingData data, ShapingBuffer buffer)
         {
             short x = this.XCoordinate;
             short y = this.YCoordinate;
@@ -320,8 +321,8 @@ internal abstract class AnchorTable
         /// <inheritdoc/>
         public override AnchorXY GetAnchor(
             FontMetrics fontMetrics,
-            GlyphShapingData data,
-            GlyphPositioningCollection collection)
+            ref GlyphShapingData data,
+            ShapingBuffer buffer)
             => new(0, 0);
     }
 }

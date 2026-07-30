@@ -103,7 +103,7 @@ public class TextRendererGlyphIdTests
     }
 
     [Fact]
-    public void RenderGlyphRun_VisibleBounds_SkipsGlyphsOutsideRegion()
+    public void RenderPositionedGlyphs_VisibleBounds_SkipsGlyphsOutsideRegion()
     {
         Font font = TextLayoutTests.CreateRenderingFont();
         CodePoint codePoint = new('A');
@@ -113,14 +113,13 @@ public class TextRendererGlyphIdTests
 
         ushort[] glyphIds = [glyphId, glyphId, glyphId];
         Vector2[] origins = [new(0, 20), new(100, 20), new(200, 20)];
-        GlyphRun run = new(glyphIds, origins);
         GlyphOptions options = new()
         {
             Font = font
         };
 
         GlyphRenderer full = new();
-        TextRenderer.RenderTo(full, run, options);
+        TextRenderer.RenderTo(full, glyphIds, origins, options);
 
         Assert.Equal(3, full.GlyphRects.Count);
 
@@ -130,7 +129,7 @@ public class TextRendererGlyphIdTests
         options.VisibleBounds = new FontRectangle(90, 0, 20, 40);
 
         GlyphRenderer culled = new();
-        TextRenderer.RenderTo(culled, run, options);
+        TextRenderer.RenderTo(culled, glyphIds, origins, options);
 
         Assert.Single(culled.GlyphRects);
         Assert.Equal(full.GlyphRects[1], culled.GlyphRects[0]);

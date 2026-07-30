@@ -62,6 +62,9 @@ internal sealed class LookupType2Format1SubTable : LookupSubTable
         this.coverageTable = coverageTable;
     }
 
+    /// <inheritdoc/>
+    public override bool ConsumesDirectly => true;
+
     /// <summary>
     /// Loads the multiple substitution format 1 subtable from the given offset.
     /// </summary>
@@ -115,16 +118,20 @@ internal sealed class LookupType2Format1SubTable : LookupSubTable
         return new LookupType2Format1SubTable(sequenceTables, coverageTable, lookupFlags, markFilteringSet);
     }
 
-    /// <inheritdoc />
+    /// <inheritdoc/>
+    public override void CollectDigest(ref GlyphSetDigest digest) => this.coverageTable.CollectDigest(ref digest);
+
+    /// <inheritdoc/>
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,
-        GlyphSubstitutionCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
+        uint lookupMask,
         int index,
         int count)
     {
-        ushort glyphId = collection[index].GlyphId;
+        ushort glyphId = buffer[index].GlyphId;
         if (glyphId == 0)
         {
             return false;
@@ -134,12 +141,16 @@ internal sealed class LookupType2Format1SubTable : LookupSubTable
 
         if (offset > -1 && offset < this.sequenceTables.Length)
         {
-            collection.Replace(index, this.sequenceTables[offset].SubstituteGlyphs, feature);
+            buffer.Replace(index, this.sequenceTables[offset].SubstituteGlyphs, feature);
             return true;
         }
 
         return false;
     }
+
+    /// <inheritdoc />
+    public override bool WouldApply(ReadOnlySpan<ushort> glyphs, bool zeroContext)
+        => glyphs.Length == 1 && this.coverageTable.CoverageIndexOf(glyphs[0]) > -1;
 
     /// <summary>
     /// Represents a sequence table containing an ordered list of substitute glyph IDs

@@ -30,7 +30,7 @@ internal class CffGlyphMetrics : FontGlyphMetrics
     /// <param name="textAttributes">The text attributes.</param>
     /// <param name="textDecorations">The text decorations.</param>
     /// <param name="glyphType">The glyph type.</param>
-    internal CffGlyphMetrics(
+    public CffGlyphMetrics(
         StreamFontMetrics fontMetrics,
         ushort glyphId,
         CodePoint codePoint,
@@ -59,81 +59,18 @@ internal class CffGlyphMetrics : FontGlyphMetrics
               glyphType)
         => this.glyphData = glyphData;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="CffGlyphMetrics"/> class with offset, scale, and text run parameters.
-    /// </summary>
-    /// <param name="fontMetrics">The font metrics.</param>
-    /// <param name="glyphId">The glyph identifier.</param>
-    /// <param name="codePoint">The Unicode code point.</param>
-    /// <param name="glyphData">The CFF glyph data containing the charstring program.</param>
-    /// <param name="bounds">The glyph bounding box.</param>
-    /// <param name="advanceWidth">The advance width.</param>
-    /// <param name="advanceHeight">The advance height.</param>
-    /// <param name="leftSideBearing">The left side bearing.</param>
-    /// <param name="topSideBearing">The top side bearing.</param>
-    /// <param name="unitsPerEM">The units per em.</param>
-    /// <param name="offset">The glyph offset.</param>
-    /// <param name="scaleFactor">The scale factor.</param>
-    /// <param name="textRun">The text run for rendering.</param>
-    /// <param name="glyphType">The glyph type.</param>
-    internal CffGlyphMetrics(
-        StreamFontMetrics fontMetrics,
-        ushort glyphId,
-        CodePoint codePoint,
-        CffGlyphData glyphData,
-        Bounds bounds,
-        ushort advanceWidth,
-        ushort advanceHeight,
-        short leftSideBearing,
-        short topSideBearing,
-        ushort unitsPerEM,
-        Vector2 offset,
-        Vector2 scaleFactor,
-        TextRun textRun,
-        GlyphType glyphType)
-        : base(
-              fontMetrics,
-              glyphId,
-              codePoint,
-              bounds,
-              advanceWidth,
-              advanceHeight,
-              leftSideBearing,
-              topSideBearing,
-              unitsPerEM,
-              offset,
-              scaleFactor,
-              textRun,
-              glyphType)
-        => this.glyphData = glyphData;
-
-    /// <inheritdoc/>
-    internal override FontGlyphMetrics CloneForRendering(TextRun textRun)
-        => new CffGlyphMetrics(
-            this.FontMetrics,
-            this.GlyphId,
-            this.CodePoint,
-            this.glyphData,
-            this.Bounds,
-            this.AdvanceWidth,
-            this.AdvanceHeight,
-            this.LeftSideBearing,
-            this.TopSideBearing,
-            this.UnitsPerEm,
-            this.Offset,
-            this.ScaleFactor,
-            textRun,
-            this.GlyphType);
-
     /// <inheritdoc/>
     internal override void RenderOutlineTo(
         IGlyphRenderer renderer,
         Vector2 glyphOrigin,
         GlyphLayoutMode mode,
+        TextRun? textRun,
+        Vector2 positionOffset,
+        Vector2 positionedAdvance,
         float scaledPPEM,
         HintingMode hintingMode)
     {
-        Matrix3x2 transform = this.GetOutlineTransform(mode);
+        Matrix3x2 transform = this.GetOutlineTransform(mode, textRun);
 
         Vector2 scale = new Vector2(scaledPPEM) / this.ScaleFactor;
 
@@ -146,8 +83,8 @@ internal class CffGlyphMetrics : FontGlyphMetrics
             scale *= new Vector2((float)(fm[0] * upm), (float)(fm[3] * upm));
         }
 
-        Vector2 scaledOffset = this.Offset * scale;
-        float boldStrength = this.GetSyntheticBoldStrength(scaledPPEM);
+        Vector2 scaledOffset = (this.Offset + positionOffset) * scale;
+        float boldStrength = this.GetSyntheticBoldStrength(scaledPPEM, textRun);
         if (boldStrength > 0F)
         {
             // Flush through the supplied renderer before glyph completion so skip-ink observes

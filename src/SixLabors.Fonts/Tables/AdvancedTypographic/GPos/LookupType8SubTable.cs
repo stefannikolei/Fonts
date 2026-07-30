@@ -77,17 +77,20 @@ internal static class LookupType8SubTable
         }
 
         /// <inheritdoc/>
+        public override void CollectDigest(ref GlyphSetDigest digest) => this.coverageTable.CollectDigest(ref digest);
+
+        /// <inheritdoc/>
         public override bool TryUpdatePosition(
             FontMetrics fontMetrics,
             GPosTable table,
-            GlyphPositioningCollection collection,
+            ShapingBuffer buffer,
             Tag feature,
             int index,
             int count)
         {
             // Implements Chained Contexts Substitution, Format 1:
             // https://docs.microsoft.com/en-us/typography/opentype/spec/gsub#61-chained-contexts-substitution-format-1-simple-glyph-contexts
-            ushort glyphId = collection[index].GlyphId;
+            ushort glyphId = buffer[index].GlyphId;
             if (glyphId == 0)
             {
                 return false;
@@ -113,27 +116,46 @@ internal static class LookupType8SubTable
 
             // Apply ruleset for the given glyph id.
             ChainedSequenceRuleTable[] rules = seqRuleSet.SequenceRuleTables;
-            SkippingGlyphIterator iterator = new(fontMetrics, collection, index, this.LookupFlags, this.MarkFilteringSet);
+            SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
+
+            // Slot zero holds the coverage-matched glyph; the input match fills
+            // the rest, so nested lookups address the records the match
+            // consumed rather than a raw offset from the first.
+            Span<int> matchPositions = buffer.GetContextMatchPositions();
+            matchPositions[0] = index;
             for (int lookupIndex = 0; lookupIndex < rules.Length; lookupIndex++)
             {
                 ChainedSequenceRuleTable rule = rules[lookupIndex];
-                if (!AdvancedTypographicUtils.ApplyChainedSequenceRule(iterator, rule))
+                if (!AdvancedTypographicUtils.ApplyChainedSequenceRule(iterator, rule, buffer.LookupMask, matchPositions[1..], out _))
                 {
                     continue;
                 }
 
+                if (buffer.NestingLimitReached)
+                {
+                    return false;
+                }
+
                 bool hasChanged = false;
+                int matchCount = rule.InputSequence.Length + 1;
+                buffer.PushNestedApplication();
                 for (int j = 0; j < rule.SequenceLookupRecords.Length; j++)
                 {
                     SequenceLookupRecord sequenceLookupRecord = rule.SequenceLookupRecords[j];
                     LookupTable lookup = table.LookupList.LookupTables[sequenceLookupRecord.LookupListIndex];
-                    ushort sequenceIndex = sequenceLookupRecord.SequenceIndex;
-                    if (lookup.TryUpdatePosition(fontMetrics, table, collection, feature, index + sequenceIndex, 1))
+                    int sequenceIndex = sequenceLookupRecord.SequenceIndex;
+                    if (sequenceIndex >= matchCount)
+                    {
+                        continue;
+                    }
+
+                    if (lookup.TryUpdatePosition(fontMetrics, table, buffer, feature, matchPositions[sequenceIndex], 1))
                     {
                         hasChanged = true;
                     }
                 }
 
+                buffer.PopNestedApplication();
                 return hasChanged;
             }
 
@@ -208,17 +230,20 @@ internal static class LookupType8SubTable
         }
 
         /// <inheritdoc/>
+        public override void CollectDigest(ref GlyphSetDigest digest) => this.coverageTable.CollectDigest(ref digest);
+
+        /// <inheritdoc/>
         public override bool TryUpdatePosition(
             FontMetrics fontMetrics,
             GPosTable table,
-            GlyphPositioningCollection collection,
+            ShapingBuffer buffer,
             Tag feature,
             int index,
             int count)
         {
             // Implements Chained Contexts Substitution for Format 2:
             // https://docs.microsoft.com/en-us/typography/opentype/spec/gsub#62-chained-contexts-substitution-format-2-class-based-glyph-contexts
-            ushort glyphId = collection[index].GlyphId;
+            ushort glyphId = buffer[index].GlyphId;
             if (glyphId == 0)
             {
                 return false;
@@ -233,39 +258,62 @@ internal static class LookupType8SubTable
 
             // Search in the class definition table to find the class value assigned to the currently glyph.
             int classId = this.inputClassDefinitionTable.ClassIndexOf(glyphId);
-            ChainedClassSequenceRuleTable[]? rules = classId >= 0 && classId < this.sequenceRuleSetTables.Length
-                ? this.sequenceRuleSetTables[classId].SubRules
+            ChainedClassSequenceRuleSetTable? ruleSet = classId >= 0 && classId < this.sequenceRuleSetTables.Length
+                ? this.sequenceRuleSetTables[classId]
                 : null;
 
-            if (rules is null)
+            if (ruleSet is null)
             {
                 return false;
             }
 
+            ChainedClassSequenceRuleTable[] rules = ruleSet.SubRules;
+
             // Apply ruleset for the given glyph class id.
-            SkippingGlyphIterator iterator = new(fontMetrics, collection, index, this.LookupFlags, this.MarkFilteringSet);
+            SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
+
+            // Slot zero holds the coverage-matched glyph; the input match fills
+            // the rest, so nested lookups address the records the match
+            // consumed rather than a raw offset from the first. Match storage is
+            // retained by the buffer because this method is entered from the
+            // per-glyph lookup loop.
+            Span<int> matchPositions = buffer.GetContextMatchPositions();
+            matchPositions[0] = index;
             for (int lookupIndex = 0; lookupIndex < rules.Length; lookupIndex++)
             {
                 ChainedClassSequenceRuleTable rule = rules[lookupIndex];
 
-                if (!AdvancedTypographicUtils.ApplyChainedClassSequenceRule(iterator, rule, this.inputClassDefinitionTable, this.backtrackClassDefinitionTable, this.lookaheadClassDefinitionTable))
+                if (!AdvancedTypographicUtils.ApplyChainedClassSequenceRule(iterator, rule, this.inputClassDefinitionTable, this.backtrackClassDefinitionTable, this.lookaheadClassDefinitionTable, buffer.LookupMask, matchPositions[1..], out _))
                 {
                     continue;
                 }
 
                 // It's a match. Perform position update and return true if anything changed.
+                if (buffer.NestingLimitReached)
+                {
+                    return false;
+                }
+
                 bool hasChanged = false;
+                int matchCount = rule.InputSequence.Length + 1;
+                buffer.PushNestedApplication();
                 for (int j = 0; j < rule.SequenceLookupRecords.Length; j++)
                 {
                     SequenceLookupRecord sequenceLookupRecord = rule.SequenceLookupRecords[j];
                     LookupTable lookup = table.LookupList.LookupTables[sequenceLookupRecord.LookupListIndex];
-                    ushort sequenceIndex = sequenceLookupRecord.SequenceIndex;
-                    if (lookup.TryUpdatePosition(fontMetrics, table, collection, feature, index + sequenceIndex, 1))
+                    int sequenceIndex = sequenceLookupRecord.SequenceIndex;
+                    if (sequenceIndex >= matchCount)
+                    {
+                        continue;
+                    }
+
+                    if (lookup.TryUpdatePosition(fontMetrics, table, buffer, feature, matchPositions[sequenceIndex], 1))
                     {
                         hasChanged = true;
                     }
                 }
 
+                buffer.PopNestedApplication();
                 return hasChanged;
             }
 
@@ -334,39 +382,72 @@ internal static class LookupType8SubTable
         }
 
         /// <inheritdoc/>
+        public override void CollectDigest(ref GlyphSetDigest digest)
+        {
+            if (this.inputCoverageTables.Length == 0)
+            {
+                // Degenerate table data: without a first position coverage the gate
+                // cannot be known, so the lookup is always attempted.
+                digest.AddAll();
+                return;
+            }
+
+            this.inputCoverageTables[0].CollectDigest(ref digest);
+        }
+
+        /// <inheritdoc/>
         public override bool TryUpdatePosition(
             FontMetrics fontMetrics,
             GPosTable table,
-            GlyphPositioningCollection collection,
+            ShapingBuffer buffer,
             Tag feature,
             int index,
             int count)
         {
-            ushort glyphId = collection[index].GlyphId;
+            ushort glyphId = buffer[index].GlyphId;
             if (glyphId == 0)
             {
                 return false;
             }
 
-            if (!AdvancedTypographicUtils.CheckAllCoverages(fontMetrics, this.LookupFlags, this.MarkFilteringSet, collection, index, count, this.inputCoverageTables, this.backtrackCoverageTables, this.lookaheadCoverageTables))
+            // The input coverage array covers the whole input including its
+            // first glyph, so the match fills every position nested lookups
+            // address.
+            Span<int> matchPositions = buffer.GetContextMatchPositions()[..AdvancedTypographicUtils.MaxContextLength];
+            if (!AdvancedTypographicUtils.CheckAllCoverages(fontMetrics, this.LookupFlags, this.MarkFilteringSet, buffer, index, count, this.inputCoverageTables, this.backtrackCoverageTables, this.lookaheadCoverageTables, buffer.LookupMask, matchPositions, out _))
+            {
+                return false;
+            }
+
+            if (buffer.NestingLimitReached)
             {
                 return false;
             }
 
             // It's a match. Perform position update and return true if anything changed.
             bool hasChanged = false;
+            int matchCount = this.inputCoverageTables.Length;
+            buffer.PushNestedApplication();
+
             foreach (SequenceLookupRecord lookupRecord in this.seqLookupRecords)
             {
-                ushort sequenceIndex = lookupRecord.SequenceIndex;
+                int sequenceIndex = lookupRecord.SequenceIndex;
+                if (sequenceIndex >= matchCount)
+                {
+                    continue;
+                }
+
                 ushort lookupIndex = lookupRecord.LookupListIndex;
+                int position = matchPositions[sequenceIndex];
 
                 LookupTable lookup = table.LookupList.LookupTables[lookupIndex];
-                if (lookup.TryUpdatePosition(fontMetrics, table, collection, feature, index + sequenceIndex, count - sequenceIndex))
+                if (lookup.TryUpdatePosition(fontMetrics, table, buffer, feature, position, count - (position - index)))
                 {
                     hasChanged = true;
                 }
             }
 
+            buffer.PopNestedApplication();
             return hasChanged;
         }
     }

@@ -92,6 +92,24 @@ internal sealed class LookupTable
         this.LookupFlags = lookupFlags;
         this.MarkFilteringSet = markFilteringSet;
         this.LookupSubTables = lookupSubTables;
+
+        // The union of every subtable's gating coverage: a glyph outside the digest
+        // cannot be affected by any subtable of this lookup, so application skips it
+        // without touching the subtables. See GlyphSetDigest for the accuracy contract.
+        GlyphSetDigest digest = default;
+        for (int i = 0; i < lookupSubTables.Length; i++)
+        {
+            // Each subtable also carries its own digest so application can skip
+            // subtables whose gating coverage cannot contain the current glyph
+            // without paying the virtual probe. Contextual formats that expose no
+            // leading coverage flood their digest and therefore always pass.
+            GlyphSetDigest subTableDigest = default;
+            lookupSubTables[i].CollectDigest(ref subTableDigest);
+            lookupSubTables[i].Digest = subTableDigest;
+            lookupSubTables[i].CollectDigest(ref digest);
+        }
+
+        this.Digest = digest;
     }
 
     /// <summary>
@@ -113,6 +131,11 @@ internal sealed class LookupTable
     /// Gets the array of lookup subtables.
     /// </summary>
     public LookupSubTable[] LookupSubTables { get; }
+
+    /// <summary>
+    /// Gets the approximate membership filter for the glyphs this lookup can affect.
+    /// </summary>
+    public GlyphSetDigest Digest { get; }
 
     /// <summary>
     /// Loads the <see cref="LookupTable"/> from the specified reader at the given offset.
@@ -188,11 +211,11 @@ internal sealed class LookupTable
         };
 
     /// <summary>
-    /// Attempts to update the position of glyphs in the collection at the specified index.
+    /// Attempts to update the position of glyphs in the buffer at the specified index.
     /// </summary>
     /// <param name="fontMetrics">The font metrics.</param>
     /// <param name="table">The GPOS table.</param>
-    /// <param name="collection">The glyph positioning collection.</param>
+    /// <param name="buffer">The glyph positioning buffer.</param>
     /// <param name="feature">The feature tag.</param>
     /// <param name="index">The zero-based index of the glyph to position.</param>
     /// <param name="count">The number of glyphs remaining in the sequence.</param>
@@ -200,16 +223,25 @@ internal sealed class LookupTable
     public bool TryUpdatePosition(
         FontMetrics fontMetrics,
         GPosTable table,
-        GlyphPositioningCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
         int index,
         int count)
     {
+        ushort glyphId = buffer[index].GlyphId;
         foreach (LookupSubTable subTable in this.LookupSubTables)
         {
+            // A glyph outside the subtable's digest cannot match its coverage, so the
+            // probe (a virtual call, coverage search, or full context-match attempt)
+            // is skipped entirely.
+            if (!subTable.Digest.MightContain(glyphId))
+            {
+                continue;
+            }
+
             // A lookup is finished for a glyph after the client locates the target
             // glyph or glyph context and performs a positioning action, if specified.
-            if (subTable.TryUpdatePosition(fontMetrics, table, collection, feature, index, count))
+            if (subTable.TryUpdatePosition(fontMetrics, table, buffer, feature, index, count))
             {
                 return true;
             }
@@ -246,11 +278,25 @@ internal abstract class LookupSubTable
     public ushort MarkFilteringSet { get; }
 
     /// <summary>
-    /// Attempts to update the position of glyphs in the collection at the specified index.
+    /// Gets or sets the approximate membership filter for the glyphs this subtable can
+    /// affect. Assigned once by the owning <see cref="LookupTable"/> during construction.
+    /// </summary>
+    public GlyphSetDigest Digest { get; internal set; }
+
+    /// <summary>
+    /// Adds the coverage that gates this subtable's applicability to the digest.
+    /// The default adds every glyph so the lookup is always attempted, the correct
+    /// conservative behavior for subtables whose gating coverage is unknown.
+    /// </summary>
+    /// <param name="digest">The digest to add to.</param>
+    public virtual void CollectDigest(ref GlyphSetDigest digest) => digest.AddAll();
+
+    /// <summary>
+    /// Attempts to update the position of glyphs in the buffer at the specified index.
     /// </summary>
     /// <param name="fontMetrics">The font metrics.</param>
     /// <param name="table">The GPOS table.</param>
-    /// <param name="collection">The glyph positioning collection.</param>
+    /// <param name="buffer">The glyph positioning buffer.</param>
     /// <param name="feature">The feature tag.</param>
     /// <param name="index">The zero-based index of the glyph to position.</param>
     /// <param name="count">The number of glyphs remaining in the sequence.</param>
@@ -258,7 +304,7 @@ internal abstract class LookupSubTable
     public abstract bool TryUpdatePosition(
         FontMetrics fontMetrics,
         GPosTable table,
-        GlyphPositioningCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
         int index,
         int count);

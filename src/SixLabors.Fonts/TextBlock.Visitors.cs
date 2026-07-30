@@ -752,6 +752,7 @@ public sealed partial class TextBlock
 
             this.glyphMetrics[this.count] = new GlyphMetrics(
                 glyph.Glyph.GlyphMetrics.CodePoint,
+                glyph.Glyph.GlyphMetrics.GlyphId,
                 advance,
                 bounds,
                 renderableBounds,

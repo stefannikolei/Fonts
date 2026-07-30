@@ -122,8 +122,7 @@ public partial class GSubTableTests
     [InlineData(KannadaFont.Sans, "\u0cb2\u0ccb\u0c82", new int[] { 264, 61, 71, 4 })]
     [InlineData(KannadaFont.Sans, "\u0cb5\u0ccb\u0c82", new int[] { 266, 275, 71, 4 })]
 
-    // Harfbuzz replaces the default ignorable with id 91 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData(KannadaFont.Sans, "\u0c86\u0ccd\u0caf\u0c95\u0ccd\u0cb7\u0cbf\u0cb8\u0ccd\u200c", new int[] { 7, 122, 285, 200 })]
+    [InlineData(KannadaFont.Sans, "\u0c86\u0ccd\u0caf\u0c95\u0ccd\u0cb7\u0cbf\u0cb8\u0ccd\u200c", new int[] { 7, 122, 285, 200, 3 })]
     public void CanShapeKannadaText(KannadaFont font, string input, int[] expectedGlyphIndices)
     {
         ColorGlyphRenderer renderer = new();
@@ -215,45 +214,34 @@ public partial class GSubTableTests
     [Theory]
     [InlineData("\u0930\u094d\u0939", new int[] { 61, 181 })]
 
-    // Harfbuzz replaces the default ignorable with id 133 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u0930\u094d\u200c\u0939", new int[] { 52, 81, 61 })]
+    [InlineData("\u0930\u094d\u200c\u0939", new int[] { 52, 81, 3, 61 })]
     [InlineData("\u0930\u094d\u200d\u0939", new int[] { 209, 61 })]
     [InlineData("\u0931\u094d\u0939", new int[] { 209, 61 })]
 
-    // Harfbuzz replaces the default ignorable with id 133 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u0931\u094d\u200c\u0939", new int[] { 53, 81, 61 })]
+    [InlineData("\u0931\u094d\u200c\u0939", new int[] { 53, 81, 3, 61 })]
 
-    // Harfbuzz replaces the default ignorable with id 134 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u0931\u094d\u200d\u0939", new int[] { 209, 61 })]
+    [InlineData("\u0931\u094d\u200d\u0939", new int[] { 209, 3, 61 })]
 
     [InlineData("\u0915\u094d\u0915", new int[] { 183, 25 })]
 
-    // Harfbuzz replaces the default ignorable with id 134 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u0915\u094d\u200d", new int[] { 183 })]
+    [InlineData("\u0915\u094d\u200d", new int[] { 183, 3 })]
 
-    // Harfbuzz replaces the default ignorable with id 133 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u0915\u094d\u200c\u0915", new int[] { 25, 81, 25 })]
+    [InlineData("\u0915\u094d\u200c\u0915", new int[] { 25, 81, 3, 25 })]
 
-    // Harfbuzz replaces the default ignorable with id 134 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u0915\u094d\u200d\u0915", new int[] { 183, 25 })]
+    [InlineData("\u0915\u094d\u200d\u0915", new int[] { 183, 3, 25 })]
     [InlineData("\u0915\u094d\u0915\u093f", new int[] { 558, 183, 25 })]
 
-    // Harfbuzz replaces the default ignorable with id 133 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u0915\u094d\u200c\u0915\u093f", new int[] { 25, 81, 561, 25 })]
+    [InlineData("\u0915\u094d\u200c\u0915\u093f", new int[] { 25, 81, 3, 561, 25 })]
 
-    // Harfbuzz replaces the default ignorable with id 134 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u0915\u094d\u200d\u0915\u093f", new int[] { 558, 183, 25 })]
+    [InlineData("\u0915\u094d\u200d\u0915\u093f", new int[] { 558, 183, 3, 25 })]
     [InlineData("\u0915\u094d\u0937", new int[] { 179 })]
 
-    // Harfbuzz replaces the default ignorable with id 133 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u0915\u094d\u200c\u0937", new int[] { 25, 81, 59 })]
+    [InlineData("\u0915\u094d\u200c\u0937", new int[] { 25, 81, 3, 59 })]
 
-    // Harfbuzz replaces the default ignorable with id 134 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u0915\u094d\u200d\u0937", new int[] { 183, 59 })]
+    [InlineData("\u0915\u094d\u200d\u0937", new int[] { 183, 3, 59 })]
     [InlineData("\u0926\u094d\u0938\u093f", new int[] { 42, 81, 563, 60 })]
 
-    // Harfbuzz replaces the default ignorable with id 133 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u0926\u094d\u200c\u0938\u093f", new int[] { 42, 81, 563, 60 })]
+    [InlineData("\u0926\u094d\u200c\u0938\u093f", new int[] { 42, 81, 3, 563, 60 })]
     [InlineData("\u0926\u094d\u200d\u0938\u093f", new int[] { 558, 200, 60 })]
     public void CanShapeDevanagariTextWithJoiners(string input, int[] expectedGlyphIndices)
     {
@@ -276,17 +264,14 @@ public partial class GSubTableTests
     [InlineData("\u0915\u094d\u0930", new int[] { 254 })]
     [InlineData("\u0915\u094d\u0930\u094d\u0915", new int[] { 327, 25 })]
 
-    // Harfbuzz replaces the default ignorable with id 134 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u0915\u094d\u0930\u094d\u200d", new int[] { 327 })]
+    [InlineData("\u0915\u094d\u0930\u094d\u200d", new int[] { 327, 3 })]
     [InlineData("\u0915\u094d\u0937", new int[] { 179 })]
     [InlineData("\u0915\u094d\u0937\u094d", new int[] { 179, 81 })]
 
-    // Harfbuzz replaces the default ignorable with id 133 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u0915\u094d\u200c\u0937", new int[] { 25, 81, 59 })]
+    [InlineData("\u0915\u094d\u200c\u0937", new int[] { 25, 81, 3, 59 })]
 
-    // Harfbuzz replaces the default ignorable with id 134 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u0915\u094d\u200d", new int[] { 183 })]
-    [InlineData("\u0915\u094d\u200d\u0937", new int[] { 183, 59 })]
+    [InlineData("\u0915\u094d\u200d", new int[] { 183, 3 })]
+    [InlineData("\u0915\u094d\u200d\u0937", new int[] { 183, 3, 59 })]
     [InlineData("\u091b\u094d\u0930\u094d\u0915", new int[] { 334, 25 })]
     [InlineData("\u091c\u094d\u091e\u094d", new int[] { 180, 81 })]
     [InlineData("\u091f\u094d\u0930\u0941", new int[] { 35, 657 })]
@@ -299,15 +284,12 @@ public partial class GSubTableTests
     [InlineData("\u0926\u094d\u0926\u093f", new int[] { 560, 511 })]
     [InlineData("\u0930\u094d\u0905\u094d", new int[] { 9, 81, 181 })]
 
-    // Harfbuzz replaces the default ignorable with id 133 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u0930\u094d\u0905\u094d\u200c", new int[] { 9, 81, 181 })]
+    [InlineData("\u0930\u094d\u0905\u094d\u200c", new int[] { 9, 81, 3, 181 })]
 
-    // Harfbuzz replaces the default ignorable with id 134 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u0930\u094d\u0905\u094d\u200d", new int[] { 52, 81, 9, 81 })]
+    [InlineData("\u0930\u094d\u0905\u094d\u200d", new int[] { 52, 81, 9, 81, 3 })]
     [InlineData("\u0930\u094d\u0906\u094d\u0930\u094d", new int[] { 10, 81, 181, 52, 81 })]
 
-    // Harfbuzz replaces the default ignorable with id 133 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u0915\u200c\u093f", new int[] { 561, 25 })]
+    [InlineData("\u0915\u200c\u093f", new int[] { 561, 25, 3 })]
     [InlineData("\u093d\u0902", new int[] { 65, 6 })]
     [InlineData("\u0930\u0941\u0901\u0903", new int[] { 413, 5, 7 })]
     [InlineData("\u0031\u093f", new int[] { 558, 748 })]
@@ -348,11 +330,9 @@ public partial class GSubTableTests
     [Theory]
     [InlineData("\u0924\u094d\u0930\u094d\u0915", new int[] { 347, 25 })]
 
-    // Harfbuzz replaces the default ignorable with id 134 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u0924\u094d\u0930\u094d\u200d\u0915", new int[] { 347, 25 })]
+    [InlineData("\u0924\u094d\u0930\u094d\u200d\u0915", new int[] { 347, 3, 25 })]
 
-    // Harfbuzz replaces the default ignorable with id 133 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u0924\u094d\u0930\u094d\u200c\u0915", new int[] { 269, 81, 25 })]
+    [InlineData("\u0924\u094d\u0930\u094d\u200c\u0915", new int[] { 269, 81, 3, 25 })]
     public void CanShapeDevanagariTextWithEyelash(string input, int[] expectedGlyphIndices)
     {
         ColorGlyphRenderer renderer = new();
@@ -375,35 +355,30 @@ public partial class GSubTableTests
     [InlineData("\u0995\u09cd\u09b0", new int[] { 199 })]
     [InlineData("\u0995\u09cd\u09b0\u09cd\u0995", new int[] { 199, 64, 19 })]
 
-    // Harfbuzz replaces the default ignorable with id 573 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u0995\u09cd\u200c\u0995", new int[] { 19, 64, 19 })]
+    [InlineData("\u0995\u09cd\u200c\u0995", new int[] { 19, 64, 3, 19 })]
 
-    // Harfbuzz replaces the default ignorable with id 574 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u0995\u09cd\u200d\u0995", new int[] { 130, 19 })]
+    [InlineData("\u0995\u09cd\u200d\u0995", new int[] { 130, 3, 19 })]
     [InlineData("\u09a6\u09cd\u09af", new int[] { 36, 198 })]
     [InlineData("\u09a8\u09cd\u0995", new int[] { 149, 19 })]
     [InlineData("\u09a8\u09cd\u09a7", new int[] { 360 })]
     [InlineData("\u09a8\u09cd\u09af", new int[] { 38, 198 })]
     [InlineData("\u09a8\u09cd\u09b0", new int[] { 219 })]
 
-    // Harfbuzz replaces the default ignorable with id 573 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u09a8\u09cd\u200c\u0995", new int[] { 38, 64, 19 })]
-    [InlineData("\u09a8\u09cd\u200c\u09a7", new int[] { 38, 64, 37 })]
-    [InlineData("\u09a8\u09cd\u200c\u09ac", new int[] { 38, 64, 41 })]
-    [InlineData("\u09a8\u09cd\u200c\u09b0", new int[] { 38, 64, 45 })]
+    [InlineData("\u09a8\u09cd\u200c\u0995", new int[] { 38, 64, 3, 19 })]
+    [InlineData("\u09a8\u09cd\u200c\u09a7", new int[] { 38, 64, 3, 37 })]
+    [InlineData("\u09a8\u09cd\u200c\u09ac", new int[] { 38, 64, 3, 41 })]
+    [InlineData("\u09a8\u09cd\u200c\u09b0", new int[] { 38, 64, 3, 45 })]
 
-    // Harfbuzz replaces the default ignorable with id 574 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u09a8\u09cd\u200d\u0995", new int[] { 149, 19 })]
-    [InlineData("\u09a8\u09cd\u200d\u09a7", new int[] { 149, 37 })]
-    [InlineData("\u09a8\u09cd\u200d\u09ac", new int[] { 149, 41 })]
-    [InlineData("\u09a8\u09cd\u200d\u09b0", new int[] { 149, 45 })]
+    [InlineData("\u09a8\u09cd\u200d\u0995", new int[] { 149, 3, 19 })]
+    [InlineData("\u09a8\u09cd\u200d\u09a7", new int[] { 149, 3, 37 })]
+    [InlineData("\u09a8\u09cd\u200d\u09ac", new int[] { 149, 3, 41 })]
+    [InlineData("\u09a8\u09cd\u200d\u09b0", new int[] { 149, 3, 45 })]
     [InlineData("\u09af\u09cd", new int[] { 44, 64 })]
     [InlineData("\u09b0\u09cd\u0995", new int[] { 19, 127 })]
     [InlineData("\u09b0\u09cd\u0995\u09bf", new int[] { 54, 19, 127 })]
     [InlineData("\u09b0\u09cd\u0995\u09cc", new int[] { 446, 19, 127, 66 })]
 
-    // Harfbuzz replaces the default ignorable with id 574 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u09b0\u09cd\u09a8\u09cd\u200d", new int[] { 45, 64, 38, 64 })]
+    [InlineData("\u09b0\u09cd\u09a8\u09cd\u200d", new int[] { 45, 64, 38, 64, 3 })]
     [InlineData("\u09b0\u09cd\u09ac\u09cd\u09ac", new int[] { 263, 127 })]
     [InlineData("\u09b6\u09cd\u09af", new int[] { 47, 198 })]
     [InlineData("\u09b7\u09cd\u09af", new int[] { 48, 198 })]
@@ -421,8 +396,7 @@ public partial class GSubTableTests
     [InlineData("\u09a4\u09cd\u09af\u09c1", new int[] { 34, 518, 198 })]
     [InlineData("\u099a\u09cd\u09af\u09cd\u09b0", new int[] { 135, 225 })]
 
-    // Harfbuzz replaces the default ignorable with id 574 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u0995\u09cd\u200d\u09b7", new int[] { 130, 48 })]
+    [InlineData("\u0995\u09cd\u200d\u09b7", new int[] { 130, 3, 48 })]
     public void CanShapeBengaliText(string input, int[] expectedGlyphIndices)
     {
         ColorGlyphRenderer renderer = new();
@@ -488,15 +462,24 @@ public partial class GSubTableTests
         }
     }
 
-    // Verifies that the generated Indic shaping trie assigns the correct
-    // HarfBuzz-compatible categories to codepoints whose mappings were
-    // previously incorrect.
+    /// <summary>
+    /// Verifies the generated shaping categories for code points with source-defined mappings.
+    /// </summary>
+    /// <remarks>
+    /// The expected values are transcribed from HarfBuzz 14.2.1, <c>src/gen-indic-table.py</c>, symbols <c>category_map</c>, <c>category_overrides</c>, and <c>position_to_category</c>. These shaping categories are not derivable from the Unicode Character Database.
+    /// </remarks>
     [Theory]
-    [InlineData(0x0CF1, (int)Categories.CS)]   // KANNADA SIGN JIHVAMULIYA
-    [InlineData(0x0CF2, (int)Categories.CS)]   // KANNADA SIGN UPADHMANIYA
-    [InlineData(0x17CC, (int)Categories.CM)]   // KHMER SIGN ROBAT
-    [InlineData(0x09FE, (int)Categories.SM)]   // BENGALI SANDHI MARK
-    [InlineData(0x0A71, (int)Categories.SM)]   // GURMUKHI ADDAK
+    [InlineData(0x0CF1, (int)Categories.CS)] // KANNADA SIGN JIHVAMULIYA
+    [InlineData(0x0CF2, (int)Categories.CS)] // KANNADA SIGN UPADHMANIYA
+    [InlineData(0x17C6, (int)Categories.Xgroup)] // KHMER SIGN NIKAHIT
+    [InlineData(0x17C7, (int)Categories.Ygroup)] // KHMER SIGN REAHMUK
+    [InlineData(0x17C9, (int)Categories.Robatic)] // KHMER SIGN MUUSIKATOAN
+    [InlineData(0x17CA, (int)Categories.Robatic)] // KHMER SIGN TRIISAP
+    [InlineData(0x17CC, (int)Categories.Robatic)] // KHMER SIGN ROBAT
+    [InlineData(0x17D2, (int)Categories.H)] // KHMER SIGN COENG
+    [InlineData(0x17D9, (int)Categories.Placeholder)] // KHMER SIGN PHNAEK MUAN
+    [InlineData(0x09FE, (int)Categories.SM)] // BENGALI SANDHI MARK
+    [InlineData(0x0A71, (int)Categories.SM)] // GURMUKHI ADDAK
     [InlineData(0x0A40, (int)Categories.MPst)] // GURMUKHI VOWEL SIGN II
     public void IndicShapingCategoryIsCorrect(int codePoint, int expectedCategory)
     {
@@ -544,8 +527,7 @@ public partial class GSubTableTests
     [InlineData("\u0d05\u0d25\u0d4e\u0d35\u0d4d\u0d35\u0d02", new int[] { 6, 36, 208, 73, 4 })]
     [InlineData("\u0d15\u0d4d\u200d", new int[] { 101 })]
 
-    // Harfbuzz replaces the default ignorable with id 103 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u0d15\u0d3e\u0d2f\u0d4d\u200c\u0d15\u0d31\u0d3f", new int[] { 20, 59, 46, 72, 20, 48, 60 })]
+    [InlineData("\u0d15\u0d3e\u0d2f\u0d4d\u200c\u0d15\u0d31\u0d3f", new int[] { 20, 59, 46, 72, 3, 20, 48, 60 })]
     [InlineData("\u0d15\u0d3e\u0d30\u0d4d\u200d\u0d15\u0d4d\u0d15\u0d4b\u0d1f\u0d15\u0d28\u0d4d\u200d", new int[] { 20, 59, 98, 67, 147, 59, 30, 20, 97 })]
     [InlineData("\u0d15\u0d41\u0d31\u0d4d\u0d31\u0d4d\u0d2f\u0d3e\u0d1f\u0d3f", new int[] { 20, 62, 203, 229, 59, 30, 60 })]
     [InlineData("\u0d15\u0d46", new int[] { 66, 20 })]
@@ -592,24 +574,21 @@ public partial class GSubTableTests
     [InlineData("\u0d35\u0d4d\u0d35", new int[] { 208 })]
     [InlineData("\u0d37\u0d4d\u0d1f\u0d4d\u0d30\u0d40", new int[] { 54, 72, 146, 30, 61 })]
 
-    // Harfbuzz replaces the default ignorable with id 103 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u0d38\u0d4b\u0d2b\u0d4d\u0d31\u0d4d\u0d31\u0d4d\u200c\u0d35\u0d46\u0d2f\u0d30\u0d4d\u200d", new int[] { 67, 55, 59, 42, 72, 203, 72, 66, 52, 46, 98 })]
+    [InlineData("\u0d38\u0d4b\u0d2b\u0d4d\u0d31\u0d4d\u0d31\u0d4d\u200c\u0d35\u0d46\u0d2f\u0d30\u0d4d\u200d", new int[] { 67, 55, 59, 42, 72, 203, 72, 3, 66, 52, 46, 98 })]
     [InlineData("\u0d38\u0d4d\u0d2a\u0d4d\u0d30\u0d3f", new int[] { 55, 72, 146, 41, 60 })]
     [InlineData("\u0d38\u0d4d\u0d2a\u0d4d\u0d30\u0d47", new int[] { 55, 72, 67, 146, 41 })]
     [InlineData("\u0d38\u0d4d\u0d2a\u0d4d\u0d32\u0d47", new int[] { 55, 72, 67, 192 })]
     [InlineData("\u0d38\u0d4d\u0d35\u0d3e\u0d24\u0d28\u0d4d\u0d24\u0d4d\u0d30\u0d4d\u0d2f\u0d02", new int[] { 55, 145, 59, 35, 146, 189, 144, 4 })]
 
-    // Harfbuzz replaces the default ignorable with id 103 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u0d39\u0d3e\u0d30\u0d4d\u200d\u0d21\u0d4d\u200c\u0d35\u0d46\u0d2f\u0d30\u0d4d\u200d", new int[] { 56, 59, 98, 32, 72, 66, 52, 46, 98 })]
+    [InlineData("\u0d39\u0d3e\u0d30\u0d4d\u200d\u0d21\u0d4d\u200c\u0d35\u0d46\u0d2f\u0d30\u0d4d\u200d", new int[] { 56, 59, 98, 32, 72, 3, 66, 52, 46, 98 })]
     [InlineData("\u0d33\u0d4d\u200d", new int[] { 100 })]
     [InlineData("\u0d33\u0d4d\u0d2f\u0d02", new int[] { 50, 229, 4 })]
     [InlineData("\u0d33\u0d4d\u0d33", new int[] { 206 })]
     [InlineData("\u0d32\u0d4d\u200d\u0d2a\u0d4d\u0d2a\u0d47", new int[] { 99, 67, 191 })]
 
-    // Harfbuzz replaces the default ignorable with id 103 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u0d36\u0d3f\u0d02\u200c", new int[] { 53, 60, 4 })]
-    [InlineData("\u0d15\u0d4b\u0d02\u200c", new int[] { 67, 20, 59, 4 })]
-    [InlineData("\u0d2f\u200d\u0d4d\u0d2f", new int[] { 46, 144 })]
+    [InlineData("\u0d36\u0d3f\u0d02\u200c", new int[] { 53, 60, 3, 4 })]
+    [InlineData("\u0d15\u0d4b\u0d02\u200c", new int[] { 67, 20, 59, 3, 4 })]
+    [InlineData("\u0d2f\u200d\u0d4d\u0d2f", new int[] { 46, 3, 144 })]
     [InlineData("\u0d38\u0d4d\u0d31\u0d4d\u0d31\u0d4d", new int[] { 214, 72 })]
     public void CanShapeMalayalamText(string input, int[] expectedGlyphIndices)
     {
@@ -644,6 +623,12 @@ public partial class GSubTableTests
         }
     }
 
+    /// <summary>
+    /// Verifies Khmer syllable shaping and reordering.
+    /// </summary>
+    /// <remarks>
+    /// The expected ordering follows HarfBuzz 14.2.1, <c>src/hb-ot-shaper-khmer.cc</c>, symbols <c>reorder_khmer</c> and <c>reorder_consonant_syllable</c>. The reordering rule is shaping behavior and is not derivable from the Unicode Character Database.
+    /// </remarks>
     [Theory]
     [InlineData("\u1781\u17d2\u1798\u17c2", new int[] { 108, 45, 169 })]
     [InlineData("\u1787\u17b6", new int[] { 51, 96 })]
@@ -660,11 +645,10 @@ public partial class GSubTableTests
     [InlineData("\u1784\u17d2\u1782\u17d2\u179a", new int[] { 189, 48, 146 })]
     [InlineData("\u1798\u17c9\u17d2\u179b\u17c1\u17c7", new int[] { 107, 68, 115, 172, 113 })]
 
-    // Harfbuzz replaces the default ignorable with id 262 with a space (3) and sets the advance to 0. We skip it entirely on rendering.
-    [InlineData("\u1798\u200c\u17c9\u17d2\u179b\u17c1\u17c7", new int[] { 107, 68, 115, 172, 113 })]
+    [InlineData("\u1798\u200c\u17c9\u17d2\u179b\u17c1\u17c7", new int[] { 107, 68, 3, 115, 172, 113 })]
     [InlineData("\u1794\u17ca\u17d0", new int[] { 64, 116, 122 })]
     [InlineData("\u1793\u17c2\u17ce", new int[] { 108, 63, 120 })]
-    [InlineData("\u1780\u17c1\u17d2\u179a", new int[] { 107, 171, 44 })]
+    [InlineData("\u1780\u17c1\u17d2\u179a", new int[] { 171, 107, 44 })]
     [InlineData("\u1780\u17c0\u17d2\u179a", new int[] { 171, 107, 44, 106 })]
     [InlineData("\u1780\u17c4\u17d2\u179a", new int[] { 171, 107, 44, 110 })]
     [InlineData("\u1780\u17c5\u17d2\u179a", new int[] { 171, 107, 44, 111 })]

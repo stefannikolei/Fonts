@@ -45,7 +45,7 @@ public class GlyphTests
             textRun.TextDecorations,
             GlyphType.Standard);
 
-        Glyph glyph = new(glyphMetrics.CloneForRendering(textRun), font.Size);
+        Glyph glyph = new(glyphMetrics, font.Size, textRun, Vector2.Zero, new Vector2(glyphMetrics.AdvanceWidth, glyphMetrics.AdvanceHeight));
 
         Vector2 locationInFontSpace = new Vector2(99, 99) / 72; // glyph ends up 10px over due to offset in fake glyph
         glyph.RenderTo(this.renderer, 0, locationInFontSpace, Vector2.Zero, new Vector2(-1F), GlyphLayoutMode.Horizontal, new TextOptions(font));
@@ -102,10 +102,10 @@ public class GlyphTests
         Font font = TestFonts.GetFont(TestFonts.SimpleFontFile, 12);
 
         // Get letter A
-        Assert.True(font.TryGetGlyphs(new CodePoint(41), ColorFontSupport.None, out Glyph? glyph));
+        Assert.True(font.TryGetGlyphs(new CodePoint(0x41), ColorFontSupport.None, out Glyph? glyph));
         GlyphVector instance = ((TrueTypeGlyphMetrics)glyph.Value.GlyphMetrics).GetOutline();
 
-        Assert.Equal(20, instance.ControlPoints.Count);
+        Assert.Equal(6, instance.ControlPoints.Count);
     }
 
     [Fact]

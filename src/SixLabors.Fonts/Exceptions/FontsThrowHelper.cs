@@ -24,4 +24,16 @@ internal static class FontsThrowHelper
     [MethodImpl(MethodImplOptions.NoInlining)]
     public static void ThrowDefaultInstance()
         => throw new FontException("Cannot use the default value type instance to create a font.");
+
+    /// <summary>
+    /// Throws an <see cref="InvalidOperationException"/> recording that shaping
+    /// state was queried outside a segment window, where no shape plan is current.
+    /// Kept out of the accessor so it stays inlinable.
+    /// </summary>
+    /// <typeparam name="T">The declared result type of the failed accessor.</typeparam>
+    /// <returns>Never returns; the type satisfies the caller's flow analysis.</returns>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public static T ThrowNoCurrentShapePlan<T>()
+        => throw new InvalidOperationException(
+            "No shape plan is current; the operation is only valid while a segment is being shaped.");
 }

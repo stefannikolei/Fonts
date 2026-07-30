@@ -24,7 +24,7 @@ internal sealed class PlaceholderGlyphMetrics : FontGlyphMetrics
     /// <param name="pointSize">The point size used for layout.</param>
     /// <param name="dpi">The resolution used to convert placeholder pixels into layout units.</param>
     /// <param name="textRun">The text run this placeholder belongs to.</param>
-    internal PlaceholderGlyphMetrics(
+    public PlaceholderGlyphMetrics(
         StreamFontMetrics font,
         TextPlaceholder placeholder,
         float pointSize,
@@ -42,7 +42,8 @@ internal sealed class PlaceholderGlyphMetrics : FontGlyphMetrics
             font.UnitsPerEm,
             Vector2.Zero,
             new Vector2(font.ScaleFactor),
-            textRun,
+            textRun.TextAttributes,
+            textRun.TextDecorations,
             GlyphType.Placeholder)
     {
         this.placeholder = placeholder;
@@ -50,14 +51,22 @@ internal sealed class PlaceholderGlyphMetrics : FontGlyphMetrics
         this.dpi = dpi;
     }
 
-    /// <inheritdoc/>
-    internal override FontGlyphMetrics CloneForRendering(TextRun textRun)
-        => new PlaceholderGlyphMetrics(
-            this.FontMetrics,
-            this.placeholder,
-            this.pointSize,
-            this.dpi,
-            textRun);
+    /// <summary>
+    /// Creates placeholder metrics for the given font and placeholder text run.
+    /// </summary>
+    /// <param name="font">The font whose metrics anchor the placeholder's line metrics.</param>
+    /// <param name="textRun">The placeholder text run.</param>
+    /// <param name="dpi">The resolution used to convert placeholder pixels into layout units.</param>
+    /// <returns>The placeholder metrics.</returns>
+    public static PlaceholderGlyphMetrics Create(Font font, TextRun textRun, float dpi)
+    {
+        FontMetrics fontMetrics = font.FontMetrics;
+        StreamFontMetrics streamFontMetrics = fontMetrics is FileFontMetrics fileFontMetrics
+            ? fileFontMetrics.StreamFontMetrics
+            : (StreamFontMetrics)fontMetrics;
+
+        return new(streamFontMetrics, textRun.Placeholder.GetValueOrDefault(), font.Size, dpi, textRun);
+    }
 
     /// <inheritdoc/>
     internal override void RenderTo(
@@ -68,6 +77,8 @@ internal sealed class PlaceholderGlyphMetrics : FontGlyphMetrics
         Vector2 layoutAdvance,
         GlyphLayoutMode mode,
         TextRun textRun,
+        Vector2 positionOffset,
+        Vector2 positionedAdvance,
         float pointSize,
         float dpi,
         HintingMode hintingMode,

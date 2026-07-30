@@ -1,4 +1,4 @@
-﻿// Copyright (c) Six Labors.
+// Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
 using System.Numerics;
@@ -58,8 +58,7 @@ public sealed partial class TextBlock
             return;
         }
 
-        ShapedText shaped = TextLayout.ShapeText(text, options);
-        this.LogicalLine = TextLayout.ComposeLogicalLine(shaped, text, options);
+        this.LogicalLine = TextLayout.ComposeLogicalLine(text, options);
     }
 
     /// <summary>

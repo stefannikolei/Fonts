@@ -83,6 +83,9 @@ internal sealed class LookupType8Format1SubTable : LookupSubTable
         this.lookaheadCoverageTables = lookaheadCoverageTables;
     }
 
+    /// <inheritdoc/>
+    public override bool IsReverse => true;
+
     /// <summary>
     /// Loads the reverse chaining contextual single substitution format 1 subtable from the given offset.
     /// </summary>
@@ -148,54 +151,40 @@ internal sealed class LookupType8Format1SubTable : LookupSubTable
             markFilteringSet);
     }
 
-    /// <inheritdoc />
-    public override bool TrySubstitution(
-        FontMetrics fontMetrics,
-        GSubTable table,
-        GlyphSubstitutionCollection collection,
-        Tag feature,
-        int index,
-        int count)
+    /// <inheritdoc/>
+    public override void CollectDigest(ref GlyphSetDigest digest) => this.coverageTable.CollectDigest(ref digest);
+
+    /// <inheritdoc/>
+    public override bool TrySubstitution(FontMetrics fontMetrics, GSubTable table, ShapingBuffer buffer, Tag feature, uint lookupMask, int index, int count)
     {
-        // https://docs.microsoft.com/en-us/typography/opentype/spec/gsub#81-reverse-chaining-contextual-single-substitution-format-1-coverage-based-glyph-contexts
-        ushort glyphId = collection[index].GlyphId;
-        if (glyphId == 0)
-        {
-            return false;
-        }
-
+        ushort glyphId = buffer[index].GlyphId;
         int offset = this.coverageTable.CoverageIndexOf(glyphId);
-        if (offset <= -1)
+        if ((uint)offset >= (uint)this.substituteGlyphIds.Length || buffer.IsNestedApplication)
         {
             return false;
         }
 
-        for (int i = 0; i < this.backtrackCoverageTables.Length; ++i)
+        SkippingGlyphIterator iterator = new(fontMetrics, buffer, index, this.LookupFlags, this.MarkFilteringSet);
+        SkippingGlyphIterator backtrack = iterator;
+        int backtrackStart = backtrack.StartBacktrack();
+        if (!AdvancedTypographicUtils.MatchBacktrackCoverageSequence(backtrack, this.backtrackCoverageTables, backtrackStart, buffer.Count))
         {
-            ushort id = collection[index - 1 - i].GlyphId;
-            if (id == 0 || this.backtrackCoverageTables[i].CoverageIndexOf(id) < 0)
-            {
-                return false;
-            }
+            return false;
         }
 
-        for (int i = 0; i < this.lookaheadCoverageTables.Length; ++i)
+        // Lookahead starts after the covered glyph. Lookup filtering and transparent
+        // formatting controls are handled identically on both sides of the context.
+        int end = index + count;
+        if (!AdvancedTypographicUtils.MatchCoverageSequence(iterator, this.lookaheadCoverageTables, index + 1, end, 0, true))
         {
-            ushort id = collection[index + i].GlyphId;
-            if (id == 0 || this.lookaheadCoverageTables[i].CoverageIndexOf(id) < 0)
-            {
-                return false;
-            }
+            return false;
         }
 
-        // It's a match. Perform substitutions and return true if anything changed.
-        bool hasChanged = false;
-        for (int i = 0; i < this.substituteGlyphIds.Length; i++)
-        {
-            collection.Replace(index + i, this.substituteGlyphIds[i], feature);
-            hasChanged = true;
-        }
-
-        return hasChanged;
+        buffer.ReplaceInPlace(index, this.substituteGlyphIds[offset], feature);
+        return true;
     }
+
+    /// <inheritdoc />
+    public override bool WouldApply(ReadOnlySpan<ushort> glyphs, bool zeroContext)
+        => glyphs.Length == 1 && this.coverageTable.CoverageIndexOf(glyphs[0]) > -1;
 }

@@ -107,6 +107,7 @@ internal partial class StreamFontMetrics
         OS2Table os2 = reader.GetTable<OS2Table>();
         HorizontalMetricsTable htmx = reader.GetTable<HorizontalMetricsTable>();
         CMapTable cmap = reader.GetTable<CMapTable>();
+        cmap.SetSymbolFontPage(os2.FontPage);
         FpgmTable? fpgm = reader.TryGetTable<FpgmTable>();
         PrepTable? prep = reader.TryGetTable<PrepTable>();
         CvtTable? cvt = reader.TryGetTable<CvtTable>();
@@ -200,13 +201,14 @@ internal partial class StreamFontMetrics
         VerticalMetricsTable? vtmx = tables.Vmtx;
 
         GlyphVector vector = glyf.GetGlyph(glyphId);
+        Vector2 glyphAdvanceAdjustment = Vector2.Zero;
 
         // Apply gvar deltas to the glyph outline if a variation processor is present.
         // Clone first so we don't mutate the shared glyph cache.
         if (this.GlyphVariationProcessor is not null)
         {
             vector = GlyphVector.DeepClone(vector);
-            this.GlyphVariationProcessor.TransformPoints(glyphId, ref vector);
+            this.GlyphVariationProcessor.TransformPoints(glyphId, ref vector, out glyphAdvanceAdjustment);
         }
 
         Bounds bounds = vector.Bounds;
@@ -214,10 +216,11 @@ internal partial class StreamFontMetrics
         ushort advanceWidth = htmx.GetAdvancedWidth(glyphId);
         short lsb = htmx.GetLeftSideBearing(glyphId);
 
-        // Apply HVAR advance width adjustment if available.
+        // A dedicated metrics table takes precedence over the adjustment carried
+        // by the glyph's metric points.
         if (this.GlyphVariationProcessor is not null)
         {
-            advanceWidth = (ushort)(advanceWidth + MathF.Round(this.GlyphVariationProcessor.AdvanceAdjustment(glyphId)));
+            advanceWidth = (ushort)Math.Max(0, advanceWidth + this.GlyphVariationProcessor.AdvanceAdjustment(glyphId, glyphAdvanceAdjustment.X));
         }
 
         IMetricsHeader metrics = isVerticalLayout ? this.VerticalMetrics : this.HorizontalMetrics;
@@ -229,10 +232,10 @@ internal partial class StreamFontMetrics
             tsb = vtmx.GetTopSideBearing(glyphId);
         }
 
-        // Apply VVAR advance height adjustment if available.
+        // Vertical metrics use the same precedence rule as horizontal metrics.
         if (this.GlyphVariationProcessor is not null)
         {
-            advancedHeight = (ushort)(advancedHeight + MathF.Round(this.GlyphVariationProcessor.VerticalAdvanceAdjustment(glyphId)));
+            advancedHeight = (ushort)Math.Max(0, advancedHeight + this.GlyphVariationProcessor.VerticalAdvanceAdjustment(glyphId, glyphAdvanceAdjustment.Y));
         }
 
         ColrTable? colr = tables.Colr;

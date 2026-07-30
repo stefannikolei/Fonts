@@ -12,82 +12,134 @@ namespace SixLabors.Fonts.Tables.AdvancedTypographic.Shapers;
 /// </summary>
 internal sealed class HangulShaper : DefaultShaper
 {
-    /// <summary>The 'ljmo' (leading Jamo forms) feature tag.</summary>
+    /// <summary>
+    /// The 'ljmo' (leading Jamo forms) feature tag.
+    /// </summary>
     private static readonly Tag LjmoTag = Tag.Parse("ljmo");
 
-    /// <summary>The 'vjmo' (vowel Jamo forms) feature tag.</summary>
+    /// <summary>
+    /// The 'vjmo' (vowel Jamo forms) feature tag.
+    /// </summary>
     private static readonly Tag VjmoTag = Tag.Parse("vjmo");
 
-    /// <summary>The 'tjmo' (trailing Jamo forms) feature tag.</summary>
+    /// <summary>
+    /// The 'tjmo' (trailing Jamo forms) feature tag.
+    /// </summary>
     private static readonly Tag TjmoTag = Tag.Parse("tjmo");
 
-    /// <summary>The base code point for precomposed Hangul syllables (U+AC00).</summary>
+    /// <summary>
+    /// The base code point for precomposed Hangul syllables (U+AC00).
+    /// </summary>
     private const int HangulBase = 0xac00;
 
-    /// <summary>The base code point for leading consonant Jamo (U+1100).</summary>
+    /// <summary>
+    /// The base code point for leading consonant Jamo (U+1100).
+    /// </summary>
     private const int LBase = 0x1100; // lead
 
-    /// <summary>The base code point for vowel Jamo (U+1161).</summary>
+    /// <summary>
+    /// The base code point for vowel Jamo (U+1161).
+    /// </summary>
     private const int VBase = 0x1161; // vowel
 
-    /// <summary>The base code point for trailing consonant Jamo (U+11A7).</summary>
+    /// <summary>
+    /// The base code point for trailing consonant Jamo (U+11A7).
+    /// </summary>
     private const int TBase = 0x11a7; // trail
 
-    /// <summary>The number of leading consonant Jamo.</summary>
+    /// <summary>
+    /// The number of leading consonant Jamo.
+    /// </summary>
     private const int LCount = 19;
 
-    /// <summary>The number of vowel Jamo.</summary>
+    /// <summary>
+    /// The number of vowel Jamo.
+    /// </summary>
     private const int VCount = 21;
 
-    /// <summary>The number of trailing consonant Jamo (including no-trail).</summary>
+    /// <summary>
+    /// The number of trailing consonant Jamo (including no-trail).
+    /// </summary>
     private const int TCount = 28;
 
-    /// <summary>The last leading consonant Jamo code point.</summary>
+    /// <summary>
+    /// The last leading consonant Jamo code point.
+    /// </summary>
     private const int LEnd = LBase + LCount - 1;
 
-    /// <summary>The last vowel Jamo code point.</summary>
+    /// <summary>
+    /// The last vowel Jamo code point.
+    /// </summary>
     private const int VEnd = VBase + VCount - 1;
 
-    /// <summary>The last trailing consonant Jamo code point.</summary>
+    /// <summary>
+    /// The last trailing consonant Jamo code point.
+    /// </summary>
     private const int TEnd = TBase + TCount - 1;
 
-    /// <summary>The dotted circle code point (U+25CC) used as a placeholder base.</summary>
+    /// <summary>
+    /// The dotted circle code point (U+25CC) used as a placeholder base.
+    /// </summary>
     private const int DottedCircle = 0x25cc;
 
-    /// <summary>Other character category.</summary>
+    /// <summary>
+    /// Other character category.
+    /// </summary>
     private const byte X = 0;
 
-    /// <summary>Leading consonant category.</summary>
+    /// <summary>
+    /// Leading consonant category.
+    /// </summary>
     private const byte L = 1;
 
-    /// <summary>Medial vowel category.</summary>
+    /// <summary>
+    /// Medial vowel category.
+    /// </summary>
     private const byte V = 2;
 
-    /// <summary>Trailing consonant category.</summary>
+    /// <summary>
+    /// Trailing consonant category.
+    /// </summary>
     private const byte T = 3;
 
-    /// <summary>Composed lead-vowel syllable category.</summary>
+    /// <summary>
+    /// Composed lead-vowel syllable category.
+    /// </summary>
     private const byte LV = 4;
 
-    /// <summary>Composed lead-vowel-trail syllable category.</summary>
+    /// <summary>
+    /// Composed lead-vowel-trail syllable category.
+    /// </summary>
     private const byte LVT = 5;
 
-    /// <summary>Tone mark category.</summary>
+    /// <summary>
+    /// Tone mark category.
+    /// </summary>
     private const byte M = 6;
 
-    /// <summary>No action.</summary>
+    /// <summary>
+    /// No action.
+    /// </summary>
     private const byte None = 0;
 
-    /// <summary>Decompose composed syllable action.</summary>
+    /// <summary>
+    /// Decompose composed syllable action.
+    /// </summary>
     private const byte Decompose = 1;
 
-    /// <summary>Compose Jamo sequence action.</summary>
+    /// <summary>
+    /// Compose Jamo sequence action.
+    /// </summary>
     private const byte Compose = 2;
 
-    /// <summary>Reorder tone mark action.</summary>
+    /// <summary>
+    /// Reorder tone mark action.
+    /// </summary>
     private const byte ToneMark = 4;
 
-    /// <summary>Invalid sequence (insert dotted circle) action.</summary>
+    /// <summary>
+    /// Invalid sequence (insert dotted circle) action.
+    /// </summary>
     private const byte Invalid = 5;
 
     /// <summary>
@@ -110,7 +162,9 @@ internal sealed class HangulShaper : DefaultShaper
         { new byte[] { None, 0 }, new byte[] { None, 1 }, new byte[] { None, 0 }, new byte[] { None, 0 }, new byte[] { Decompose, 2 }, new byte[] { Decompose, 3 }, new byte[] { ToneMark, 0 } },
     };
 
-    /// <summary>The font metrics used for glyph lookups during composition/decomposition.</summary>
+    /// <summary>
+    /// The font metrics used for glyph lookups during composition/decomposition.
+    /// </summary>
     private readonly FontMetrics fontMetrics;
 
     /// <summary>
@@ -121,50 +175,67 @@ internal sealed class HangulShaper : DefaultShaper
     /// <param name="fontMetrics">The font metrics for glyph lookups.</param>
     public HangulShaper(ScriptClass script, TextOptions textOptions, FontMetrics fontMetrics)
         : base(script, MarkZeroingMode.None, textOptions)
-        => this.fontMetrics = fontMetrics;
-
-    /// <inheritdoc/>
-    protected override void PlanFeatures(IGlyphShapingCollection collection, int index, int count)
     {
-        this.AddFeature(collection, index, count, LjmoTag, false);
-        this.AddFeature(collection, index, count, VjmoTag, false);
-        this.AddFeature(collection, index, count, TjmoTag, false);
+        this.fontMetrics = fontMetrics;
+
+        // The text is left exactly as it was written. This shaper composes and
+        // decomposes syllables itself, by the rules the script's own features
+        // describe, and a font of this script is not built to mix ready-made
+        // syllables with the letters they are built from. Taking the text apart
+        // beforehand would hand it text of both kinds at once.
+        this.NormalizationMode = NormalizationMode.None;
     }
 
     /// <inheritdoc/>
-    protected override void AssignFeatures(IGlyphShapingCollection collection, int index, int count)
+    protected override void PlanFeatures(ShapingBuffer buffer, int index, int count)
     {
-        for (int i = index; i < count; i++)
-        {
-            // Uniscribe does not apply 'calt' for Hangul, and certain fonts
-            // (Noto Sans CJK, Source Sans Han, etc) apply all of jamo lookups
-            // in calt, which is not desirable.
-            collection.DisableShapingFeature(i, CaltTag);
-        }
+        this.AddFeature(buffer, index, count, LjmoTag, false);
+        this.AddFeature(buffer, index, count, VjmoTag, false);
+        this.AddFeature(buffer, index, count, TjmoTag, false);
+    }
+
+    /// <inheritdoc/>
+    protected override void PlanPostprocessingFeatures(ShapingBuffer buffer, int index, int count)
+    {
+        base.PlanPostprocessingFeatures(buffer, index, count);
+
+        // Certain fonts (Noto Sans CJK, Source Han Sans, etc) apply all of the
+        // jamo lookups through contextual alternates, which is not desirable.
+        // The feature is demoted from global to a varying feature whose mask is
+        // off by default: no glyph applies it unless a later range registration
+        // enables it, and feature assignment clears it on jamo even then, so the
+        // jamo lookups such fonts hide behind the feature can never fire there.
+        this.AddFeature(buffer, index, count, CaltTag, false);
+    }
+
+    /// <inheritdoc/>
+    protected override void AssignFeatures(ShapingBuffer buffer, int index, int count)
+    {
+        int entryCount = buffer.Count;
 
         // Apply the state machine to map glyphs to features.
-        if (collection is GlyphSubstitutionCollection substitutionCollection)
+        if (buffer.Role == ShapingBufferRole.Substitution)
         {
-            // Allocate a small buffer for composition operations.
+            // Hangul composition and decomposition use at most three jamo. Keep one
+            // fixed scratch span outside the state-machine loop for every syllable.
             Span<ushort> compositionBuffer = stackalloc ushort[3];
 
             // GSub
             int state = 0;
             for (int i = 0; i < count; i++)
             {
-                if (i + index >= substitutionCollection.Count)
+                if (i + index >= buffer.Count)
                 {
                     break;
                 }
 
-                GlyphShapingData data = substitutionCollection[i + index];
+                ref GlyphShapingData data = ref buffer[i + index];
                 CodePoint codePoint = data.CodePoint;
                 int type = GetSyllableType(codePoint);
                 byte[] actionsWithState = StateTable[state, type];
                 byte action = actionsWithState[0];
                 state = actionsWithState[1];
 
-                // TODO: Do not stackalloc in the loop.
                 switch (action)
                 {
                     case Decompose:
@@ -172,7 +243,7 @@ internal sealed class HangulShaper : DefaultShaper
                         // Decompose the composed syllable if it is not supported by the font.
                         if (data.GlyphId == 0)
                         {
-                            i = this.DecomposeGlyph(substitutionCollection, data, i, compositionBuffer);
+                            i = this.DecomposeGlyph(buffer, ref data, i, compositionBuffer);
                         }
 
                         break;
@@ -180,19 +251,19 @@ internal sealed class HangulShaper : DefaultShaper
                     case Compose:
 
                         // Found a decomposed syllable. Try to compose if supported by the font.
-                        i = this.ComposeGlyph(substitutionCollection, i, type, compositionBuffer);
+                        i = this.ComposeGlyph(buffer, i, type, compositionBuffer);
                         break;
 
                     case ToneMark:
 
                         // Got a valid syllable, followed by a tone mark. Move the tone mark to the beginning of the syllable.
-                        this.ReOrderToneMark(substitutionCollection, data, i);
+                        this.ReOrderToneMark(buffer, ref data, i);
                         break;
 
                     case Invalid:
 
                         // Tone mark has no valid syllable to attach to, so insert a dotted circle.
-                        i = this.InsertDottedCircle(substitutionCollection, data, i, compositionBuffer);
+                        i = this.InsertDottedCircle(buffer, ref data, i, compositionBuffer);
                         break;
                 }
             }
@@ -202,36 +273,61 @@ internal sealed class HangulShaper : DefaultShaper
             // GPos
             // Simply loop and enable based on type.
             // Glyph substitution has handled [de]composition.
+            // The three Jamo masks are invariant for the run, so resolving them
+            // before the loop avoids searching the plan for every glyph.
+            uint ljmoMask = this.Features.GetMask(LjmoTag);
+            uint vjmoMask = this.Features.GetMask(VjmoTag);
+            uint tjmoMask = this.Features.GetMask(TjmoTag);
+
             for (int i = 0; i < count; i++)
             {
-                if (i + index >= collection.Count)
+                if (i + index >= buffer.Count)
                 {
                     break;
                 }
 
-                GlyphShapingData data = collection[i + index];
+                ref GlyphShapingData data = ref buffer[i + index];
                 CodePoint codePoint = data.CodePoint;
                 switch (GetSyllableType(codePoint))
                 {
                     case L:
-                        collection.EnableShapingFeature(i, LjmoTag);
+                        buffer.EnableShapingFeature(i, ljmoMask);
                         break;
                     case V:
-                        collection.EnableShapingFeature(i, VjmoTag);
+                        buffer.EnableShapingFeature(i, vjmoMask);
                         break;
                     case T:
-                        collection.EnableShapingFeature(i, TjmoTag);
+                        buffer.EnableShapingFeature(i, tjmoMask);
                         break;
                     case LV:
-                        collection.EnableShapingFeature(i, LjmoTag);
-                        collection.EnableShapingFeature(i, VjmoTag);
+                        buffer.EnableShapingFeature(i, ljmoMask);
+                        buffer.EnableShapingFeature(i, vjmoMask);
                         break;
                     case LVT:
-                        collection.EnableShapingFeature(i, LjmoTag);
-                        collection.EnableShapingFeature(i, VjmoTag);
-                        collection.EnableShapingFeature(i, TjmoTag);
+                        buffer.EnableShapingFeature(i, ljmoMask);
+                        buffer.EnableShapingFeature(i, vjmoMask);
+                        buffer.EnableShapingFeature(i, tjmoMask);
                         break;
                 }
+            }
+        }
+
+        // Keep contextual alternates away from jamo, running after composition
+        // and decomposition so the check sees the segment's final code points:
+        // composed syllables keep the feature while the jamo lookups some fonts
+        // hide behind it can never fire on the jamo themselves.
+        count += buffer.Count - entryCount;
+        int end = index + count;
+
+        // The contextual-alternates mask is likewise invariant while this run is
+        // scanned for decomposed Jamo.
+        uint caltMask = this.Features.GetMask(CaltTag);
+        for (int i = index; i < end && i < buffer.Count; i++)
+        {
+            int type = GetSyllableType(buffer[i].CodePoint);
+            if (type is L or V or T)
+            {
+                buffer.DisableShapingFeature(i, caltMask);
             }
         }
     }
@@ -277,12 +373,12 @@ internal sealed class HangulShaper : DefaultShaper
     /// <summary>
     /// Decomposes a precomposed Hangul syllable into its constituent Jamo glyphs.
     /// </summary>
-    /// <param name="collection">The glyph substitution collection.</param>
+    /// <param name="buffer">The glyph substitution buffer.</param>
     /// <param name="data">The shaping data for the composed syllable.</param>
     /// <param name="index">The index of the glyph to decompose.</param>
     /// <param name="compositinoBuffer">A buffer for temporary glyph ID storage.</param>
     /// <returns>The updated index after decomposition.</returns>
-    private int DecomposeGlyph(GlyphSubstitutionCollection collection, GlyphShapingData data, int index, Span<ushort> compositinoBuffer)
+    private int DecomposeGlyph(ShapingBuffer buffer, ref GlyphShapingData data, int index, Span<ushort> compositinoBuffer)
     {
         // Decompose the syllable into a sequence of glyphs.
         int s = data.CodePoint.Value - HangulBase;
@@ -309,9 +405,9 @@ internal sealed class HangulShaper : DefaultShaper
             ii[1] = vjmo;
             ii[0] = ljmo;
 
-            collection.Replace(index, ii, KnownFeatureTags.GlyphCompositionDecomposition);
-            collection.EnableShapingFeature(index, LjmoTag);
-            collection.EnableShapingFeature(index + 1, VjmoTag);
+            buffer.Replace(index, ii, KnownFeatureTags.GlyphCompositionDecomposition);
+            buffer.EnableShapingFeature(index, this.Features.GetMask(LjmoTag));
+            buffer.EnableShapingFeature(index + 1, this.Features.GetMask(VjmoTag));
             return index + 1;
         }
 
@@ -320,29 +416,29 @@ internal sealed class HangulShaper : DefaultShaper
         iii[1] = vjmo;
         iii[0] = ljmo;
 
-        collection.Replace(index, iii, KnownFeatureTags.GlyphCompositionDecomposition);
-        collection.EnableShapingFeature(index, LjmoTag);
-        collection.EnableShapingFeature(index + 1, VjmoTag);
-        collection.EnableShapingFeature(index + 2, TjmoTag);
+        buffer.Replace(index, iii, KnownFeatureTags.GlyphCompositionDecomposition);
+        buffer.EnableShapingFeature(index, this.Features.GetMask(LjmoTag));
+        buffer.EnableShapingFeature(index + 1, this.Features.GetMask(VjmoTag));
+        buffer.EnableShapingFeature(index + 2, this.Features.GetMask(TjmoTag));
         return index + 2;
     }
 
     /// <summary>
     /// Attempts to compose decomposed Jamo into a precomposed Hangul syllable.
     /// </summary>
-    /// <param name="collection">The glyph substitution collection.</param>
-    /// <param name="index">The current index in the collection.</param>
+    /// <param name="buffer">The glyph substitution buffer.</param>
+    /// <param name="index">The current index in the buffer.</param>
     /// <param name="type">The syllable type of the current glyph.</param>
     /// <param name="compositionBuffer">A buffer for glyph IDs during composition.</param>
     /// <returns>The updated index after composition.</returns>
-    private int ComposeGlyph(GlyphSubstitutionCollection collection, int index, int type, Span<ushort> compositionBuffer)
+    private int ComposeGlyph(ShapingBuffer buffer, int index, int type, Span<ushort> compositionBuffer)
     {
         if (index == 0)
         {
             return index;
         }
 
-        GlyphShapingData prev = collection[index - 1];
+        ref GlyphShapingData prev = ref buffer[index - 1];
         CodePoint prevCodePoint = prev.CodePoint;
         int prevType = GetSyllableType(prevCodePoint);
 
@@ -372,8 +468,8 @@ internal sealed class HangulShaper : DefaultShaper
                 tjmo = index;
             }
 
-            CodePoint l = collection[ljmo].CodePoint;
-            CodePoint v = collection[vjmo].CodePoint;
+            CodePoint l = buffer[ljmo].CodePoint;
+            CodePoint v = buffer[vjmo].CodePoint;
 
             // Make sure L and V are combining characters
             if (IsCombiningL(l) && IsCombiningV(v))
@@ -382,7 +478,7 @@ internal sealed class HangulShaper : DefaultShaper
             }
         }
 
-        CodePoint t = tjmo >= 0 ? collection[tjmo].CodePoint : new CodePoint(TBase);
+        CodePoint t = tjmo >= 0 ? buffer[tjmo].CodePoint : new CodePoint(TBase);
         if ((lv != default) && (t.Value == TBase || IsCombiningT(t)))
         {
             CodePoint s = new(lv.Value + (t.Value - TBase));
@@ -393,8 +489,8 @@ internal sealed class HangulShaper : DefaultShaper
             {
                 int del = prevType == V ? 3 : 2;
                 int idx = index - del + 1;
-                collection.Replace(idx, del - 1, id, KnownFeatureTags.GlyphCompositionDecomposition);
-                collection[idx].CodePoint = s;
+                buffer.Replace(idx, del - 1, id, KnownFeatureTags.GlyphCompositionDecomposition);
+                buffer[idx].CodePoint = s;
                 return idx;
             }
         }
@@ -402,17 +498,18 @@ internal sealed class HangulShaper : DefaultShaper
         // Didn't compose (either a non-combining component or unsupported by font).
         if (ljmo >= 0)
         {
-            collection.EnableShapingFeature(ljmo, LjmoTag);
+            buffer.CombineInputStarts(ljmo, (tjmo >= 0 ? tjmo : vjmo) + 1);
+            buffer.EnableShapingFeature(ljmo, this.Features.GetMask(LjmoTag));
         }
 
         if (vjmo >= 0)
         {
-            collection.EnableShapingFeature(vjmo, VjmoTag);
+            buffer.EnableShapingFeature(vjmo, this.Features.GetMask(VjmoTag));
         }
 
         if (tjmo >= 0)
         {
-            collection.EnableShapingFeature(tjmo, TjmoTag);
+            buffer.EnableShapingFeature(tjmo, this.Features.GetMask(TjmoTag));
         }
 
         if (prevType == LV)
@@ -420,7 +517,7 @@ internal sealed class HangulShaper : DefaultShaper
             // Sequence was originally <L,V>, which got combined earlier.
             // Either the T was non-combining, or the LVT glyph wasn't supported.
             // Decompose the glyph again and apply OT features.
-            this.DecomposeGlyph(collection, collection[index - 1], index - 1, compositionBuffer);
+            this.DecomposeGlyph(buffer, ref buffer[index - 1], index - 1, compositionBuffer);
             return index + 1;
         }
 
@@ -430,10 +527,10 @@ internal sealed class HangulShaper : DefaultShaper
     /// <summary>
     /// Reorders a tone mark to the beginning of the preceding syllable.
     /// </summary>
-    /// <param name="collection">The glyph substitution collection.</param>
+    /// <param name="buffer">The glyph substitution buffer.</param>
     /// <param name="data">The shaping data of the tone mark glyph.</param>
-    /// <param name="index">The index of the tone mark in the collection.</param>
-    private void ReOrderToneMark(GlyphSubstitutionCollection collection, GlyphShapingData data, int index)
+    /// <param name="index">The index of the tone mark in the buffer.</param>
+    private void ReOrderToneMark(ShapingBuffer buffer, ref GlyphShapingData data, int index)
     {
         if (index == 0)
         {
@@ -443,40 +540,45 @@ internal sealed class HangulShaper : DefaultShaper
         // Move tone mark to the beginning of the previous syllable, unless it is zero width
         // We don't have access to the glyphs metrics as an array when substituting so we have to loop.
         FontMetrics fontMetrics = this.fontMetrics;
-        TextAttributes textAttributes = data.TextRun.TextAttributes;
-        TextDecorations textDecorations = data.TextRun.TextDecorations;
-        LayoutMode layoutMode = collection.TextOptions.LayoutMode;
-        ColorFontSupport colorFontSupport = collection.TextOptions.ColorFontSupport;
+        TextRun textRun = buffer.TextRuns[data.TextRunIndex];
+        TextAttributes textAttributes = textRun.TextAttributes;
+        TextDecorations textDecorations = textRun.TextDecorations;
+        LayoutMode layoutMode = buffer.TextOptions.LayoutMode;
+        ColorFontSupport colorFontSupport = buffer.TextOptions.ColorFontSupport;
         if (fontMetrics.TryGetGlyphMetrics(data.CodePoint, textAttributes, textDecorations, layoutMode, colorFontSupport, out FontGlyphMetrics? metrics)
             && metrics.AdvanceWidth == 0)
         {
             return;
         }
 
-        GlyphShapingData prev = collection[index - 1];
+        ref GlyphShapingData prev = ref buffer[index - 1];
         int len = GetSyllableLength(prev.CodePoint);
-        collection.MoveGlyph(index, index - len);
+        int syllableStart = index - len;
+
+        buffer.CombineInputStarts(syllableStart, index + 1);
+        buffer.MoveGlyph(index, syllableStart);
     }
 
     /// <summary>
     /// Inserts a dotted circle glyph as a placeholder for an invalid tone mark that has no syllable to attach to.
     /// </summary>
-    /// <param name="collection">The glyph substitution collection.</param>
+    /// <param name="buffer">The glyph substitution buffer.</param>
     /// <param name="data">The shaping data of the invalid tone mark glyph.</param>
-    /// <param name="index">The index of the tone mark in the collection.</param>
+    /// <param name="index">The index of the tone mark in the buffer.</param>
     /// <param name="compositionBuffer">A buffer for glyph IDs during insertion.</param>
     /// <returns>The updated index after insertion.</returns>
-    private int InsertDottedCircle(GlyphSubstitutionCollection collection, GlyphShapingData data, int index, Span<ushort> compositionBuffer)
+    private int InsertDottedCircle(ShapingBuffer buffer, ref GlyphShapingData data, int index, Span<ushort> compositionBuffer)
     {
         bool after = false;
         FontMetrics fontMetrics = this.fontMetrics;
 
         if (fontMetrics.TryGetGlyphId(new(DottedCircle), out ushort id))
         {
-            TextAttributes textAttributes = data.TextRun.TextAttributes;
-            TextDecorations textDecorations = data.TextRun.TextDecorations;
-            LayoutMode layoutMode = collection.TextOptions.LayoutMode;
-            ColorFontSupport colorFontSupport = collection.TextOptions.ColorFontSupport;
+            TextRun textRun = buffer.TextRuns[data.TextRunIndex];
+            TextAttributes textAttributes = textRun.TextAttributes;
+            TextDecorations textDecorations = textRun.TextDecorations;
+            LayoutMode layoutMode = buffer.TextOptions.LayoutMode;
+            ColorFontSupport colorFontSupport = buffer.TextOptions.ColorFontSupport;
             if (fontMetrics.TryGetGlyphMetrics(data.CodePoint, textAttributes, textDecorations, layoutMode, colorFontSupport, out FontGlyphMetrics? metrics)
                 && metrics.AdvanceWidth != 0)
             {
@@ -496,7 +598,7 @@ internal sealed class HangulShaper : DefaultShaper
                 glyphs[0] = id;
             }
 
-            collection.Replace(index, glyphs, KnownFeatureTags.GlyphCompositionDecomposition);
+            buffer.Replace(index, glyphs, KnownFeatureTags.GlyphCompositionDecomposition);
             return index + 1;
         }
 

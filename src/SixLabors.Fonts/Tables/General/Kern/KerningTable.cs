@@ -15,7 +15,7 @@ internal sealed class KerningTable : Table
     /// <summary>
     /// The table tag name identifying the 'kern' table.
     /// </summary>
-    internal const string TableName = "kern";
+    public const string TableName = "kern";
 
     /// <summary>
     /// The array of kerning subtables contained in this table.
@@ -58,6 +58,12 @@ internal sealed class KerningTable : Table
     /// <summary>
     /// Loads the <see cref="KerningTable"/> from the specified binary reader.
     /// </summary>
+    /// <remarks>
+    /// The version 0 header is defined by the
+    /// <see href="https://learn.microsoft.com/en-us/typography/opentype/spec/kern">OpenType 'kern' specification</see>.
+    /// The version 1.0 header is defined by the
+    /// <see href="https://developer.apple.com/fonts/TrueType-Reference-Manual/RM06/Chap6kern.html">Apple TrueType Reference Manual</see>.
+    /// </remarks>
     /// <param name="reader">The binary reader positioned at the start of the kern table data.</param>
     /// <returns>The loaded <see cref="KerningTable"/>.</returns>
     public static KerningTable Load(BigEndianBinaryReader reader)
@@ -69,13 +75,29 @@ internal sealed class KerningTable : Table
         // +--------+---------+-------------------------------------------+
         // | uint16 | nTables | Number of subtables in the kerning table. |
         // +--------+---------+-------------------------------------------+
-        ushort version = reader.ReadUInt16();
-        ushort subTableCount = reader.ReadUInt16();
+        ushort majorVersion = reader.ReadUInt16();
+        int subTableCount;
+        bool useAppleHeader;
+        if (majorVersion == 0)
+        {
+            subTableCount = reader.ReadUInt16();
+            useAppleHeader = false;
+        }
+        else if (majorVersion == 1)
+        {
+            _ = reader.ReadUInt16();
+            subTableCount = checked((int)reader.ReadUInt32());
+            useAppleHeader = true;
+        }
+        else
+        {
+            return new KerningTable([]);
+        }
 
         List<KerningSubTable> tables = new(subTableCount);
         for (int i = 0; i < subTableCount; i++)
         {
-            KerningSubTable? t = KerningSubTable.Load(reader); // returns null for unknown/supported table format
+            KerningSubTable? t = KerningSubTable.Load(reader, useAppleHeader);
             if (t != null)
             {
                 tables.Add(t);
@@ -89,30 +111,45 @@ internal sealed class KerningTable : Table
     /// Updates glyph positions by applying kerning adjustments for the specified glyph pair.
     /// </summary>
     /// <param name="fontMetrics">The font metrics used for position calculations.</param>
-    /// <param name="collection">The glyph positioning collection to update.</param>
-    /// <param name="left">The index of the left glyph in the collection.</param>
-    /// <param name="right">The index of the right glyph in the collection.</param>
-    public void UpdatePositions(FontMetrics fontMetrics, GlyphPositioningCollection collection, int left, int right)
+    /// <param name="buffer">The glyph positioning buffer to update.</param>
+    /// <param name="left">The index of the left glyph in the buffer.</param>
+    /// <param name="right">The index of the right glyph in the buffer.</param>
+    public void UpdatePositions(FontMetrics fontMetrics, ShapingBuffer buffer, int left, int right)
     {
-        if (this.Count == 0 || collection.Count == 0)
+        if (this.Count == 0 || buffer.Count == 0)
         {
             return;
         }
 
-        GlyphShapingData current = collection[left];
-        if (current.IsKerned)
+        ref GlyphShapingPosition currentPosition = ref buffer.PositionAt(left);
+        if (currentPosition.IsKerned
+            || buffer.MetricsAt(left).Metrics.FontMetrics != fontMetrics
+            || buffer.MetricsAt(right).Metrics.FontMetrics != fontMetrics)
         {
-            // Already kerned via previous processing.
+            // A shared shaping buffer can contain glyph ids from several fonts. A
+            // kerning table's glyph ids are meaningful only within its own font.
             return;
         }
 
-        ushort currentId = current.GlyphId;
-        ushort nextId = collection[right].GlyphId;
+        ushort currentId = buffer[left].GlyphId;
+        ushort nextId = buffer[right].GlyphId;
 
         if (this.TryGetKerningOffset(currentId, nextId, out Vector2 result))
         {
-            collection.Advance(fontMetrics, left, currentId, (short)result.X, (short)result.Y);
-            current.IsKerned = true;
+            int horizontalKern = (int)result.X;
+            int verticalKern = (int)result.Y;
+            short firstHorizontal = (short)(horizontalKern >> 1);
+            short secondHorizontal = (short)(horizontalKern - firstHorizontal);
+            short firstVertical = (short)(verticalKern >> 1);
+            short secondVertical = (short)(verticalKern - firstVertical);
+
+            buffer.Advance(fontMetrics, left, currentId, firstHorizontal, firstVertical);
+            buffer.Advance(fontMetrics, right, nextId, secondHorizontal, secondVertical);
+
+            ref GlyphShapingPosition nextPosition = ref buffer.PositionAt(right);
+            nextPosition.Bounds.X += secondHorizontal;
+            nextPosition.Bounds.Y += secondVertical;
+            currentPosition.IsKerned = true;
         }
     }
 

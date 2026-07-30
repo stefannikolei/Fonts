@@ -15,7 +15,6 @@ namespace SixLabors.Fonts;
 internal sealed class TextLine
 {
     private readonly List<GlyphLayoutData> data;
-    private readonly Dictionary<int, float> advances = [];
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TextLine"/> class with a small default capacity.
@@ -132,7 +131,7 @@ internal sealed class TextLine
         int count = 0;
         for (int i = 0; i < this.data.Count; i++)
         {
-            count += this.data[i].Metrics.Count;
+            count += this.data[i].Metrics.Length;
         }
 
         return count;
@@ -141,7 +140,7 @@ internal sealed class TextLine
     /// <summary>
     /// Appends a shaped entry to this line, updating the aggregated line-level metrics.
     /// </summary>
-    /// <param name="metrics">The glyph metrics produced by shaping this entry's codepoint.</param>
+    /// <param name="metrics">The entry's contiguous slice of the line's shaped glyph storage.</param>
     /// <param name="font">The font used to shape and render this entry.</param>
     /// <param name="pointSize">The point size at which the entry is rendered.</param>
     /// <param name="scaledAdvance">The scaled advance contributed by this entry.</param>
@@ -161,7 +160,7 @@ internal sealed class TextLine
     /// <param name="lineSpacing">The line-spacing factor to apply to <paramref name="scaledLineHeight"/>.</param>
     /// <param name="hyphenationMarkerIndex">The marker index to use if this entry becomes a selected soft-hyphen break.</param>
     public void Add(
-        IReadOnlyList<FontGlyphMetrics> metrics,
+        ReadOnlyMemory<PositionedGlyphMetrics> metrics,
         Font font,
         float pointSize,
         float scaledAdvance,
@@ -186,11 +185,9 @@ internal sealed class TextLine
 
         // Reset metrics.
         // We track the maximum metrics for each line to ensure glyphs can be aligned.
-        if (graphemeCodePointIndex == 0)
-        {
-            // TODO: Check this logic is correct.
-            this.ScaledLineAdvance += scaledAdvance;
-        }
+        // Layout consumes every positioned glyph advance. Grapheme boundaries govern
+        // text semantics, but do not collapse multiple positioned glyph advances.
+        this.ScaledLineAdvance += scaledAdvance;
 
         this.ScaledMaxLineHeight = MathF.Max(this.ScaledMaxLineHeight, scaledLineHeight);
         this.ScaledMaxAscender = MathF.Max(this.ScaledMaxAscender, scaledAscender);
@@ -201,15 +198,16 @@ internal sealed class TextLine
         // For scripts with stacked marks (Tibetan, etc) this can be significantly
         // above the typographic ascender, so we cannot trust ascender alone.
         float scaledMinY = 0;
-        for (int i = 0; i < metrics.Count; i++)
+        ReadOnlySpan<PositionedGlyphMetrics> metricsSpan = metrics.Span;
+        for (int i = 0; i < metricsSpan.Length; i++)
         {
-            FontGlyphMetrics metric = metrics[i];
+            FontGlyphMetrics metric = metricsSpan[i].Metrics;
             if (FontGlyphMetrics.ShouldSkipGlyphRendering(metric.CodePoint))
             {
                 continue;
             }
 
-            FontRectangle bbox = metric.GetBoundingBox(layoutMode, Vector2.Zero, pointSize);
+            FontRectangle bbox = metric.GetBoundingBox(layoutMode, Vector2.Zero, pointSize, metricsSpan[i].TextRun, metricsSpan[i].Offset, new Vector2(metricsSpan[i].AdvanceWidth, metricsSpan[i].AdvanceHeight));
             scaledMinY = MathF.Min(scaledMinY, bbox.Y);
         }
 
@@ -248,29 +246,32 @@ internal sealed class TextLine
     /// <summary>
     /// Adds an inline placeholder entry at an existing source codepoint position without consuming source text.
     /// </summary>
-    /// <param name="placeholder">The positioned placeholder glyph data.</param>
+    /// <param name="placeholderGlyph">The placeholder glyph metrics.</param>
+    /// <param name="run">The shaped run carrying the placeholder's font, point size, text run, and bidi run.</param>
+    /// <param name="offset">The source codepoint index at the placeholder insertion point.</param>
     /// <param name="graphemeIndex">The source grapheme index at the placeholder insertion point.</param>
     /// <param name="stringIndex">The source UTF-16 index at the placeholder insertion point.</param>
     /// <param name="isHorizontalLayout"><see langword="true"/> when the current layout advances horizontally.</param>
     /// <param name="isVerticalMixedLayout"><see langword="true"/> when the current layout is vertical mixed.</param>
     /// <param name="lineSpacing">The line-spacing factor to apply to placeholder line height.</param>
     public void AddPlaceholder(
-        GlyphPositioningCollection.GlyphPositioningData placeholder,
+        FontGlyphMetrics placeholderGlyph,
+        in ShapedTextRun run,
+        int offset,
         int graphemeIndex,
         int stringIndex,
         bool isHorizontalLayout,
         bool isVerticalMixedLayout,
         float lineSpacing)
     {
-        FontGlyphMetrics placeholderGlyph = placeholder.Metrics;
         bool isPlaceholderHorizontal = isHorizontalLayout || isVerticalMixedLayout;
         float placeholderAdvance = isPlaceholderHorizontal
             ? placeholderGlyph.AdvanceWidth
             : placeholderGlyph.AdvanceHeight;
 
         Vector2 placeholderScale = new(
-            placeholder.PointSize / placeholderGlyph.ScaleFactor.X,
-            placeholder.PointSize / placeholderGlyph.ScaleFactor.Y);
+            run.PointSize / placeholderGlyph.ScaleFactor.X,
+            run.PointSize / placeholderGlyph.ScaleFactor.Y);
 
         placeholderAdvance *= isPlaceholderHorizontal ? placeholderScale.X : placeholderScale.Y;
 
@@ -278,7 +279,7 @@ internal sealed class TextLine
             ? GlyphLayoutMode.Horizontal
             : GlyphLayoutMode.Vertical;
 
-        FontRectangle placeholderBox = placeholderGlyph.GetBoundingBox(placeholderMode, Vector2.Zero, placeholder.PointSize);
+        FontRectangle placeholderBox = placeholderGlyph.GetBoundingBox(placeholderMode, Vector2.Zero, run.PointSize, run.TextRun, Vector2.Zero, new Vector2(placeholderGlyph.AdvanceWidth, placeholderGlyph.AdvanceHeight));
 
         IMetricsHeader metricsHeader = isPlaceholderHorizontal
             ? placeholderGlyph.FontMetrics.HorizontalMetrics
@@ -288,7 +289,7 @@ internal sealed class TextLine
         // normal ascender/descender band. Keep the run font line-box model as
         // the baseline contribution, then expand only the side the placeholder
         // actually overhangs so following lines reserve enough space.
-        float placeholderScaleY = placeholder.PointSize / placeholderGlyph.ScaleFactor.Y;
+        float placeholderScaleY = run.PointSize / placeholderGlyph.ScaleFactor.Y;
         float placeholderLineHeight = placeholderGlyph.UnitsPerEm * placeholderScaleY;
         float placeholderDelta = ((metricsHeader.LineHeight * placeholderScaleY) - placeholderLineHeight) * .5F;
         float placeholderAscender = (metricsHeader.Ascender * placeholderScaleY) - placeholderDelta;
@@ -301,19 +302,21 @@ internal sealed class TextLine
 
         // Placeholders share the source codepoint offset at their insertion point,
         // but they do not consume source grapheme, codepoint, or UTF-16 indexes.
+        // Generated glyphs are not part of the shaped stream, so the entry owns
+        // its single-glyph storage.
         this.Add(
-            new FontGlyphMetrics[] { placeholderGlyph },
-            placeholder.Font,
-            placeholder.PointSize,
+            new PositionedGlyphMetrics[] { new(placeholderGlyph, placeholderGlyph.AdvanceWidth, placeholderGlyph.AdvanceHeight, Vector2.Zero, run.TextRun) },
+            run.Font,
+            run.PointSize,
             placeholderAdvance,
             placeholderLineHeight,
             placeholderAscender,
             placeholderDescender,
             placeholderDelta,
-            placeholder.Data.BidiRun,
+            run.BidiRun,
             graphemeIndex,
             true,
-            placeholder.Offset,
+            offset,
             0,
             false,
             false,
@@ -332,43 +335,6 @@ internal sealed class TextLine
     {
         this.data.InsertRange(index, textLine.data);
         RecalculateLineMetrics(this);
-    }
-
-    /// <summary>
-    /// Returns the cumulative scaled advance up to and including the glyph at the given index.
-    /// Whitespace entries at or after <paramref name="index"/> are skipped so the returned value
-    /// represents the advance at the last non-whitespace glyph before a potential line break.
-    /// </summary>
-    /// <remarks>Results are memoized by index.</remarks>
-    /// <param name="index">The zero-based index to measure up to.</param>
-    /// <returns>The cumulative scaled advance.</returns>
-    public float MeasureAt(int index)
-    {
-        if (this.advances.TryGetValue(index, out float advance))
-        {
-            return advance;
-        }
-
-        if (index >= this.data.Count)
-        {
-            index = this.data.Count - 1;
-        }
-
-        while (index >= 0 && CodePoint.IsWhiteSpace(this.data[index].CodePoint))
-        {
-            // If the index is whitespace, we need to measure at the previous
-            // non-whitespace glyph to ensure we don't break too early.
-            index--;
-        }
-
-        advance = 0;
-        for (int i = 0; i <= index; i++)
-        {
-            advance += this.data[i].ScaledAdvance;
-        }
-
-        this.advances[index] = advance;
-        return advance;
     }
 
     /// <summary>
@@ -413,7 +379,7 @@ internal sealed class TextLine
 
         GlyphLayoutData anchor = this.data[^1];
         GlyphLayoutData marker = TextLayout.CreateGeneratedMarker(
-            anchor.Metrics[0],
+            anchor.Metrics.Span[0],
             anchor.PointSize,
             anchor.BidiRun,
             anchor.GraphemeIndex,
@@ -548,6 +514,15 @@ internal sealed class TextLine
         {
             if (this.data[--index].CodePointIndex == lineBreak.PositionWrap)
             {
+                // One source codepoint can emit several layout entries. The
+                // reverse search lands on its final entry, so rewind to the first
+                // entry or the preceding line would retain part of the grapheme
+                // after its hard break.
+                while (index > 0 && this.data[index - 1].CodePointIndex == lineBreak.PositionWrap)
+                {
+                    index--;
+                }
+
                 break;
             }
         }
@@ -658,6 +633,7 @@ internal sealed class TextLine
     /// Finalizes this line after line-breaking: trims trailing breaking whitespace when requested,
     /// applies bidi reordering so entries are in visual order, and recomputes aggregated metrics.
     /// </summary>
+    /// <param name="layoutMode">The orientation used to finalize directional run fragments.</param>
     /// <param name="skipJustification">
     /// When <see langword="true"/>, marks the line so <see cref="Justify"/> becomes a no-op
     /// (used for paragraph-final lines).
@@ -670,13 +646,14 @@ internal sealed class TextLine
     /// </param>
     /// <returns>This line, for fluent chaining.</returns>
     public TextLine Finalize(
+        LayoutMode layoutMode,
         bool skipJustification = false,
         bool normalizeDecomposedAdvances = false,
         bool preserveTrailingBreakingWhitespace = false)
     {
         this.SkipJustification = skipJustification;
         this.RemoveTrailingBreakingWhitespace(preserveTrailingBreakingWhitespace);
-        this.BidiReOrder();
+        this.BidiReOrder(layoutMode);
 
         if (normalizeDecomposedAdvances)
         {
@@ -830,87 +807,10 @@ internal sealed class TextLine
 
     /// <summary>
     /// Re-orders the entries in this line from logical to visual order according to the
-    /// Unicode Bidirectional Algorithm (<see href="https://unicode.org/reports/tr9/"/>, rules L1 and L2).
+    /// Unicode Bidirectional Algorithm (<see href="https://unicode.org/reports/tr9/"/>, rule L2).
     /// </summary>
-    public void BidiReOrder()
-    {
-        // Build up the collection of ordered runs.
-        BidiRun run = this.data[0].BidiRun;
-        OrderedBidiRun orderedRun = new(run.Level);
-        OrderedBidiRun? current = orderedRun;
-        for (int i = 0; i < this.data.Count; i++)
-        {
-            GlyphLayoutData g = this.data[i];
-            if (run != g.BidiRun)
-            {
-                run = g.BidiRun;
-                current.Next = new(run.Level);
-                current = current.Next;
-            }
-
-            current.Add(g);
-        }
-
-        // Reorder them into visual order.
-        orderedRun = LinearReOrder(orderedRun);
-
-        // Now perform a recursive reversal of each run.
-        // From the highest level found in the text to the lowest odd level on each line, including intermediate levels
-        // not actually present in the text, reverse any contiguous sequence of characters that are at that level or higher.
-        // https://unicode.org/reports/tr9/#L2
-        int max = 0;
-        int min = int.MaxValue;
-        for (int i = 0; i < this.data.Count; i++)
-        {
-            int level = this.data[i].BidiRun.Level;
-            if (level > max)
-            {
-                max = level;
-            }
-
-            if ((level & 1) != 0 && level < min)
-            {
-                min = level;
-            }
-        }
-
-        if (min > max)
-        {
-            min = max;
-        }
-
-        if (max == 0 || (min == max && (max & 1) == 0))
-        {
-            // Nothing to reverse.
-            return;
-        }
-
-        // Now apply the reversal and replace the original contents.
-        int minLevelToReverse = max;
-        while (minLevelToReverse >= min)
-        {
-            current = orderedRun;
-            while (current != null)
-            {
-                if (current.Level >= minLevelToReverse)
-                {
-                    current.Reverse();
-                }
-
-                current = current.Next;
-            }
-
-            minLevelToReverse--;
-        }
-
-        this.data.Clear();
-        current = orderedRun;
-        while (current != null)
-        {
-            this.data.AddRange(current.AsSlice());
-            current = current.Next;
-        }
-    }
+    /// <param name="layoutMode">The orientation used to finalize directional run fragments.</param>
+    public void BidiReOrder(LayoutMode layoutMode) => BidiReordering.Reorder(this.data, layoutMode);
 
     /// <summary>
     /// Recomputes the aggregated per-line metrics (advance, max line height, ascender,
@@ -944,152 +844,5 @@ internal sealed class TextLine
         textLine.ScaledMaxDelta = delta;
         textLine.ScaledMaxLineHeight = lineHeight;
         textLine.ScaledMinY = minY;
-
-        textLine.advances.Clear();
-    }
-
-    /// <summary>
-    /// Reorders a series of runs from logical to visual order, returning the left most run.
-    /// <see href="https://github.com/fribidi/linear-reorder/blob/f2f872257d4d8b8e137fcf831f254d6d4db79d3c/linear-reorder.c"/>
-    /// </summary>
-    /// <param name="line">The ordered bidi run.</param>
-    /// <returns>The <see cref="OrderedBidiRun"/>.</returns>
-    private static OrderedBidiRun LinearReOrder(OrderedBidiRun? line)
-    {
-        BidiRange? range = null;
-        OrderedBidiRun? run = line;
-
-        while (run != null)
-        {
-            OrderedBidiRun? next = run.Next;
-
-            while (range != null && range.Level > run.Level
-                && range.Previous != null && range.Previous.Level >= run.Level)
-            {
-                range = BidiRange.MergeWithPrevious(range);
-            }
-
-            if (range != null && range.Level >= run.Level)
-            {
-                // Attach run to the range.
-                if ((run.Level & 1) != 0)
-                {
-                    // Odd, range goes to the right of run.
-                    run.Next = range.Left;
-                    range.Left = run;
-                }
-                else
-                {
-                    // Even, range goes to the left of run.
-                    range.Right!.Next = run;
-                    range.Right = run;
-                }
-
-                range.Level = run.Level;
-            }
-            else
-            {
-                BidiRange r = new();
-                r.Left = r.Right = run;
-                r.Level = run.Level;
-                r.Previous = range;
-                range = r;
-            }
-
-            run = next;
-        }
-
-        while (range?.Previous != null)
-        {
-            range = BidiRange.MergeWithPrevious(range);
-        }
-
-        // Terminate.
-        range!.Right!.Next = null;
-        return range!.Left!;
-    }
-
-    /// <summary>
-    /// A node in the linked list of contiguous same-level bidi runs used by <see cref="LinearReOrder"/>.
-    /// Each node owns the glyph entries at its bidi embedding level and can be reversed in place.
-    /// </summary>
-    private sealed class OrderedBidiRun
-    {
-        private ArrayBuilder<GlyphLayoutData> info;
-
-        /// <summary>
-        /// Initializes a new instance of the <see cref="OrderedBidiRun"/> class.
-        /// </summary>
-        /// <param name="level">The bidi embedding level for this run.</param>
-        public OrderedBidiRun(int level) => this.Level = level;
-
-        /// <summary>Gets the bidi embedding level of this run.</summary>
-        public int Level { get; }
-
-        /// <summary>Gets or sets the next run in visual order.</summary>
-        public OrderedBidiRun? Next { get; set; }
-
-        /// <summary>Appends an entry to this run.</summary>
-        /// <param name="info">The entry to append.</param>
-        public void Add(GlyphLayoutData info) => this.info.Add(info);
-
-        /// <summary>Returns a slice view over this run's entries.</summary>
-        /// <returns>A slice over the entries.</returns>
-        public ArraySlice<GlyphLayoutData> AsSlice() => this.info.AsSlice();
-
-        /// <summary>Reverses the entries in this run in place (for rule L2).</summary>
-        public void Reverse() => this.AsSlice().Span.Reverse();
-    }
-
-    /// <summary>
-    /// An intermediate grouping of <see cref="OrderedBidiRun"/> links used by the linear-reorder
-    /// algorithm to stitch pairs of same-level ranges together.
-    /// </summary>
-    private sealed class BidiRange
-    {
-        /// <summary>Gets or sets the shared bidi embedding level for this range.</summary>
-        public int Level { get; set; }
-
-        /// <summary>Gets or sets the leftmost run in the range.</summary>
-        public OrderedBidiRun? Left { get; set; }
-
-        /// <summary>Gets or sets the rightmost run in the range.</summary>
-        public OrderedBidiRun? Right { get; set; }
-
-        /// <summary>Gets or sets the previous range in the processing stack.</summary>
-        public BidiRange? Previous { get; set; }
-
-        /// <summary>
-        /// Stitches the current range with its predecessor, producing a single merged range
-        /// whose internal orientation depends on the predecessor's embedding level parity.
-        /// </summary>
-        /// <param name="range">The current range whose <see cref="Previous"/> will be merged.</param>
-        /// <returns>The merged range (always the predecessor instance, reused in place).</returns>
-        public static BidiRange MergeWithPrevious(BidiRange? range)
-        {
-            BidiRange previous = range!.Previous!;
-            BidiRange left;
-            BidiRange right;
-
-            if ((previous.Level & 1) != 0)
-            {
-                // Odd, previous goes to the right of range.
-                left = range;
-                right = previous;
-            }
-            else
-            {
-                // Even, previous goes to the left of range.
-                left = previous;
-                right = range;
-            }
-
-            // Stitch them
-            left.Right!.Next = right.Left;
-            previous.Left = left.Left;
-            previous.Right = right.Right;
-
-            return previous;
-        }
     }
 }

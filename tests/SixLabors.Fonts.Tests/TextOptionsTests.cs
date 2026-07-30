@@ -319,6 +319,7 @@ public class TextOptionsTests
             TextHyphenation = TextHyphenation.Custom,
             CustomHyphen = new CodePoint('-'),
             Tracking = 66F,
+            Script = ScriptClass.MyanmarZawgyi,
             FeatureTags = new List<Tag> { KnownFeatureTags.OldstyleFigures }
         };
 
@@ -337,6 +338,7 @@ public class TextOptionsTests
         Assert.Equal(expected.TextHyphenation, actual.TextHyphenation);
         Assert.Equal(expected.CustomHyphen, actual.CustomHyphen);
         Assert.Equal(expected.DecorationPositioningMode, actual.DecorationPositioningMode);
+        Assert.Equal(expected.Script, actual.Script);
         Assert.Equal(expected.FeatureTags, actual.FeatureTags);
         Assert.Equal(expected.Tracking, actual.Tracking);
     }

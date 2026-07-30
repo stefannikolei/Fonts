@@ -1,7 +1,9 @@
 // Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
+using System.Globalization;
 using System.Runtime.CompilerServices;
+using SixLabors.Fonts.Tables.AdvancedTypographic;
 using SixLabors.Fonts.Unicode;
 
 namespace SixLabors.Fonts;
@@ -33,6 +35,26 @@ public class TextRun
     /// supplied by the owning text options.
     /// </summary>
     public FontWeight? FontWeight { get; set; }
+
+    /// <summary>
+    /// Gets or sets the script to use for this run, or <see langword="null"/> to
+    /// use the script selection supplied by the owning text options.
+    /// </summary>
+    public ScriptClass? Script { get; set; }
+
+    /// <summary>
+    /// Gets or sets the culture used to select language-specific shaping for this
+    /// run, or <see langword="null"/> to use the culture supplied by the owning
+    /// text options.
+    /// </summary>
+    public CultureInfo? Culture { get; set; }
+
+    /// <summary>
+    /// Gets or sets the additional shaping features for this run, or
+    /// <see langword="null"/> to use those supplied by the owning text options.
+    /// A non-null empty collection applies no additional features to the run.
+    /// </summary>
+    public IReadOnlyList<Tag>? FeatureTags { get; set; }
 
     /// <summary>
     /// Gets or sets the text attributes applied to this run.
@@ -133,7 +155,7 @@ public class TextRun
         this.ResolvedFontWeight = this.FontWeight ?? defaultWeight;
         if (!this.ResolvedFontWeight.HasValue && (font.RequestedStyle & FontStyle.Bold) == FontStyle.Bold)
         {
-            this.ResolvedFontWeight = SixLabors.Fonts.FontWeight.Bold;
+            this.ResolvedFontWeight = Fonts.FontWeight.Bold;
         }
 
         bool applied = false;

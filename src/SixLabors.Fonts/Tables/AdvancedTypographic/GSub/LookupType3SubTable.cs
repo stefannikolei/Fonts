@@ -62,6 +62,9 @@ internal sealed class LookupType3Format1SubTable : LookupSubTable
         this.coverageTable = coverageTable;
     }
 
+    /// <inheritdoc/>
+    public override bool ConsumesDirectly => true;
+
     /// <summary>
     /// Loads the alternate substitution format 1 subtable from the given offset.
     /// </summary>
@@ -114,16 +117,20 @@ internal sealed class LookupType3Format1SubTable : LookupSubTable
         return new LookupType3Format1SubTable(alternateTables, coverageTable, lookupFlags, markFilteringSet);
     }
 
-    /// <inheritdoc />
+    /// <inheritdoc/>
+    public override void CollectDigest(ref GlyphSetDigest digest) => this.coverageTable.CollectDigest(ref digest);
+
+    /// <inheritdoc/>
     public override bool TrySubstitution(
         FontMetrics fontMetrics,
         GSubTable table,
-        GlyphSubstitutionCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
+        uint lookupMask,
         int index,
         int count)
     {
-        ushort glyphId = collection[index].GlyphId;
+        ushort glyphId = buffer[index].GlyphId;
         if (glyphId == 0)
         {
             return false;
@@ -133,15 +140,29 @@ internal sealed class LookupType3Format1SubTable : LookupSubTable
 
         if (offset > -1 && offset < this.alternateSetTables.Length)
         {
-            // TODO: We're just choosing the first alternative here.
-            // It looks like the choice is arbitrary and should be determined by
-            // the client.
-            collection.Replace(index, this.alternateSetTables[offset].AlternateGlyphs[0], feature);
+            ushort[] alternates = this.alternateSetTables[offset].AlternateGlyphs;
+            if (alternates.Length == 0)
+            {
+                return false;
+            }
+
+            // Ordinary alternate features select their first requested value. The
+            // random feature advances once for each replaceable glyph and maps that
+            // value onto the font's alternate set.
+            int alternateIndex = buffer.LookupRandom
+                ? (int)(buffer.NextRandomNumber() % (uint)alternates.Length)
+                : 0;
+
+            buffer.Replace(index, alternates[alternateIndex], feature);
             return true;
         }
 
         return false;
     }
+
+    /// <inheritdoc />
+    public override bool WouldApply(ReadOnlySpan<ushort> glyphs, bool zeroContext)
+        => glyphs.Length == 1 && this.coverageTable.CoverageIndexOf(glyphs[0]) > -1;
 
     /// <summary>
     /// Represents an alternate set table containing an array of alternate glyph IDs

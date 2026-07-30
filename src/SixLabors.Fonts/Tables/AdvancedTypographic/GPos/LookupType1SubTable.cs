@@ -91,15 +91,18 @@ internal sealed class LookupType1Format1SubTable : LookupSubTable
     }
 
     /// <inheritdoc/>
+    public override void CollectDigest(ref GlyphSetDigest digest) => this.coverageTable.CollectDigest(ref digest);
+
+    /// <inheritdoc/>
     public override bool TryUpdatePosition(
         FontMetrics fontMetrics,
         GPosTable table,
-        GlyphPositioningCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
         int index,
         int count)
     {
-        ushort glyphId = collection[index].GlyphId;
+        ushort glyphId = buffer[index].GlyphId;
         if (glyphId == 0)
         {
             return false;
@@ -109,7 +112,7 @@ internal sealed class LookupType1Format1SubTable : LookupSubTable
         if (coverage > -1)
         {
             ValueRecord record = this.valueRecord;
-            AdvancedTypographicUtils.ApplyPosition(fontMetrics, collection, index, record, feature);
+            AdvancedTypographicUtils.ApplyPosition(fontMetrics, buffer, index, record, feature);
 
             return true;
         }
@@ -182,15 +185,18 @@ internal sealed class LookupType1Format2SubTable : LookupSubTable
     }
 
     /// <inheritdoc/>
+    public override void CollectDigest(ref GlyphSetDigest digest) => this.coverageTable.CollectDigest(ref digest);
+
+    /// <inheritdoc/>
     public override bool TryUpdatePosition(
         FontMetrics fontMetrics,
         GPosTable table,
-        GlyphPositioningCollection collection,
+        ShapingBuffer buffer,
         Tag feature,
         int index,
         int count)
     {
-        ushort glyphId = collection[index].GlyphId;
+        ushort glyphId = buffer[index].GlyphId;
         if (glyphId == 0)
         {
             return false;
@@ -200,7 +206,7 @@ internal sealed class LookupType1Format2SubTable : LookupSubTable
         if (coverage > -1 && coverage < this.valueRecords.Length)
         {
             ValueRecord record = this.valueRecords[coverage];
-            AdvancedTypographicUtils.ApplyPosition(fontMetrics, collection, index, record, feature);
+            AdvancedTypographicUtils.ApplyPosition(fontMetrics, buffer, index, record, feature);
 
             return true;
         }

@@ -45,6 +45,13 @@ public abstract class FontMetrics
     public abstract VerticalMetrics VerticalMetrics { get; }
 
     /// <summary>
+    /// Gets a value indicating whether the font declares Unicode variation sequences.
+    /// When it does not, glyph lookup never consumes the following codepoint, so
+    /// shaping can skip decoding it. The conservative default reports support.
+    /// </summary>
+    internal virtual bool HasUnicodeVariationSequences => true;
+
+    /// <summary>
     /// Gets the recommended horizontal size in font design units for subscripts for this font.
     /// </summary>
     public abstract short SubscriptXSize { get; }
@@ -300,6 +307,13 @@ public abstract class FontMetrics
     internal abstract bool TryGetGSubTable([NotNullWhen(true)] out GSubTable? gSubTable);
 
     /// <summary>
+    /// Tries to get the glyph positioning table.
+    /// </summary>
+    /// <param name="gPosTable">The glyph positioning table.</param>
+    /// <returns><see langword="true"/> when the font contains the table; otherwise, <see langword="false"/>.</returns>
+    internal abstract bool TryGetGPosTable([NotNullWhen(true)] out GPosTable? gPosTable);
+
+    /// <summary>
     /// Tries to get the coordinate of the named baseline from the font's baseline table for
     /// the given layout direction, read from the default script record of the matching axis.
     /// </summary>
@@ -316,10 +330,10 @@ public abstract class FontMetrics
     internal abstract bool TryGetBaselineCoordinate(Tag baselineTag, bool isVerticalLayout, out short coordinate);
 
     /// <summary>
-    /// Applies any available substitutions to the collection of glyphs.
+    /// Applies any available substitutions to the buffer of glyphs.
     /// </summary>
-    /// <param name="collection">The glyph substitution collection.</param>
-    internal abstract void ApplySubstitution(GlyphSubstitutionCollection collection);
+    /// <param name="buffer">The glyph substitution buffer.</param>
+    internal abstract void ApplySubstitution(ShapingBuffer buffer);
 
     /// <summary>
     /// Gets the amount, in font units, the <paramref name="currentId"/> glyph should be offset if it is followed by
@@ -338,10 +352,10 @@ public abstract class FontMetrics
     internal abstract bool TryGetKerningOffset(ushort currentId, ushort nextId, out Vector2 vector);
 
     /// <summary>
-    /// Applies any available positioning updates to the collection of glyphs.
+    /// Applies any available positioning updates to the buffer of glyphs.
     /// </summary>
-    /// <param name="collection">The glyph positioning collection.</param>
-    internal abstract void UpdatePositions(GlyphPositioningCollection collection);
+    /// <param name="buffer">The glyph positioning buffer.</param>
+    internal abstract void UpdatePositions(ShapingBuffer buffer);
 
     /// <summary>
     /// Computes a GPOS/GSUB variation delta for the given packed VariationIndex.

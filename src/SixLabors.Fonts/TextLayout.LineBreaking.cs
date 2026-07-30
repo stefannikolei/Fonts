@@ -16,13 +16,30 @@ internal static partial class TextLayout
     private const int StandardEllipsis = 0x2026;
 
     /// <summary>
+    /// Shapes the text and composes the logical <see cref="TextLine"/> before
+    /// width-dependent line breaking. Shaping runs on pooled pipeline state scoped
+    /// entirely to this call; composition copies everything the result retains.
+    /// </summary>
+    /// <param name="text">The source text.</param>
+    /// <param name="options">The text shaping and layout options.</param>
+    /// <returns>The logical text line and line break opportunities before line breaking.</returns>
+    public static LogicalTextLine ComposeLogicalLine(ReadOnlySpan<char> text, TextOptions options)
+    {
+        // Composition retains run references in its layout data, so the runs are
+        // built per call rather than reused from pooled state.
+        IReadOnlyList<TextRun> runs = TextShaper.BuildTextRuns(text, options);
+        using TextShaper.ShapedTextScope scope = TextShaper.ShapeText(text, options, runs);
+        return ComposeLogicalLine(scope.Shaped, text, options);
+    }
+
+    /// <summary>
     /// Composes the logical <see cref="TextLine"/> from shaped glyph data before width-dependent line breaking.
     /// </summary>
     /// <param name="shapedText">The width-independent shaping state.</param>
     /// <param name="text">The original source text.</param>
     /// <param name="options">The text shaping and layout options.</param>
     /// <returns>The logical text line and line break opportunities before line breaking.</returns>
-    public static LogicalTextLine ComposeLogicalLine(
+    private static LogicalTextLine ComposeLogicalLine(
         in ShapedText shapedText,
         ReadOnlySpan<char> text,
         TextOptions options)
@@ -30,9 +47,11 @@ internal static partial class TextLayout
         bool isHorizontalLayout = shapedText.LayoutMode.IsHorizontal();
         bool isVerticalLayout = shapedText.LayoutMode.IsVertical();
         bool isVerticalMixedLayout = shapedText.LayoutMode.IsVerticalMixed();
+        bool hasTracking = options.Tracking != 0;
 
         int graphemeIndex = 0;
         int codePointIndex = 0;
+        int glyphSearchBidiRunIndex = -1;
         int glyphSearchIndex = 0;
         TextLine textLine = new();
         int stringIndex = 0;
@@ -40,9 +59,44 @@ internal static partial class TextLayout
         List<GlyphLayoutData> hyphenationMarkers = [];
         CodePoint? hyphenationMarkerCodePoint = GetHyphenationMarkerCodePoint(options);
 
-        // No glyph should contain more than 64 metrics.
-        // We do a sanity check below just in case.
-        Span<float> decomposedAdvancesBuffer = stackalloc float[64];
+        // Browsers hand layout each directional run's glyphs exactly as the shaper
+        // finalized them, already in visual order, and consume that storage
+        // directly. Materialize the projection once into a single array in that
+        // same per-run visual order; every line entry below is a contiguous slice
+        // of it, so no later stage can rearrange the glyphs inside an entry.
+        //
+        // This is composition's one deliberate heap allocation. The composed line
+        // is retained and re-laid-out beyond the pooled shaping scope, so the
+        // shaped stream must be copied into storage the line owns. It replaces the
+        // former per-source-position collections, and renting it instead would
+        // require a disposal contract the retained result does not have.
+        PositionedGlyphMetrics[] glyphStorage = new PositionedGlyphMetrics[shapedText.GlyphCount];
+        for (int i = 0; i < shapedText.GlyphCount; i++)
+        {
+            ref readonly ShapedGlyphInfo info = ref shapedText.Infos[i];
+            if (info.IsPlaceholder)
+            {
+                // Placeholder records materialize generated metrics when their
+                // entries are added below; their storage slots are never sliced.
+                continue;
+            }
+
+            ShapedTextRun run = shapedText.Runs[info.RunIndex];
+            ref readonly ShapedGlyphPosition position = ref shapedText.Positions[i];
+
+            // The shaped result carries numbers only; composition resolves the
+            // metrics instance from the owning font's cache by the same arguments
+            // shaping used, so the same instance is returned.
+            FontGlyphMetrics glyphMetrics = run.Font.FontMetrics.GetGlyphMetrics(
+                info.CodePoint,
+                info.GlyphId,
+                run.TextRun.TextAttributes,
+                run.TextRun.TextDecorations,
+                shapedText.LayoutMode,
+                options.ColorFontSupport);
+
+            glyphStorage[i] = new(glyphMetrics, position.AdvanceWidth, position.AdvanceHeight, position.Offset, run.TextRun);
+        }
 
         // Word-boundary segments are prepared with the logical line, while grapheme
         // and codepoint enumeration still own shaping data creation.
@@ -61,14 +115,17 @@ internal static partial class TextLayout
                 SpanCodePointEnumerator codePointEnumerator = new(grapheme);
                 while (codePointEnumerator.MoveNext())
                 {
-                    if (!shapedText.Positionings.TryGetGlyphMetricsAtOffset(
+                    if (!shapedText.TryGetGlyphsAtOffset(
                         codePointIndex,
+                        ref glyphSearchBidiRunIndex,
                         ref glyphSearchIndex,
+                        out int glyphStart,
+                        out int glyphCount,
                         out float pointSize,
                         out bool isSubstituted,
                         out bool isVerticalSubstitution,
                         out bool isDecomposed,
-                        out IReadOnlyList<GlyphPositioningCollection.GlyphPositioningData>? glyphData))
+                        out int nextShapedCodePointIndex))
                     {
                         // Codepoint was skipped during original enumeration.
                         codePointIndex++;
@@ -76,14 +133,29 @@ internal static partial class TextLayout
                         continue;
                     }
 
-                    List<FontGlyphMetrics> metrics = [];
-                    for (int i = 0; i < glyphData.Count; i++)
+                    BidiRun bidiRun = shapedText.BidiRuns[shapedText.BidiMap[codePointIndex]];
+
+                    // Locate the entry's contiguous slice of the retained storage
+                    // without copying a single glyph. Placeholder records sit at the
+                    // edges of a source position's range and become standalone
+                    // entries, exactly as browsers keep atomic inlines as their own
+                    // line items.
+                    int sliceStart = -1;
+                    int sliceEnd = -1;
+                    bool isCursiveScript = false;
+                    float verticalGroupAdvance = 0;
+                    for (int i = 0; i < glyphCount; i++)
                     {
-                        GlyphPositioningCollection.GlyphPositioningData data = glyphData[i];
-                        if (data.Data.IsPlaceholder)
+                        int shapedGlyphIndex = glyphStart + i;
+                        ref readonly ShapedGlyphInfo info = ref shapedText.Infos[shapedGlyphIndex];
+                        isCursiveScript |= info.IsCursiveScript;
+                        if (info.IsPlaceholder)
                         {
+                            ShapedTextRun run = shapedText.Runs[info.RunIndex];
                             textLine.AddPlaceholder(
-                                data,
+                                PlaceholderGlyphMetrics.Create(run.Font, run.TextRun, options.Dpi),
+                                in run,
+                                info.CodePointIndex,
                                 graphemeIndex,
                                 stringIndex,
                                 isHorizontalLayout,
@@ -93,10 +165,45 @@ internal static partial class TextLayout
                             continue;
                         }
 
-                        metrics.Add(data.Metrics);
+                        if (sliceStart < 0)
+                        {
+                            sliceStart = shapedGlyphIndex;
+                        }
+
+                        sliceEnd = shapedGlyphIndex;
+
+                        if (!isHorizontalLayout)
+                        {
+                            // Accumulate while this loop already visits every
+                            // positioned glyph, so the upright path needs no second
+                            // pass over the slice.
+                            ref readonly PositionedGlyphMetrics positioned = ref glyphStorage[shapedGlyphIndex];
+                            FontGlyphMetrics positionedMetrics = positioned.Metrics;
+                            float scaleAY = shapedText.Runs[info.RunIndex].PointSize / positionedMetrics.ScaleFactor.Y;
+                            float positionedAdvance = positioned.AdvanceHeight * scaleAY;
+                            VerticalMetrics verticalMetrics = positionedMetrics.FontMetrics.VerticalMetrics;
+                            if (verticalMetrics.Synthesized && positioned.AdvanceHeight != 0)
+                            {
+                                // Browsers provide the device-rounded fallback height to
+                                // shaping as the nominal vertical advance. Replace only that
+                                // nominal component so positioning deltas survive, while the
+                                // zero advance shaping assigned to marks remains untouched.
+                                float nominalAdvance = positionedMetrics.AdvanceHeight * scaleAY;
+
+                                // scaleAY converts design units to the DPI-normalized
+                                // layout space consumed by TextLayout. Round in target
+                                // device pixels, then return to that layout space.
+                                float deviceScale = options.Dpi;
+                                float browserAdvance = (MathF.Floor((verticalMetrics.Ascender * scaleAY * deviceScale) + .5F)
+                                    + MathF.Floor((-verticalMetrics.Descender * scaleAY * deviceScale) + .5F)) / deviceScale;
+                                positionedAdvance += browserAdvance - nominalAdvance;
+                            }
+
+                            verticalGroupAdvance += positionedAdvance;
+                        }
                     }
 
-                    if (metrics.Count == 0)
+                    if (sliceStart < 0)
                     {
                         // This source codepoint was skipped during shaping; any placeholder
                         // sharing the same source offset has already been added above.
@@ -105,7 +212,10 @@ internal static partial class TextLayout
                         continue;
                     }
 
-                    FontGlyphMetrics glyph = metrics[0];
+                    ReadOnlyMemory<PositionedGlyphMetrics> metrics = glyphStorage.AsMemory(sliceStart, sliceEnd - sliceStart + 1);
+                    ReadOnlySpan<PositionedGlyphMetrics> metricsSpan = metrics.Span;
+                    Font entryFont = shapedText.Runs[shapedText.Infos[sliceStart].RunIndex].Font;
+                    FontGlyphMetrics glyph = metricsSpan[0].Metrics;
 
                     // Retrieve the current codepoint from the enumerator.
                     // If the glyph represents a substituted codepoint and the substitution is a single codepoint substitution,
@@ -115,7 +225,7 @@ internal static partial class TextLayout
                     //
                     // Note: Not all glyphs in a font will have a codepoint associated with them. e.g. most compositions, ligatures, etc.
                     CodePoint codePoint = codePointEnumerator.Current;
-                    if (isSubstituted && metrics.Count == 1)
+                    if (isSubstituted && metricsSpan.Length == 1)
                     {
                         codePoint = glyph.CodePoint;
                     }
@@ -144,30 +254,22 @@ internal static partial class TextLayout
                     }
 
                     // Calculate the advance for the current codepoint.
-
-                    // This should never happen, but we need to ensure that the buffer is large enough
-                    // if, for some crazy reason, a glyph does contain more than 64 metrics.
-                    Span<float> decomposedAdvances = metrics.Count > decomposedAdvancesBuffer.Length
-                        ? new float[metrics.Count]
-                        : decomposedAdvancesBuffer[..(isDecomposed ? metrics.Count : 1)];
-
                     float glyphAdvance;
                     if (isHorizontalLayout || shouldRotate)
                     {
-                        glyphAdvance = glyph.AdvanceWidth;
+                        glyphAdvance = metricsSpan[0].AdvanceWidth;
                     }
                     else
                     {
-                        glyphAdvance = glyph.AdvanceHeight;
+                        glyphAdvance = metricsSpan[0].AdvanceHeight;
                     }
 
-                    decomposedAdvances[0] = glyphAdvance;
+                    bool usePositionedVerticalAdvances = false;
 
                     bool isSoftHyphen = codePoint.Value == SoftHyphen;
                     if (isSoftHyphen)
                     {
                         glyphAdvance = 0;
-                        decomposedAdvances[0] = 0;
                     }
                     else if (CodePoint.IsTabulation(codePoint))
                     {
@@ -186,62 +288,50 @@ internal static partial class TextLayout
                                       shapedText.LayoutMode,
                                       options.ColorFontSupport);
 
+                                // The tab advance lives only in the positioned snapshot;
+                                // the metrics instance is shared and must not be mutated.
+                                // Writing through the storage slot keeps the entry's
+                                // slice and the retained stream in agreement.
                                 if (isHorizontalLayout || shouldRotate)
                                 {
                                     glyphAdvance = spaceMetrics.AdvanceWidth * options.TabWidth;
-                                    glyph.SetAdvanceWidth((ushort)glyphAdvance);
+                                    glyphStorage[sliceStart] = new(glyph, (ushort)glyphAdvance, metricsSpan[0].AdvanceHeight, metricsSpan[0].Offset, metricsSpan[0].TextRun);
                                 }
                                 else
                                 {
                                     glyphAdvance = spaceMetrics.AdvanceHeight * options.TabWidth;
-                                    glyph.SetAdvanceHeight((ushort)glyphAdvance);
+                                    glyphStorage[sliceStart] = new(glyph, metricsSpan[0].AdvanceWidth, (ushort)glyphAdvance, metricsSpan[0].Offset, metricsSpan[0].TextRun);
                                 }
                             }
                         }
                     }
-                    else if (metrics.Count == 1 && (CodePoint.IsZeroWidthJoiner(codePoint) || CodePoint.IsZeroWidthNonJoiner(codePoint)))
+                    else if (metricsSpan.Length == 1 && (CodePoint.IsZeroWidthJoiner(codePoint) || CodePoint.IsZeroWidthNonJoiner(codePoint)))
                     {
                         // The zero-width joiner characters should be ignored when determining word or
                         // line break boundaries so are safe to skip here. Any existing instances are the result of font error
                         // unless multiple metrics are associated with code point. In this case they are most likely the result
                         // of a substitution and shouldn't be ignored.
                         glyphAdvance = 0;
-                        decomposedAdvances[0] = 0;
                     }
                     else if (!CodePoint.IsNewLine(codePoint))
                     {
-                        // Standard text.
-                        // If decomposed we need to add the advance; otherwise, use the largest advance for the metrics.
+                        // Standard text. Browser layout retains every shaped glyph
+                        // advance; the entry's advance is the sum over its slice while
+                        // the per-glyph values remain in the retained storage for the
+                        // positioned walk.
+                        usePositionedVerticalAdvances = !isHorizontalLayout && !shouldRotate;
                         if (isHorizontalLayout || shouldRotate)
                         {
-                            for (int i = 1; i < metrics.Count; i++)
+                            for (int i = 1; i < metricsSpan.Length; i++)
                             {
-                                float a = metrics[i].AdvanceWidth;
-                                if (isDecomposed)
-                                {
-                                    glyphAdvance += a;
-                                    decomposedAdvances[i] = a;
-                                }
-                                else if (a > glyphAdvance)
-                                {
-                                    glyphAdvance = a;
-                                }
+                                glyphAdvance += metricsSpan[i].AdvanceWidth;
                             }
                         }
                         else
                         {
-                            for (int i = 1; i < metrics.Count; i++)
+                            for (int i = 1; i < metricsSpan.Length; i++)
                             {
-                                float a = metrics[i].AdvanceHeight;
-                                if (isDecomposed)
-                                {
-                                    glyphAdvance += a;
-                                    decomposedAdvances[i] = a;
-                                }
-                                else if (a > glyphAdvance)
-                                {
-                                    glyphAdvance = a;
-                                }
+                                glyphAdvance += metricsSpan[i].AdvanceHeight;
                             }
                         }
                     }
@@ -249,150 +339,145 @@ internal static partial class TextLayout
                     // Now scale the advance. We use inches for comparison.
                     if (isHorizontalLayout || shouldRotate)
                     {
-                        float scaleAX = pointSize / glyph.ScaleFactor.X;
-                        glyphAdvance *= scaleAX;
-                        for (int i = 0; i < decomposedAdvances.Length; i++)
-                        {
-                            decomposedAdvances[i] *= scaleAX;
-                        }
+                        glyphAdvance *= pointSize / glyph.ScaleFactor.X;
+                    }
+                    else if (usePositionedVerticalAdvances)
+                    {
+                        // Ordinary upright text follows the positioned glyph stream.
+                        // Special characters above deliberately keep their established
+                        // zero or caller-defined advance instead.
+                        glyphAdvance = verticalGroupAdvance;
                     }
                     else
                     {
-                        float scaleAY = pointSize / glyph.ScaleFactor.Y;
-                        glyphAdvance *= scaleAY;
-                        for (int i = 0; i < decomposedAdvances.Length; i++)
-                        {
-                            decomposedAdvances[i] *= scaleAY;
-                        }
+                        // Tabs, soft hyphens, joiners, and hard breaks have already
+                        // selected their logical advance. Scale that value normally
+                        // rather than replacing it with a font-wide vertical fallback.
+                        glyphAdvance *= pointSize / glyph.ScaleFactor.Y;
                     }
 
                     int graphemeCodePointMax = CodePoint.GetCodePointCount(grapheme) - 1;
+                    int graphemeCodePointEnd = codePointIndex - graphemeCodePointIndex + graphemeCodePointMax;
 
-                    // For non-decomposed glyphs the length is always 1.
-                    int glyphDataIndex = 0;
+                    // The next distinct source start, not an individual glyph's
+                    // coverage count, tells layout whether this is the final shaped
+                    // input represented by the current .NET grapheme.
+                    bool isLastInGrapheme = nextShapedCodePointIndex > graphemeCodePointEnd;
 
-                    for (int i = 0; i < decomposedAdvances.Length; i++)
+                    // Browsers attach letter spacing once to the final visual
+                    // glyph for a shaped source start, preserving relative
+                    // positions between a base and its combining marks. Adding the
+                    // spacing to the entry's advance realizes exactly that: the
+                    // positioned walk assigns each entry's residual advance to the
+                    // final glyph of its slice. Browsers apply the same boundary.
+                    // CSS Text §8.2.1 governs the spacing:
+                    // https://www.w3.org/TR/css-text-4/#letter-spacing-property
+                    if (isLastInGrapheme && hasTracking)
                     {
-                        // Determine if this is the last codepoint in the grapheme.
-                        bool isLastInGrapheme = graphemeCodePointIndex == graphemeCodePointMax && i == decomposedAdvances.Length - 1;
-
-                        float decomposedAdvance = decomposedAdvances[i];
-
-                        // Work out the scaled metrics for the glyph.
-                        while (glyphData[glyphDataIndex].Data.IsPlaceholder)
+                        // Tab characters and line terminators never receive tracking.
+                        // CSS Text §8.2.1 also requires
+                        // cursive joins to remain unspaced while word separators receive it:
+                        // https://www.w3.org/TR/css-text-4/#cursive-tracking
+                        if ((!isCursiveScript || CodePoint.IsWhiteSpace(codePoint))
+                            && !CodePoint.IsTabulation(codePoint)
+                            && !CodePoint.IsNewLine(codePoint))
                         {
-                            glyphDataIndex++;
-                        }
-
-                        GlyphPositioningCollection.GlyphPositioningData positionedGlyph = glyphData[glyphDataIndex];
-                        FontGlyphMetrics metric = positionedGlyph.Metrics;
-
-                        // Adjust the advance for the last decomposed glyph to add tracking if applicable.
-                        // Tracking should only be added once per grapheme, so only on the last codepoint of the grapheme.
-                        if (isLastInGrapheme && options.Tracking != 0 && i == decomposedAdvances.Length - 1)
-                        {
-                            // Tracking should not be applied to tab characters or non-rendered codepoints.
-                            if (!CodePoint.IsTabulation(codePoint) && !UnicodeUtility.ShouldNotBeRendered(codePoint))
+                            if (isHorizontalLayout || shouldRotate)
                             {
-                                if (isHorizontalLayout || shouldRotate)
-                                {
-                                    float scaleAX = pointSize / glyph.ScaleFactor.X;
-                                    decomposedAdvance += options.Tracking * metric.FontMetrics.UnitsPerEm * scaleAX;
-                                }
-                                else
-                                {
-                                    float scaleAY = pointSize / glyph.ScaleFactor.Y;
-                                    decomposedAdvance += options.Tracking * metric.FontMetrics.UnitsPerEm * scaleAY;
-                                }
+                                glyphAdvance += options.Tracking * glyph.FontMetrics.UnitsPerEm * (pointSize / glyph.ScaleFactor.X);
+                            }
+                            else
+                            {
+                                glyphAdvance += options.Tracking * glyph.FontMetrics.UnitsPerEm * (pointSize / glyph.ScaleFactor.Y);
                             }
                         }
+                    }
 
-                        // Convert design-space units to pixels based on the target point size.
-                        // ScaleFactor.Y represents the vertical UPEM scaling factor for this glyph.
-                        float scaleY = pointSize / metric.ScaleFactor.Y;
+                    // Convert design-space units to pixels based on the target point size.
+                    // ScaleFactor.Y represents the vertical UPEM scaling factor for this glyph.
+                    float scaleY = pointSize / glyph.ScaleFactor.Y;
 
-                        // Choose which metrics table to use based on layout orientation.
-                        // Horizontal is the default; vertical fonts use VMTX if available.
-                        IMetricsHeader metricsHeader = isHorizontalLayout || shouldRotate
-                            ? metric.FontMetrics.HorizontalMetrics
-                            : metric.FontMetrics.VerticalMetrics;
+                    // Choose which metrics table to use based on layout orientation.
+                    // Horizontal is the default; vertical fonts use VMTX if available.
+                    IMetricsHeader metricsHeader = isHorizontalLayout || shouldRotate
+                        ? glyph.FontMetrics.HorizontalMetrics
+                        : glyph.FontMetrics.VerticalMetrics;
 
-                        // Ascender and descender are stored in font design units, so scale them to pixels.
-                        float ascender = metricsHeader.Ascender * scaleY;
+                    // Ascender and descender are stored in font design units, so scale them to pixels.
+                    float ascender = metricsHeader.Ascender * scaleY;
 
-                        // Match browser line-height calculation logic.
-                        // Reference: https://www.w3.org/TR/CSS2/visudet.html#propdef-line-height
-                        // The line height in CSS is based on a multiple of the font-size (pointSize),
-                        // but fonts may define a custom LineHeight in their metrics that differs from UPEM.
-                        float descender = Math.Abs(metricsHeader.Descender * scaleY);
-                        float lineHeight = metric.UnitsPerEm * scaleY;
+                    // Match browser line-height calculation logic.
+                    // Reference: https://www.w3.org/TR/CSS2/visudet.html#propdef-line-height
+                    // The line height in CSS is based on a multiple of the font-size (pointSize),
+                    // but fonts may define a custom LineHeight in their metrics that differs from UPEM.
+                    float descender = Math.Abs(metricsHeader.Descender * scaleY);
+                    float lineHeight = glyph.UnitsPerEm * scaleY;
 
-                        // The delta centers the font's line box within the CSS line box when
-                        // LineHeight differs from the nominal font size.
-                        float delta = ((metricsHeader.LineHeight * scaleY) - lineHeight) * 0.5F;
+                    // The delta centers the font's line box within the CSS line box when
+                    // LineHeight differs from the nominal font size.
+                    float delta = ((metricsHeader.LineHeight * scaleY) - lineHeight) * 0.5F;
 
-                        // Adjust ascender and descender symmetrically by delta to preserve visual balance.
-                        ascender -= delta;
-                        descender -= delta;
+                    // Adjust ascender and descender symmetrically by delta to preserve visual balance.
+                    ascender -= delta;
+                    descender -= delta;
 
-                        GlyphLayoutMode mode = GlyphLayoutMode.Horizontal;
-                        if (isVerticalLayout)
-                        {
-                            mode = GlyphLayoutMode.Vertical;
-                        }
-                        else if (isVerticalMixedLayout)
-                        {
-                            mode = shouldRotate ? GlyphLayoutMode.VerticalRotated : GlyphLayoutMode.Vertical;
-                        }
+                    GlyphLayoutMode mode = GlyphLayoutMode.Horizontal;
+                    if (isVerticalLayout)
+                    {
+                        mode = GlyphLayoutMode.Vertical;
+                    }
+                    else if (isVerticalMixedLayout)
+                    {
+                        mode = shouldRotate ? GlyphLayoutMode.VerticalRotated : GlyphLayoutMode.Vertical;
+                    }
 
-                        int hyphenationMarkerIndex = -1;
-                        if (isSoftHyphen && hyphenationMarkerCodePoint.HasValue)
-                        {
-                            // U+00AD is shaped as an invisible source entry, but if this exact
-                            // discretionary break is later selected we need a visible marker with
-                            // the same run, font attributes, bidi mapping, and source mapping. Build
-                            // that marker here while those values are already in hand; BreakLines can
-                            // then account for its advance without rescanning or reshaping the line.
-                            hyphenationMarkerIndex = hyphenationMarkers.Count;
-                            hyphenationMarkers.Add(CreateGeneratedMarker(
-                                glyph,
-                                pointSize,
-                                shapedText.BidiRuns[shapedText.BidiMap[codePointIndex]],
-                                graphemeIndex,
-                                isLastInGrapheme,
-                                codePointIndex,
-                                graphemeCodePointIndex,
-                                stringIndex,
-                                hyphenationMarkerCodePoint.Value,
-                                shapedText.LayoutMode,
-                                positionedGlyph.Font,
-                                options));
-                        }
-
-                        // Add our metrics to the line.
-                        textLine.Add(
-                            isDecomposed ? new FontGlyphMetrics[] { metric } : metrics,
-                            positionedGlyph.Font,
+                    int hyphenationMarkerIndex = -1;
+                    if (isSoftHyphen && hyphenationMarkerCodePoint.HasValue)
+                    {
+                        // U+00AD is shaped as an invisible source entry, but if this exact
+                        // discretionary break is later selected we need a visible marker with
+                        // the same run, font attributes, bidi mapping, and source mapping. Build
+                        // that marker here while those values are already in hand; BreakLines can
+                        // then account for its advance without rescanning or reshaping the line.
+                        hyphenationMarkerIndex = hyphenationMarkers.Count;
+                        hyphenationMarkers.Add(CreateGeneratedMarker(
+                            metricsSpan[0],
                             pointSize,
-                            decomposedAdvance,
-                            lineHeight,
-                            ascender,
-                            descender,
-                            delta,
-                            shapedText.BidiRuns[shapedText.BidiMap[codePointIndex]],
+                            bidiRun,
                             graphemeIndex,
                             isLastInGrapheme,
                             codePointIndex,
                             graphemeCodePointIndex,
-                            shouldRotate || shouldOffset,
-                            isDecomposed,
                             stringIndex,
-                            mode,
-                            options.LineSpacing,
-                            hyphenationMarkerIndex);
-
-                        glyphDataIndex++;
+                            hyphenationMarkerCodePoint.Value,
+                            shapedText.LayoutMode,
+                            entryFont,
+                            options));
                     }
+
+                    // One entry per shaped source position, holding the whole slice.
+                    // Line breaking and reordering move this unit; the glyphs inside
+                    // keep the shaper's visual stream untouched.
+                    textLine.Add(
+                        metrics,
+                        entryFont,
+                        pointSize,
+                        glyphAdvance,
+                        lineHeight,
+                        ascender,
+                        descender,
+                        delta,
+                        bidiRun,
+                        graphemeIndex,
+                        isLastInGrapheme,
+                        codePointIndex,
+                        graphemeCodePointIndex,
+                        shouldRotate || shouldOffset,
+                        isDecomposed,
+                        stringIndex,
+                        mode,
+                        options.LineSpacing,
+                        hyphenationMarkerIndex);
 
                     codePointIndex++;
                     graphemeCodePointIndex++;
@@ -412,22 +497,28 @@ internal static partial class TextLayout
         // Placeholders do not consume source text. A placeholder inserted at
         // the final source position has no following codepoint to visit in
         // the main loop, so we add those trailing placeholder entries here.
-        if (shapedText.Positionings.TryGetGlyphMetricsAtOffset(
+        if (shapedText.TryGetGlyphsAtOffset(
             codePointIndex,
+            ref glyphSearchBidiRunIndex,
             ref glyphSearchIndex,
+            out int endStart,
+            out int endCount,
             out _,
             out _,
             out _,
             out _,
-            out IReadOnlyList<GlyphPositioningCollection.GlyphPositioningData>? endGlyphData))
+            out _))
         {
-            for (int i = 0; i < endGlyphData.Count; i++)
+            for (int i = 0; i < endCount; i++)
             {
-                GlyphPositioningCollection.GlyphPositioningData data = endGlyphData[i];
-                if (data.Data.IsPlaceholder)
+                ref readonly ShapedGlyphInfo info = ref shapedText.Infos[endStart + i];
+                if (info.IsPlaceholder)
                 {
+                    ShapedTextRun run = shapedText.Runs[info.RunIndex];
                     textLine.AddPlaceholder(
-                        data,
+                        PlaceholderGlyphMetrics.Create(run.Font, run.TextRun, options.Dpi),
+                        in run,
+                        info.CodePointIndex,
                         graphemeIndex,
                         stringIndex,
                         isHorizontalLayout,
@@ -437,10 +528,11 @@ internal static partial class TextLayout
             }
         }
 
-        // Line break candidates are width-independent and belong with the composed logical line.
-        List<LineBreak> lineBreaks = CollectLineBreaks(text, hyphenationMarkerCodePoint.HasValue);
-
-        return new LogicalTextLine(textLine, lineBreaks, wordSegments, hyphenationMarkers);
+        // Browsers retain the source text and query break opportunities through a
+        // lazy cursor during line filling rather than materializing the paragraph's
+        // candidates. Retain the text once so every wrapping length can run the
+        // same streaming query.
+        return new LogicalTextLine(textLine, text.ToArray(), wordSegments, hyphenationMarkers);
     }
 
     /// <summary>
@@ -494,52 +586,15 @@ internal static partial class TextLayout
             : options.TextDirection;
 
     /// <summary>
-    /// Collects the line break opportunities used by the wrapping loop.
+    /// Gets the configured hyphenation marker codepoint.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// <see cref="LineBreakEnumerator"/> is the Unicode-conforming default line breaker. Its default
-    /// constructor remains independent from layout policy so the Unicode conformance tests continue to
-    /// describe only the default UAX #14 behavior. This method is the boundary where layout-specific
-    /// tailoring is requested.
-    /// </para>
-    /// <para>
-    /// The line breaker itself is streaming and does not allocate. Layout materializes the resulting
-    /// break opportunities because the line fitting loop scans the same candidates repeatedly while it
-    /// removes finalized lines from the front of the shaped text line.
-    /// </para>
-    /// <para>
-    /// Solidus handling is intentionally conservative. UAX #14 classifies U+002F SOLIDUS as SY, which
-    /// gives ordinary text a break opportunity after a slash. That is valid for the default algorithm,
-    /// but it produced undesirable layout in issue 448 for ordinary slash-separated text. At the same
-    /// time, UAX #14 section 8 explicitly calls out URL tailoring that can allow breaks after slash
-    /// separated URL segments even when the next segment starts with a digit. The result here is:
-    /// keep default slash behavior for standard enumeration, suppress ordinary slash breaks for layout,
-    /// and reintroduce the narrow URL numeric-segment break only for URL-like runs.
-    /// </para>
+    /// Also the switch the line-filling cursor uses to decide whether soft-hyphen
+    /// break opportunities participate in wrapping at all.
     /// </remarks>
-    /// <param name="text">The original source text being laid out.</param>
-    /// <param name="includeHyphenationBreaks">Whether soft-hyphen break opportunities should be included.</param>
-    /// <returns>The ordered line break opportunities after layout-level tailoring.</returns>
-    private static List<LineBreak> CollectLineBreaks(ReadOnlySpan<char> text, bool includeHyphenationBreaks)
-    {
-        LineBreakEnumerator lineBreakEnumerator = new(text, tailorUrls: true);
-        List<LineBreak> lineBreaks = [];
-        while (lineBreakEnumerator.MoveNext())
-        {
-            LineBreak lineBreak = lineBreakEnumerator.Current;
-            if (lineBreak.IsHyphenationBreak && !includeHyphenationBreaks)
-            {
-                continue;
-            }
-
-            lineBreaks.Add(lineBreak);
-        }
-
-        return lineBreaks;
-    }
-
-    private static CodePoint? GetHyphenationMarkerCodePoint(TextOptions options)
+    /// <param name="options">The text options used for layout.</param>
+    /// <returns>The configured hyphenation marker codepoint, or <see langword="null"/> when hyphenation is disabled.</returns>
+    public static CodePoint? GetHyphenationMarkerCodePoint(TextOptions options)
         => options.TextHyphenation switch
         {
             TextHyphenation.Standard => new CodePoint(StandardHyphen),
@@ -550,7 +605,7 @@ internal static partial class TextLayout
     /// <summary>
     /// Creates a visible generated marker that matches the layout style of the anchor entry.
     /// </summary>
-    /// <param name="anchorMetric">The glyph metric that supplies font, run, attributes, and decorations.</param>
+    /// <param name="anchor">The positioned anchor glyph that supplies font, run, attributes, and decorations.</param>
     /// <param name="pointSize">The point size at which the marker is rendered.</param>
     /// <param name="bidiRun">The bidi run that the marker belongs to.</param>
     /// <param name="graphemeIndex">The source grapheme index to map the marker to.</param>
@@ -563,8 +618,8 @@ internal static partial class TextLayout
     /// <param name="font">The font used to shape and render the marker.</param>
     /// <param name="options">The text options used for layout.</param>
     /// <returns>The generated marker entry.</returns>
-    internal static GlyphLayoutData CreateGeneratedMarker(
-        FontGlyphMetrics anchorMetric,
+    public static GlyphLayoutData CreateGeneratedMarker(
+        PositionedGlyphMetrics anchor,
         float pointSize,
         BidiRun bidiRun,
         int graphemeIndex,
@@ -577,6 +632,7 @@ internal static partial class TextLayout
         Font font,
         TextOptions options)
     {
+        FontGlyphMetrics anchorMetric = anchor.Metrics;
         anchorMetric.FontMetrics.TryGetGlyphId(markerCodePoint, out ushort markerGlyphId);
 
         FontGlyphMetrics markerMetric = anchorMetric.FontMetrics.GetGlyphMetrics(
@@ -586,8 +642,6 @@ internal static partial class TextLayout
             anchorMetric.TextDecorations,
             layoutMode,
             options.ColorFontSupport);
-
-        markerMetric = markerMetric.CloneForRendering(anchorMetric.TextRun);
 
         bool isHorizontalLayout = layoutMode.IsHorizontal();
         bool isVerticalLayout = layoutMode.IsVertical();
@@ -634,10 +688,12 @@ internal static partial class TextLayout
 
         FontRectangle markerBox = FontGlyphMetrics.ShouldSkipGlyphRendering(markerMetric.CodePoint)
             ? FontRectangle.Empty
-            : markerMetric.GetBoundingBox(markerMode, Vector2.Zero, pointSize);
+            : markerMetric.GetBoundingBox(markerMode, Vector2.Zero, pointSize, anchor.TextRun, Vector2.Zero, new Vector2(markerMetric.AdvanceWidth, markerMetric.AdvanceHeight));
 
+        // Generated markers are not part of the shaped stream, so the entry owns
+        // its single-glyph storage.
         return new GlyphLayoutData(
-            new FontGlyphMetrics[] { markerMetric },
+            new PositionedGlyphMetrics[] { new(markerMetric, markerMetric.AdvanceWidth, markerMetric.AdvanceHeight, Vector2.Zero, anchor.TextRun) },
             font,
             pointSize,
             markerAdvance,

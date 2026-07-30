@@ -44,6 +44,24 @@ public abstract class FontGlyphMetrics
     /// </summary>
     private const float SyntheticBoldEmScale = 1F / 31F;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="FontGlyphMetrics"/> class, deriving the
+    /// scale factor and offset from the text attributes: subscript and superscript glyphs
+    /// receive the font's configured scaling and baseline displacement. All glyphs loaded
+    /// from font data use this form.
+    /// </summary>
+    /// <param name="font">The font metrics this glyph belongs to.</param>
+    /// <param name="glyphId">The glyph identifier.</param>
+    /// <param name="codePoint">The Unicode code point for this glyph.</param>
+    /// <param name="bounds">The glyph bounds in font design units.</param>
+    /// <param name="advanceWidth">The advance width in font design units.</param>
+    /// <param name="advanceHeight">The advance height in font design units.</param>
+    /// <param name="leftSideBearing">The left side bearing in font design units.</param>
+    /// <param name="topSideBearing">The top side bearing in font design units.</param>
+    /// <param name="unitsPerEM">The units per em for the font.</param>
+    /// <param name="textAttributes">The text attributes applied to the glyph.</param>
+    /// <param name="textDecorations">The text decorations applied to the glyph.</param>
+    /// <param name="glyphType">The glyph type.</param>
     internal FontGlyphMetrics(
         StreamFontMetrics font,
         ushort glyphId,
@@ -98,6 +116,26 @@ public abstract class FontGlyphMetrics
         this.Offset = offset;
     }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="FontGlyphMetrics"/> class taking the
+    /// scale factor and offset verbatim. Used by synthetic metrics such as placeholders,
+    /// whose dimensions are authored against the plain font scale factor and must not
+    /// receive attribute-derived scaling.
+    /// </summary>
+    /// <param name="font">The font metrics this glyph belongs to.</param>
+    /// <param name="glyphId">The glyph identifier.</param>
+    /// <param name="codePoint">The Unicode code point for this glyph.</param>
+    /// <param name="bounds">The glyph bounds in font design units.</param>
+    /// <param name="advanceWidth">The advance width in font design units.</param>
+    /// <param name="advanceHeight">The advance height in font design units.</param>
+    /// <param name="leftSideBearing">The left side bearing in font design units.</param>
+    /// <param name="topSideBearing">The top side bearing in font design units.</param>
+    /// <param name="unitsPerEM">The units per em for the font.</param>
+    /// <param name="offset">The offset in font design units.</param>
+    /// <param name="scaleFactor">The scale factor. Dividing a scaled pixels-per-em value by it yields device pixels per font unit.</param>
+    /// <param name="textAttributes">The text attributes applied to the glyph.</param>
+    /// <param name="textDecorations">The text decorations applied to the glyph.</param>
+    /// <param name="glyphType">The glyph type.</param>
     internal FontGlyphMetrics(
         StreamFontMetrics font,
         ushort glyphId,
@@ -110,14 +148,14 @@ public abstract class FontGlyphMetrics
         ushort unitsPerEM,
         Vector2 offset,
         Vector2 scaleFactor,
-        TextRun textRun,
+        TextAttributes textAttributes,
+        TextDecorations textDecorations,
         GlyphType glyphType)
     {
-        // This is used during cloning. Ensure anything that could be changed is copied.
         this.FontMetrics = font;
         this.GlyphId = glyphId;
         this.CodePoint = codePoint;
-        this.Bounds = new Bounds(bounds.Min, bounds.Max);
+        this.Bounds = bounds;
         this.Width = bounds.Max.X - bounds.Min.X;
         this.Height = bounds.Max.Y - bounds.Min.Y;
         this.UnitsPerEm = unitsPerEM;
@@ -127,12 +165,11 @@ public abstract class FontGlyphMetrics
         this.RightSideBearing = (short)(this.AdvanceWidth - this.LeftSideBearing - this.Width);
         this.TopSideBearing = topSideBearing;
         this.BottomSideBearing = (short)(this.AdvanceHeight - this.TopSideBearing - this.Height);
-        this.TextAttributes = textRun.TextAttributes;
-        this.TextDecorations = textRun.TextDecorations;
+        this.TextAttributes = textAttributes;
+        this.TextDecorations = textDecorations;
         this.GlyphType = glyphType;
         this.ScaleFactor = scaleFactor;
         this.Offset = offset;
-        this.TextRun = textRun;
     }
 
     /// <summary>
@@ -148,12 +185,12 @@ public abstract class FontGlyphMetrics
     /// <summary>
     /// Gets the advance width for horizontal layout, expressed in font units.
     /// </summary>
-    public ushort AdvanceWidth { get; private set; }
+    public ushort AdvanceWidth { get; }
 
     /// <summary>
     /// Gets the advance height for vertical layout, expressed in font units.
     /// </summary>
-    public ushort AdvanceHeight { get; private set; }
+    public ushort AdvanceHeight { get; }
 
     /// <summary>
     /// Gets the left side bearing for horizontal layout, expressed in font units.
@@ -211,14 +248,9 @@ public abstract class FontGlyphMetrics
     public Vector2 ScaleFactor { get; }
 
     /// <summary>
-    /// Gets or sets the offset in font design units.
+    /// Gets the offset in font design units.
     /// </summary>
-    internal Vector2 Offset { get; set; }
-
-    /// <summary>
-    /// Gets the text run that the glyph belongs to.
-    /// </summary>
-    internal TextRun TextRun { get; } = null!;
+    internal Vector2 Offset { get; }
 
     /// <summary>
     /// Gets the text attributes applied to the glyph.
@@ -231,59 +263,19 @@ public abstract class FontGlyphMetrics
     public TextDecorations TextDecorations { get; }
 
     /// <summary>
-    /// Performs a semi-deep clone (FontMetrics are not cloned) for rendering
-    /// This allows caching the original in the font metrics.
-    /// </summary>
-    /// <param name="textRun">The current text run this glyph belongs to.</param>
-    /// <returns>The new <see cref="FontGlyphMetrics"/>.</returns>
-    internal abstract FontGlyphMetrics CloneForRendering(TextRun textRun);
-
-    /// <summary>
-    /// Apply an offset to the glyph.
-    /// </summary>
-    /// <param name="x">The x-offset.</param>
-    /// <param name="y">The y-offset.</param>
-    internal void ApplyOffset(short x, short y)
-        => this.Offset = Vector2.Transform(this.Offset, Matrix3x2.CreateTranslation(x, y));
-
-    /// <summary>
-    /// Applies an advance to the glyph.
-    /// </summary>
-    /// <param name="x">The x-advance.</param>
-    /// <param name="y">The y-advance.</param>
-    internal void ApplyAdvance(short x, short y)
-    {
-        this.AdvanceWidth = (ushort)(this.AdvanceWidth + x);
-
-        // AdvanceHeight values grow downward but font-space grows upward, hence negation
-        this.AdvanceHeight = (ushort)(this.AdvanceHeight - y);
-    }
-
-    /// <summary>
-    /// Sets a new advance width.
-    /// </summary>
-    /// <param name="x">The x-advance.</param>
-    internal void SetAdvanceWidth(ushort x) => this.AdvanceWidth = x;
-
-    /// <summary>
-    /// Sets a new advance height.
-    /// </summary>
-    /// <param name="y">The y-advance.</param>
-    internal void SetAdvanceHeight(ushort y) => this.AdvanceHeight = y;
-
-    /// <summary>
     /// Gets the horizontal shear factor used to synthesize an oblique (faux italic) slant for
     /// this glyph. A non-zero value is returned only when the associated text run requests an
     /// italic style that the resolved font face does not itself provide, mirroring the CSS
     /// <c>font-synthesis: style</c> behavior used by web browsers.
     /// </summary>
+    /// <param name="textRun">The text run providing the styling information for this glyph.</param>
     /// <returns>
     /// The shear factor to apply in the glyph's Y-up coordinate space, or <c>0</c> when no
     /// synthesis is required.
     /// </returns>
-    internal float GetObliqueSkew()
+    internal float GetObliqueSkew(TextRun? textRun)
     {
-        Font? font = this.TextRun?.ResolvedFont;
+        Font? font = textRun?.ResolvedFont;
         if (font is null)
         {
             return 0F;
@@ -311,8 +303,9 @@ public abstract class FontGlyphMetrics
     /// Gets a value indicating whether a heavier weight must be synthesized for this glyph.
     /// Variable fonts apply their registered weight axis instead.
     /// </summary>
+    /// <param name="textRun">The text run providing the styling information for this glyph.</param>
     /// <returns><c>true</c> if bold synthesis is required; otherwise <c>false</c>.</returns>
-    internal bool ShouldSynthesizeBold()
+    internal bool ShouldSynthesizeBold(TextRun? textRun)
     {
         // Chromium deliberately leaves color emoji at their authored weight. Applying outline
         // dilation to a painted glyph would also distort each independently colored layer.
@@ -321,7 +314,6 @@ public abstract class FontGlyphMetrics
             return false;
         }
 
-        TextRun? textRun = this.TextRun;
         Font? font = textRun?.ResolvedFont;
         if (font is null || (textRun!.UsesVariableWeight && ReferenceEquals(font.FontMetrics, this.FontMetrics)))
         {
@@ -353,9 +345,10 @@ public abstract class FontGlyphMetrics
     /// halves this value internally before moving points along their lateral bisectors.
     /// </summary>
     /// <param name="scaledPointSize">The scaled point size, mapped to pixels by the caller.</param>
+    /// <param name="textRun">The text run providing the styling information for this glyph.</param>
     /// <returns>The emboldening strength in pixels.</returns>
-    internal float GetSyntheticBoldStrength(float scaledPointSize)
-        => this.ShouldSynthesizeBold() ? SyntheticBoldEmScale * this.UnitsPerEm * (scaledPointSize / this.ScaleFactor.X) : 0F;
+    internal float GetSyntheticBoldStrength(float scaledPointSize, TextRun? textRun)
+        => this.ShouldSynthesizeBold(textRun) ? SyntheticBoldEmScale * this.UnitsPerEm * (scaledPointSize / this.ScaleFactor.X) : 0F;
 
     /// <summary>
     /// Calculates the glyph bounding box in device-space (Y-down) coordinates,
@@ -371,42 +364,52 @@ public abstract class FontGlyphMetrics
     /// <param name="mode">The glyph layout mode (horizontal, vertical, or vertical rotated).</param>
     /// <param name="origin">The render-space origin in pixels.</param>
     /// <param name="scaledPointSize">The scaled point size, mapped to pixels by the caller.</param>
+    /// <param name="textRun">The text run providing the styling information for this glyph.</param>
+    /// <param name="positionOffset">The positioned placement offset in font design units, composed with the glyph's base offset.</param>
+    /// <param name="positionedAdvance">The positioned advance in font design units used to substitute bounds for glyphs without an outline.</param>
     /// <returns>
     /// A <see cref="FontRectangle"/> representing the glyph bounds in device space.
     /// </returns>
-    internal FontRectangle GetBoundingBox(GlyphLayoutMode mode, Vector2 origin, float scaledPointSize)
+    internal FontRectangle GetBoundingBox(GlyphLayoutMode mode, Vector2 origin, float scaledPointSize, TextRun? textRun, Vector2 positionOffset, Vector2 positionedAdvance)
     {
         Vector2 scale = new(scaledPointSize / this.ScaleFactor.X, scaledPointSize / this.ScaleFactor.Y);
         Bounds b = this.GetDesignBounds();
 
-        // 1) Substitute fallback bounds if the glyph has no outline.
+        // 1) Substitute fallback bounds if the glyph has no outline. The box uses the
+        // positioned advance rather than the font's nominal advance because it stands
+        // for the space the glyph occupies in the laid-out line: positioning can
+        // rewrite the advance, and an invisible default ignorable is deliberately
+        // zeroed, so its nominal advance would claim ink no renderer produces.
+        // Callers without positioned state pass the nominal metrics advances, which
+        // are identical whenever nothing repositioned the glyph.
         if (b.Equals(Bounds.Empty))
         {
             if (mode == GlyphLayoutMode.Vertical)
             {
-                // For vertical layout, set Y-up min = -AdvanceHeight to 0 so Y-down is 0..+AdvanceHeight.
-                b = new Bounds(0f, -this.AdvanceHeight, 0f, 0f);
+                // For vertical layout, set Y-up min = -advance to 0 so Y-down is 0..+advance.
+                b = new Bounds(0f, -positionedAdvance.Y, 0f, 0f);
             }
             else
             {
-                // For horizontal layout, just use advance width.
-                b = new Bounds(0f, 0f, this.AdvanceWidth, 0f);
+                // For horizontal layout, just use the positioned advance width.
+                b = new Bounds(0f, 0f, positionedAdvance.X, 0f);
             }
         }
 
-        // 2) Apply synthetic weight and the shared outline transform.
-        Vector2 offsetUp = this.Offset;
+        // 2) Apply synthetic weight and the shared outline transform. The positioned
+        // offset composes with any base metric offset in the same Y-up space.
+        Vector2 offsetUp = this.Offset + positionOffset;
 
         // FreeType halves the supplied strength before moving points. Inflating both sides by that
         // half-strength preserves the nominal increase in width and height for measurement while
         // the renderer applies the direction-sensitive point dilation.
-        if (this.ShouldSynthesizeBold())
+        if (this.ShouldSynthesizeBold(textRun))
         {
             float inflate = SyntheticBoldEmScale * this.UnitsPerEm * .5F;
             b = new Bounds(b.Min - new Vector2(inflate), b.Max + new Vector2(inflate));
         }
 
-        Matrix3x2 outlineTransform = this.GetOutlineTransform(mode);
+        Matrix3x2 outlineTransform = this.GetOutlineTransform(mode, textRun);
         b = Bounds.Transform(in b, outlineTransform);
         offsetUp = Vector2.Transform(offsetUp, outlineTransform);
 
@@ -457,6 +460,8 @@ public abstract class FontGlyphMetrics
     /// </param>
     /// <param name="mode">The glyph layout mode to render using.</param>
     /// <param name="textRun">The text run providing the styling information for this glyph.</param>
+    /// <param name="positionOffset">The positioned placement offset in font design units, composed with the glyph's base offset.</param>
+    /// <param name="positionedAdvance">The positioned advance in font design units used to substitute bounds for glyphs without an outline.</param>
     /// <param name="pointSize">The point size used to render this glyph.</param>
     /// <param name="dpi">The pixel density used to render this glyph.</param>
     /// <param name="hintingMode">The hinting mode used to render this glyph.</param>
@@ -471,6 +476,8 @@ public abstract class FontGlyphMetrics
         Vector2 layoutAdvance,
         GlyphLayoutMode mode,
         TextRun textRun,
+        Vector2 positionOffset,
+        Vector2 positionedAdvance,
         float pointSize,
         float dpi,
         HintingMode hintingMode,
@@ -491,7 +498,7 @@ public abstract class FontGlyphMetrics
         float scaledPPEM = this.GetScaledSize(pointSize, dpi);
 
         Matrix3x2 rotation = GetRotationMatrix(mode);
-        FontRectangle box = this.GetBoundingBox(mode, glyphOrigin, scaledPPEM);
+        FontRectangle box = this.GetBoundingBox(mode, glyphOrigin, scaledPPEM, textRun, positionOffset, positionedAdvance);
         GlyphRendererParameters parameters = new(this, textRun, pointSize, dpi, mode, graphemeIndex);
 
         if (!renderer.BeginGlyph(in box, in parameters))
@@ -555,7 +562,7 @@ public abstract class FontGlyphMetrics
         {
             if (!whitespace)
             {
-                this.RenderOutlineTo(outlineTarget, glyphOrigin, mode, scaledPPEM, hintingMode);
+                this.RenderOutlineTo(outlineTarget, glyphOrigin, mode, textRun, positionOffset, positionedAdvance, scaledPPEM, hintingMode);
             }
 
             renderer.EndGlyph();
@@ -574,17 +581,23 @@ public abstract class FontGlyphMetrics
     /// <summary>
     /// Renders only the glyph outline geometry to the specified renderer, without glyph or
     /// decoration bookkeeping, using the same transforms as
-    /// <see cref="RenderTo(IGlyphRenderer, int, Vector2, Vector2, Vector2, GlyphLayoutMode, TextRun, float, float, HintingMode, TextDecorationSkipInk, DecorationPositioningMode, FontMetrics)"/>.
+    /// <see cref="RenderTo(IGlyphRenderer, int, Vector2, Vector2, Vector2, GlyphLayoutMode, TextRun, Vector2, Vector2, float, float, HintingMode, TextDecorationSkipInk, DecorationPositioningMode, FontMetrics)"/>.
     /// </summary>
     /// <param name="renderer">The surface renderer.</param>
     /// <param name="glyphOrigin">The origin used to render the glyph outline, in device pixels.</param>
     /// <param name="mode">The glyph layout mode to render using.</param>
+    /// <param name="textRun">The text run providing the styling information for this glyph.</param>
+    /// <param name="positionOffset">The positioned placement offset in font design units, composed with the glyph's base offset.</param>
+    /// <param name="positionedAdvance">The positioned advance in font design units used to substitute bounds for glyphs without an outline.</param>
     /// <param name="scaledPPEM">The scaled pixels-per-em value used to scale the outline.</param>
     /// <param name="hintingMode">The hinting mode used to render the glyph.</param>
     internal virtual void RenderOutlineTo(
         IGlyphRenderer renderer,
         Vector2 glyphOrigin,
         GlyphLayoutMode mode,
+        TextRun? textRun,
+        Vector2 positionOffset,
+        Vector2 positionedAdvance,
         float scaledPPEM,
         HintingMode hintingMode)
     {
@@ -882,13 +895,14 @@ public abstract class FontGlyphMetrics
     }
 
     /// <summary>
-    /// Gets a value indicating whether the specified code point should be skipped when rendering.
+    /// Gets a value indicating whether the specified code point should be skipped when
+    /// rendering: line terminators participate in layout but have no glyph to draw.
     /// </summary>
     /// <param name="codePoint">The code point.</param>
     /// <returns>The <see cref="bool"/>.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected internal static bool ShouldSkipGlyphRendering(CodePoint codePoint)
-        => UnicodeUtility.ShouldNotBeRendered(codePoint);
+        => CodePoint.IsNewLine(codePoint);
 
     /// <summary>
     /// Returns the size to render/measure the glyph based on the given size and resolution in px units.
@@ -930,13 +944,14 @@ public abstract class FontGlyphMetrics
     /// shear with the rotation required by the layout mode.
     /// </summary>
     /// <param name="mode">The glyph layout mode.</param>
+    /// <param name="textRun">The text run providing the styling information for this glyph.</param>
     /// <returns>The outline transform.</returns>
-    internal Matrix3x2 GetOutlineTransform(GlyphLayoutMode mode)
+    internal Matrix3x2 GetOutlineTransform(GlyphLayoutMode mode, TextRun? textRun)
     {
         // All metrics keep outlines in the glyph's Y-up coordinate system through this transform
         // and convert to device-space Y-down coordinates afterwards. Decorations use
         // GetRotationMatrix directly because browser underlines are not themselves italicized.
-        Matrix3x2 transform = CreateObliqueMatrix(this.GetObliqueSkew());
+        Matrix3x2 transform = CreateObliqueMatrix(this.GetObliqueSkew(textRun));
         transform *= GetRotationMatrix(mode);
         return transform;
     }

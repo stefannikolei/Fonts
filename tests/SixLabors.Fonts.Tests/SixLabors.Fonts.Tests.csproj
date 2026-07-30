@@ -49,6 +49,8 @@
 
   <ItemGroup>
     <PackageReference Include="SixLabors.ImageSharp.Drawing" Version="3.0.0-alpha.0.17" />
+    <PackageReference Include="HarfBuzzSharp" Version="14.2.1.1" />
+    <PackageReference Include="HarfBuzzSharp.NativeAssets.Linux" Version="14.2.1.1" Condition="'$(IsLinux)'=='true'" />
     <PackageReference Include="Pegasus" Version="4.1.0" PrivateAssets="all" />
     <Compile Include="..\..\src\UnicodeTrieGenerator\StateAutomation\DeterministicFiniteAutomata.cs" Link="Unicode\StateAutomation\DeterministicFiniteAutomata.cs" />
     <Compile Include="..\..\src\UnicodeTrieGenerator\StateAutomation\Compile.cs" Link="Unicode\StateAutomation\Compile.cs" />

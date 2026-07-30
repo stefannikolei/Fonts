@@ -257,7 +257,7 @@ internal sealed class BaseAxisTable
         // +--------+----------------------------+--------------------------------------------------------------------+
         // | Tag    | baselineTags[baseTagCount] | Array of 4-byte baseline identification tags, in alphabetical order |
         // +--------+----------------------------+--------------------------------------------------------------------+
-        Tag[] baselineTags = Array.Empty<Tag>();
+        Tag[] baselineTags = [];
         if (baseTagListOffset != 0)
         {
             reader.Seek(offset + baseTagListOffset, SeekOrigin.Begin);
@@ -292,7 +292,7 @@ internal sealed class BaseAxisTable
         reader.Seek(scriptListStart, SeekOrigin.Begin);
 
         ushort baseScriptCount = reader.ReadUInt16();
-        var scriptTags = new Tag[baseScriptCount];
+        Tag[] scriptTags = new Tag[baseScriptCount];
         ushort[] scriptOffsets = new ushort[baseScriptCount];
         for (int i = 0; i < scriptTags.Length; i++)
         {
@@ -300,7 +300,7 @@ internal sealed class BaseAxisTable
             scriptOffsets[i] = reader.ReadOffset16();
         }
 
-        var scripts = new BaseScriptEntry[baseScriptCount];
+        BaseScriptEntry[] scripts = new BaseScriptEntry[baseScriptCount];
         for (int i = 0; i < scripts.Length; i++)
         {
             scripts[i] = BaseScriptEntry.Load(scriptTags[i], reader, scriptListStart + scriptOffsets[i]);

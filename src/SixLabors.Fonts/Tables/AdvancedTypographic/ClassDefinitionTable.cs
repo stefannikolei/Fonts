@@ -134,14 +134,56 @@ internal sealed class ClassDefinitionFormat1Table : ClassDefinitionTable
 /// </summary>
 internal sealed class ClassDefinitionFormat2Table : ClassDefinitionTable
 {
+    /// <summary>
+    /// The number of direct-mapped cache slots; must be a power of two so the slot
+    /// mask below selects one.
+    /// </summary>
+    private const int ClassCacheSlots = 128;
+
+    /// <summary>
+    /// The mask selecting a cache slot from a glyph id.
+    /// </summary>
+    private const int ClassCacheSlotMask = ClassCacheSlots - 1;
+
+    /// <summary>
+    /// The bit offset of the class value in a cache entry; the glyph id key occupies
+    /// the low half.
+    /// </summary>
+    private const int ClassCacheClassShift = 16;
+
+    /// <summary>
+    /// The mask extracting the glyph id key from a cache entry.
+    /// </summary>
+    private const uint ClassCacheGlyphMask = 0xFFFF;
+
+    /// <summary>
+    /// The one glyph id excluded from caching: the empty-slot sentinel carries this
+    /// id, so allowing it to cache could serve the sentinel as a real entry.
+    /// </summary>
+    private const ushort UncacheableGlyphId = 0xFFFF;
+
     private readonly ClassRangeRecord[] records;
+
+    /// <summary>
+    /// Direct-mapped glyph-to-class cache in front of the range binary search: one
+    /// word per slot packing the glyph id key and the class value. Entries start at
+    /// the all-ones sentinel, which can never match because the sentinel glyph id is
+    /// excluded from caching. Aligned 32-bit writes are atomic, so concurrent
+    /// shaping passes can race on a slot and only ever lose an update, never read a
+    /// torn entry.
+    /// </summary>
+    private readonly uint[] classCache;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ClassDefinitionFormat2Table"/> class.
     /// </summary>
     /// <param name="records">The array of class range records.</param>
     private ClassDefinitionFormat2Table(ClassRangeRecord[] records)
-        => this.records = records;
+    {
+        this.records = records;
+        this.classCache = new uint[ClassCacheSlots];
+        Array.Fill(this.classCache, uint.MaxValue);
+    }
 
     /// <summary>
     /// Loads a <see cref="ClassDefinitionFormat2Table"/> from the binary reader.
@@ -186,9 +228,22 @@ internal sealed class ClassDefinitionFormat2Table : ClassDefinitionTable
     /// <inheritdoc />
     public override int ClassIndexOf(ushort glyphId)
     {
+        uint[] cache = this.classCache;
+        int slot = glyphId & ClassCacheSlotMask;
+        if (glyphId != UncacheableGlyphId)
+        {
+            uint entry = cache[slot];
+            if ((entry & ClassCacheGlyphMask) == glyphId)
+            {
+                return (int)(entry >> ClassCacheClassShift);
+            }
+        }
+
         // Records are ordered by StartGlyphId, so use binary search to find the
-        // candidate range whose StartGlyphId is <= glyphId.
+        // candidate range whose StartGlyphId is <= glyphId. Any glyph not included
+        // in the range of covered glyph IDs automatically belongs to Class 0.
         ClassRangeRecord[] records = this.records;
+        int result = 0;
         int lo = 0;
         int hi = records.Length - 1;
         while (lo <= hi)
@@ -205,11 +260,16 @@ internal sealed class ClassDefinitionFormat2Table : ClassDefinitionTable
             }
             else
             {
-                return rec.Class;
+                result = rec.Class;
+                break;
             }
         }
 
-        // Any glyph not included in the range of covered glyph IDs automatically belongs to Class 0.
-        return 0;
+        if (glyphId != UncacheableGlyphId)
+        {
+            cache[slot] = (uint)(glyphId | ((uint)result << ClassCacheClassShift));
+        }
+
+        return result;
     }
 }

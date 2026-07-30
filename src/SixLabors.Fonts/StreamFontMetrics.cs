@@ -182,6 +182,19 @@ internal partial class StreamFontMetrics : FontMetrics
     public override VerticalMetrics VerticalMetrics => this.verticalMetrics;
 
     /// <inheritdoc/>
+    internal override bool HasUnicodeVariationSequences
+    {
+        get
+        {
+            CMapTable cmap = this.outlineType == OutlineType.TrueType
+                ? this.trueTypeFontTables!.Cmap
+                : this.compactFontTables!.Cmap;
+
+            return cmap.HasVariationSequences;
+        }
+    }
+
+    /// <inheritdoc/>
     public override short SubscriptXSize => this.subscriptXSize;
 
     /// <inheritdoc/>
@@ -435,6 +448,16 @@ internal partial class StreamFontMetrics : FontMetrics
     }
 
     /// <inheritdoc/>
+    internal override bool TryGetGPosTable([NotNullWhen(true)] out GPosTable? gPosTable)
+    {
+        gPosTable = this.outlineType == OutlineType.TrueType
+            ? this.trueTypeFontTables!.GPos
+            : this.compactFontTables!.GPos;
+
+        return gPosTable is not null;
+    }
+
+    /// <inheritdoc/>
     internal override bool TryGetBaselineCoordinate(Tag baselineTag, bool isVerticalLayout, out short coordinate)
     {
         BaseTable? baseTable = this.outlineType == OutlineType.TrueType
@@ -451,12 +474,19 @@ internal partial class StreamFontMetrics : FontMetrics
     }
 
     /// <inheritdoc/>
-    internal override void ApplySubstitution(GlyphSubstitutionCollection collection)
+    internal override void ApplySubstitution(ShapingBuffer buffer)
     {
         if (this.TryGetGSubTable(out GSubTable? gSubTable))
         {
-            gSubTable.ApplySubstitution(this, collection);
+            gSubTable.ApplySubstitution(this, buffer);
+            return;
         }
+
+        // A font carrying no substitution table has no lookups to apply, but its
+        // runs are still planned: preparing a run's text is what supplies the
+        // characters a script cannot be read without, and the positioning pass
+        // reuses the runs planning records.
+        ScriptItemizer.PlanRuns(this, buffer);
     }
 
     /// <inheritdoc/>
@@ -477,7 +507,7 @@ internal partial class StreamFontMetrics : FontMetrics
     }
 
     /// <inheritdoc/>
-    internal override void UpdatePositions(GlyphPositioningCollection collection)
+    internal override void UpdatePositions(ShapingBuffer buffer)
     {
         bool isTTF = this.outlineType == OutlineType.TrueType;
         GPosTable? gpos = isTTF
@@ -485,9 +515,13 @@ internal partial class StreamFontMetrics : FontMetrics
             : this.compactFontTables!.GPos;
 
         bool kerned = false;
-        KerningMode kerningMode = collection.TextOptions.KerningMode;
+        KerningMode kerningMode = buffer.TextOptions.KerningMode;
 
-        gpos?.TryUpdatePositions(this, collection, out kerned);
+        gpos?.TryUpdatePositions(this, buffer, out kerned);
+        if (gpos is null)
+        {
+            ZeroMarkAdvances(buffer, this, MarkZeroingMode.PreGPos);
+        }
 
         // TODO: I don't think we should disable kerning here.
         if (!kerned && kerningMode != KerningMode.None)
@@ -499,16 +533,43 @@ internal partial class StreamFontMetrics : FontMetrics
             if (kern?.Count > 0)
             {
                 // Set max constraints to prevent OutOfMemoryException or infinite loops from attacks.
-                int maxCount = AdvancedTypographicUtils.GetMaxAllowableShapingCollectionCount(collection.Count);
-                for (int index = 0; index < collection.Count - 1; index++)
+                int maxCount = AdvancedTypographicUtils.GetMaxAllowableShapingCollectionCount(buffer.Count);
+                for (int index = 0; index < buffer.Count - 1; index++)
                 {
                     if (index >= maxCount)
                     {
                         break;
                     }
 
-                    kern.UpdatePositions(this, collection, index, index + 1);
+                    kern.UpdatePositions(this, buffer, index, index + 1);
                 }
+            }
+        }
+
+        if (gpos is null)
+        {
+            ZeroMarkAdvances(buffer, this, MarkZeroingMode.PostGpos);
+            FallbackMarkPositioner.Apply(this, buffer);
+        }
+    }
+
+    /// <summary>
+    /// Applies a script's mark-zeroing stage when the font has no positioning table to host that stage.
+    /// </summary>
+    /// <param name="buffer">The positioned glyph buffer.</param>
+    /// <param name="fontMetrics">The font metrics supplying glyph classes.</param>
+    /// <param name="mode">The mark-zeroing stage to apply.</param>
+    private static void ZeroMarkAdvances(ShapingBuffer buffer, FontMetrics fontMetrics, MarkZeroingMode mode)
+    {
+        List<(int Index, int Count, ScriptClass Script, ShapePlan Plan)> segments = buffer.SegmentPlans;
+        for (int i = 0; i < segments.Count; i++)
+        {
+            (int index, int count, ScriptClass _, ShapePlan plan) = segments[i];
+            if (plan.FontMetrics == fontMetrics && plan.Shaper.MarkZeroingMode == mode)
+            {
+                // Without a positioning table, forward text needs the removed
+                // advance folded into the mark offset so it stays over its base.
+                AdvancedTypographicUtils.ZeroMarkAdvances(fontMetrics, buffer, index, count, true);
             }
         }
     }
@@ -578,8 +639,8 @@ internal partial class StreamFontMetrics : FontMetrics
             {
                 if (fvar.Axes[i].Tag == variation.Tag)
                 {
+                    // A malformed but usable font can repeat an axis tag. A tag-value setting applies to every matching axis.
                     userCoordinates[i] = variation.Value;
-                    break;
                 }
             }
         }

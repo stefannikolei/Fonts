@@ -80,6 +80,9 @@ internal sealed class FileFontMetrics : FontMetrics
     public override VerticalMetrics VerticalMetrics => this.fontMetrics.Value.VerticalMetrics;
 
     /// <inheritdoc/>
+    internal override bool HasUnicodeVariationSequences => this.fontMetrics.Value.HasUnicodeVariationSequences;
+
+    /// <inheritdoc/>
     public override short SubscriptXSize => this.fontMetrics.Value.SubscriptXSize;
 
     /// <inheritdoc/>
@@ -203,20 +206,24 @@ internal sealed class FileFontMetrics : FontMetrics
         => this.fontMetrics.Value.TryGetGSubTable(out gSubTable);
 
     /// <inheritdoc/>
+    internal override bool TryGetGPosTable([NotNullWhen(true)] out GPosTable? gPosTable)
+        => this.fontMetrics.Value.TryGetGPosTable(out gPosTable);
+
+    /// <inheritdoc/>
     internal override bool TryGetBaselineCoordinate(Tag baselineTag, bool isVerticalLayout, out short coordinate)
         => this.fontMetrics.Value.TryGetBaselineCoordinate(baselineTag, isVerticalLayout, out coordinate);
 
     /// <inheritdoc/>
-    internal override void ApplySubstitution(GlyphSubstitutionCollection collection)
-        => this.fontMetrics.Value.ApplySubstitution(collection);
+    internal override void ApplySubstitution(ShapingBuffer buffer)
+        => this.fontMetrics.Value.ApplySubstitution(buffer);
 
     /// <inheritdoc/>
     internal override bool TryGetKerningOffset(ushort currentId, ushort nextId, out Vector2 vector)
         => this.fontMetrics.Value.TryGetKerningOffset(currentId, nextId, out vector);
 
     /// <inheritdoc/>
-    internal override void UpdatePositions(GlyphPositioningCollection collection)
-        => this.fontMetrics.Value.UpdatePositions(collection);
+    internal override void UpdatePositions(ShapingBuffer buffer)
+        => this.fontMetrics.Value.UpdatePositions(buffer);
 
     /// <inheritdoc/>
     internal override float GetGDefVariationDelta(uint packedVariationIndex)
@@ -227,9 +234,9 @@ internal sealed class FileFontMetrics : FontMetrics
         => this.fontMetrics.Value.GetNormalizedCoordinates();
 
     /// <summary>
-    /// Reads a font collection from the specified filesystem path.
+    /// Reads a font buffer from the specified filesystem path.
     /// </summary>
-    /// <param name="path">The filesystem path to the font collection.</param>
+    /// <param name="path">The filesystem path to the font buffer.</param>
     /// <returns>A read-only memory region containing the font metrics.</returns>
     public static ReadOnlyMemory<FileFontMetrics> LoadFontCollection(string path)
     {

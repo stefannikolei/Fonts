@@ -189,6 +189,12 @@ public class GPosTableTests
 
     // LookupType5SubTable, Format 1
     // https://docs.microsoft.com/en-us/typography/opentype/spec/gpos#lookup-type-5-mark-to-ligature-attachment-positioning-subtable
+    /// <summary>
+    /// Verifies mark attachment to a ligature component.
+    /// </summary>
+    /// <remarks>
+    /// The selected component follows HarfBuzz 14.2.1, <c>src/OT/Layout/GPOS/MarkLigPosFormat1.hh</c>, symbol <c>MarkLigPosFormat1_2::apply</c>, which uses the attachment table's row count. This rule is shaping behavior and is not derivable from the Unicode Character Database.
+    /// </remarks>
     [Fact]
     public void MarkToLigatureAttachmentPositioning_Format1_Works()
     {
@@ -202,7 +208,7 @@ public class GPosTableTests
         FontRectangle[] expectedFontRectangles =
         [
             new(475, 1085.9999F, 825, 719),
-            new(375, 1164.9999F, 825, 709),
+            new(376, 1163.9999F, 825, 709),
         ];
 
         // act

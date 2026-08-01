@@ -243,9 +243,8 @@ internal class CffGlyphMetrics : FontGlyphMetrics
         if (key.HintingMode != HintingMode.None && pixelSize <= GlyphGridFitter.MaxFitPixelsPerEm)
         {
             GridFitAxisMode fitX = key.HintingMode == HintingMode.Full ? GridFitAxisMode.Full : GridFitAxisMode.None;
-            float[] topAnchors = this.glyphData.HintingValues?.BlueFlats ?? [];
-            float[] bottomAnchors = this.glyphData.HintingValues?.OtherBlueFlats ?? [];
-            GridFitOptions options = new(pixelSize, fitX, GridFitAxisMode.Full, topAnchors, bottomAnchors, scale.Y);
+            CffHintingValues? hintingValues = this.glyphData.HintingValues;
+            GridFitOptions options = new(pixelSize, fitX, GridFitAxisMode.Full, [], [], hintingValues?.Zones ?? [], hintingValues?.BlueFuzz ?? 1F, scale.Y);
             if (GlyphGridFitter.FitInPlace(outline.Points, outline.ContourEnds, outline.VerticalStems, outline.HorizontalStems, outline.EqualizeVerticalCounters, outline.EqualizeHorizontalCounters, in options))
             {
                 outline.IsFitted = true;

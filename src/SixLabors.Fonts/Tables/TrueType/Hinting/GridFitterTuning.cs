@@ -125,26 +125,9 @@ internal static class GridFitterTuning
     public const float AnchorCeilingFuzzPx = 0.02F;
 
     /// <summary>
-    /// The upward bias when rounding a declared wall stem width to whole pixels. Well
-    /// under a half: classic rasterizers regularize declared stems toward the thin side,
-    /// keeping a wall of around one and a half pixels at a single crisp pixel. Only walls
-    /// qualify: a wall at one pixel fills its column completely, while a diagonal stroke
-    /// narrowed the same way drops below the coverage threshold and breaks apart row by
-    /// row.
+    /// The smallest counter the hint map preserves between adjacent hint edges when
+    /// adjusting a hint onto a pixel boundary. A move that would close a counter below
+    /// this is refused in favor of the other direction or no move at all.
     /// </summary>
-    public const float DeclaredWidthRoundBiasPx = 0.25F;
-
-    /// <summary>
-    /// The band around a declared flank within which any outline point counts toward its
-    /// wall measurement. Wider than the flatness band because a curved wall, such as a
-    /// bowl side, sweeps near its extremum rather than resting exactly on it.
-    /// </summary>
-    public const float WallBandPx = 0.5F;
-
-    /// <summary>
-    /// The sustained run length within the wall band that qualifies a flank as a wall. A
-    /// bowl side or straight stem runs several pixels close to its flank; a diagonal
-    /// crosses its flank in under two.
-    /// </summary>
-    public const float WallMinExtentPx = 2F;
+    public const float MinCounterPx = 0.5F;
 }

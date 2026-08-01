@@ -15,16 +15,20 @@ internal readonly struct GridFitOptions
     /// <param name="pixelsPerEm">The pixel size of the em square, which scales the feature detection thresholds.</param>
     /// <param name="fitX">The fitting mode for the horizontal axis.</param>
     /// <param name="fitY">The fitting mode for the vertical axis.</param>
-    /// <param name="topAnchors">The alignment heights that attract top edges, such as the x-height and cap height for TrueType or the blue zone flats for CFF. The baseline at zero always attracts bottom edges. The array is font level state and is never modified.</param>
-    /// <param name="bottomAnchors">The alignment depths below the baseline that attract bottom edges, such as the descender zone flats for CFF. The array is font level state and is never modified.</param>
-    /// <param name="anchorScale">The factor converting the anchor heights into pixels, letting callers share one design unit anchor array across all sizes without allocating.</param>
-    public GridFitOptions(float pixelsPerEm, GridFitAxisMode fitX, GridFitAxisMode fitY, float[] topAnchors, float[] bottomAnchors, float anchorScale)
+    /// <param name="topAnchors">The alignment heights that attract top edges, such as the x-height and cap height for TrueType. The baseline at zero always attracts bottom edges. The array is font level state and is never modified.</param>
+    /// <param name="bottomAnchors">The alignment depths below the baseline that attract bottom edges. The array is font level state and is never modified.</param>
+    /// <param name="zones">The declared alignment zones for hint map fitting, in design units. The array is font level state and is never modified.</param>
+    /// <param name="blueFuzz">The fuzz distance extending each zone band, in design units.</param>
+    /// <param name="anchorScale">The factor converting the anchor heights and zones into pixels, letting callers share one design unit array across all sizes without allocating.</param>
+    public GridFitOptions(float pixelsPerEm, GridFitAxisMode fitX, GridFitAxisMode fitY, float[] topAnchors, float[] bottomAnchors, HintZone[] zones, float blueFuzz, float anchorScale)
     {
         this.PixelsPerEm = pixelsPerEm;
         this.FitX = fitX;
         this.FitY = fitY;
         this.TopAnchors = topAnchors;
         this.BottomAnchors = bottomAnchors;
+        this.Zones = zones;
+        this.BlueFuzz = blueFuzz;
         this.AnchorScale = anchorScale;
     }
 
@@ -53,6 +57,16 @@ internal readonly struct GridFitOptions
     /// or above zero are ignored.
     /// </summary>
     public float[] BottomAnchors { get; }
+
+    /// <summary>
+    /// Gets the declared alignment zones for hint map fitting, in design units.
+    /// </summary>
+    public HintZone[] Zones { get; }
+
+    /// <summary>
+    /// Gets the fuzz distance extending each zone band, in design units.
+    /// </summary>
+    public float BlueFuzz { get; }
 
     /// <summary>
     /// Gets the factor converting the anchor heights into pixels.

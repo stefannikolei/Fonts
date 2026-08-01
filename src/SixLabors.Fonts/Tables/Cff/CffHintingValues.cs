@@ -1,6 +1,8 @@
 // Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
+using SixLabors.Fonts.Tables.TrueType.Hinting;
+
 namespace SixLabors.Fonts.Tables.Cff;
 
 /// <summary>
@@ -46,55 +48,41 @@ internal sealed class CffHintingValues
         this.StemSnapV = stemSnapV;
         this.LanguageGroup = languageGroup;
 
-        // The first zone straddles the baseline; each subsequent zone contributes its flat
-        // edge, the lower value of the pair, which is the height round and flat tops share
-        // once overshoots are suppressed. Computed once here so per glyph fitting never
-        // allocates.
-        if (blueValues.Length < 4)
+        // The first blue value pair straddles the baseline and aligns feature bottoms,
+        // with its flat edge on top; subsequent pairs align feature tops with their flat
+        // edges on the bottom. All other blues are descender zones aligning feature
+        // bottoms. Computed once here so per glyph fitting never allocates.
+        int zoneCount = (blueValues.Length >> 1) + (otherBlues.Length >> 1);
+        if (zoneCount == 0)
         {
-            this.BlueFlats = [];
+            this.Zones = [];
         }
         else
         {
-            float[] flats = new float[(blueValues.Length - 2) / 2];
-            for (int i = 0; i < flats.Length; i++)
+            HintZone[] zones = new HintZone[zoneCount];
+            int z = 0;
+            for (int i = 0; i + 1 < blueValues.Length; i += 2)
             {
-                flats[i] = blueValues[2 + (i * 2)];
+                zones[z++] = i == 0
+                    ? new HintZone(blueValues[i], blueValues[i + 1], blueValues[i + 1], true)
+                    : new HintZone(blueValues[i], blueValues[i + 1], blueValues[i], false);
             }
 
-            this.BlueFlats = flats;
-        }
-
-        // Descender zones run below the baseline; each contributes its flat edge, the
-        // upper value of the pair, which descender bottoms share once overshoots are
-        // suppressed.
-        if (otherBlues.Length < 2)
-        {
-            this.OtherBlueFlats = [];
-        }
-        else
-        {
-            float[] flats = new float[otherBlues.Length / 2];
-            for (int i = 0; i < flats.Length; i++)
+            for (int i = 0; i + 1 < otherBlues.Length; i += 2)
             {
-                flats[i] = otherBlues[(i * 2) + 1];
+                zones[z++] = new HintZone(otherBlues[i], otherBlues[i + 1], otherBlues[i + 1], true);
             }
 
-            this.OtherBlueFlats = flats;
+            this.Zones = zones;
         }
     }
 
     /// <summary>
-    /// Gets the flat edges of the top alignment zones in design units, precomputed for the
-    /// grid fitter's anchor list.
+    /// Gets the alignment zones in design units, precomputed for the grid fitter: the
+    /// baseline zone, the top zones from the blue values, and the descender zones from
+    /// the other blues.
     /// </summary>
-    public float[] BlueFlats { get; }
-
-    /// <summary>
-    /// Gets the flat edges of the descender alignment zones in design units, precomputed
-    /// for the grid fitter's anchor list.
-    /// </summary>
-    public float[] OtherBlueFlats { get; }
+    public HintZone[] Zones { get; }
 
     /// <summary>
     /// Gets the baseline and horizontal alignment zone pairs, lowest first.

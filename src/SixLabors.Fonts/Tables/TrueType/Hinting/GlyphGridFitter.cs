@@ -33,12 +33,17 @@ internal sealed class GlyphGridFitter
     // Capacity bails, not tuning: a glyph exceeding either budget is left unfitted.
     private const int MaxSegments = 256;
     private const int MaxEdges = 48;
+    private const int MaxHintEdges = 96;
 
     private static readonly ObjectPool<GlyphGridFitter> Pool = new(new PooledObjectPolicy());
 
     private readonly Segment[] segments = new Segment[MaxSegments];
     private readonly Edge[] edges = new Edge[MaxEdges];
     private readonly int[] sortOrder = new int[MaxSegments];
+    private readonly HintEdge[] initialMap = new HintEdge[MaxHintEdges];
+    private readonly HintEdge[] finalMap = new HintEdge[MaxHintEdges];
+    private readonly PendingMove[] pendingMoves = new PendingMove[MaxHintEdges];
+    private readonly bool[] stemWall = new bool[MaxHintEdges];
     private float[] axisOriginal = [];
     private float[] axisCurrent = [];
     private float[] perp = [];
@@ -46,10 +51,26 @@ internal sealed class GlyphGridFitter
     private bool[] consumed = [];
     private int segmentCount;
     private int edgeCount;
+    private int initialMapCount;
+    private int mapCount;
+    private int pendingMoveCount;
+    private bool initialMapValid;
     private float minSegmentExtent;
 
     private GlyphGridFitter()
     {
+    }
+
+    [Flags]
+    private enum HintEdgeFlags : byte
+    {
+        None = 0,
+        PairBottom = 1,
+        PairTop = 2,
+        GhostBottom = 4,
+        GhostTop = 8,
+        Locked = 16,
+        Synthetic = 32,
     }
 
     /// <summary>
@@ -118,15 +139,13 @@ internal sealed class GlyphGridFitter
         GlyphGridFitter fitter = Pool.Get();
         try
         {
-            fitter.EnsureCapacity(points.Length);
-
             bool moved = false;
-            if (options.FitX != GridFitAxisMode.None && fitter.FitBufferedAxis(points, contourEnds, verticalStems, equalizeVerticalCounters, in options, true))
+            if (options.FitX != GridFitAxisMode.None && fitter.FitBufferedAxis(points, verticalStems, equalizeVerticalCounters, in options, true))
             {
                 moved = true;
             }
 
-            if (options.FitY != GridFitAxisMode.None && fitter.FitBufferedAxis(points, contourEnds, horizontalStems, equalizeHorizontalCounters, in options, false))
+            if (options.FitY != GridFitAxisMode.None && fitter.FitBufferedAxis(points, horizontalStems, equalizeHorizontalCounters, in options, false))
             {
                 moved = true;
             }
@@ -257,7 +276,7 @@ internal sealed class GlyphGridFitter
             }
         }
 
-        this.SnapStems(axisMode == GridFitAxisMode.Rescue, false);
+        this.SnapStems(axisMode == GridFitAxisMode.Rescue);
         this.AbsorbSatellites();
 
         if (DebugLog is not null)
@@ -305,294 +324,646 @@ internal sealed class GlyphGridFitter
     }
 
     /// <summary>
-    /// Fits one axis of a buffered outline from declared stem zones: gathers coordinates,
-    /// seeds edges from the zones, snaps anchors and stems, applies the deltas to points
-    /// on the declared flanks and interpolates the rest.
+    /// Fits one axis of a buffered outline through a hint map built from the declared
+    /// stems: captured hints lock to their alignment rows, the rest adjust onto pixel
+    /// boundaries, and every point transforms through the resulting piecewise linear map.
     /// </summary>
     /// <param name="points">The outline points, in contour order.</param>
-    /// <param name="contourEnds">The index of the last point of each contour.</param>
-    /// <param name="declaredStems">The declared stem zones for the axis as low and high edge pairs.</param>
+    /// <param name="declaredStems">The declared stem zones for the axis as edge pairs, in declaration order.</param>
     /// <param name="equalizeCounters">Whether the glyph's counter mask requests counter equalization on the axis.</param>
     /// <param name="options">The fitting parameters.</param>
     /// <param name="isXAxis">Whether the horizontal axis is being fitted; otherwise the vertical axis.</param>
     /// <returns><see langword="true"/> if any point was moved on the axis; otherwise, <see langword="false"/>.</returns>
-    private bool FitBufferedAxis(Vector2[] points, ushort[] contourEnds, float[] declaredStems, bool equalizeCounters, in GridFitOptions options, bool isXAxis)
+    private bool FitBufferedAxis(Vector2[] points, float[] declaredStems, bool equalizeCounters, in GridFitOptions options, bool isXAxis)
     {
+        if (declaredStems.Length < 2)
+        {
+            return false;
+        }
+
         int pointCount = points.Length;
-
-        // Gather the axis and perpendicular coordinates and the outline's perpendicular
-        // range, which stands in for per edge extents: declared zones are authoritative,
-        // so no overlap scoring is needed.
-        float perpLow = float.MaxValue;
-        float perpHigh = float.MinValue;
-        int contourStart = 0;
-        for (int c = 0; c < contourEnds.Length; c++)
-        {
-            int contourEnd = contourEnds[c];
-            if (contourEnd >= pointCount || contourEnd < contourStart)
-            {
-                return false;
-            }
-
-            contourStart = contourEnd + 1;
-        }
-
         for (int i = 0; i < pointCount; i++)
         {
-            float axis = isXAxis ? points[i].X : points[i].Y;
-            float perpendicular = isXAxis ? points[i].Y : points[i].X;
-            if (!float.IsFinite(axis) || !float.IsFinite(perpendicular))
+            if (!float.IsFinite(points[i].X) || !float.IsFinite(points[i].Y))
             {
                 return false;
             }
-
-            this.axisOriginal[i] = axis;
-            this.axisCurrent[i] = axis;
-            this.perp[i] = perpendicular;
-            this.touched[i] = false;
-            perpLow = MathF.Min(perpLow, perpendicular);
-            perpHigh = MathF.Max(perpHigh, perpendicular);
         }
 
-        if (!this.SeedDeclaredEdges(declaredStems, perpLow, perpHigh, 20.5F * options.AnchorScale))
+        this.ClassifyWallStems(points, declaredStems, isXAxis);
+
+        // The declared path fits through a hint map: hints captured by an alignment zone
+        // move rigidly onto the zone's row and lock, remaining hints are positioned
+        // through the captured-only initial map and then adjusted so one edge lands on a
+        // pixel boundary, and every point transforms through the resulting piecewise
+        // linear map. Curves crossing a zone stretch smoothly between hint edges instead
+        // of collapsing onto them.
+        this.BuildHintMap(declaredStems, in options, isXAxis, true);
+        this.BuildHintMap(declaredStems, in options, isXAxis, false);
+        if (this.mapCount == 0)
         {
             return false;
         }
 
-        this.ClassifyDeclaredFlanks(pointCount);
-
-        GridFitAxisMode axisMode = isXAxis ? options.FitX : options.FitY;
-        if (!isXAxis)
+        if (equalizeCounters)
         {
-            this.SnapAnchors(in options);
+            this.EqualizeMapCounters();
         }
+
+        ComputeMapScales(this.finalMap, this.mapCount);
 
         if (DebugLog is not null)
         {
-            DebugLog.AppendLine(FormattableString.Invariant($"buffered axis={(isXAxis ? "X" : "Y")} mode={axisMode} edges={this.edgeCount}"));
-            for (int i = 0; i < this.edgeCount; i++)
+            DebugLog.AppendLine(FormattableString.Invariant($"hintmap axis={(isXAxis ? "X" : "Y")} edges={this.mapCount}"));
+            for (int i = 0; i < this.mapCount; i++)
             {
-                ref Edge e = ref this.edges[i];
-                DebugLog.AppendLine(FormattableString.Invariant($"  edge[{i}] pos={e.Pos:0.###} dir={e.Dir} round={e.Round} fitted={e.Fitted} anchored={e.Anchored} new={e.NewPos:0.###} link={e.Link}"));
+                ref HintEdge e = ref this.finalMap[i];
+                DebugLog.AppendLine(FormattableString.Invariant($"  edge[{i}] cs={e.Cs:0.###} ds={e.Ds:0.###} scale={e.Scale:0.###} flags={e.Flags}"));
             }
         }
 
-        this.SnapStems(axisMode == GridFitAxisMode.Rescue, equalizeCounters);
-
-        if (DebugLog is not null)
-        {
-            for (int i = 0; i < this.edgeCount; i++)
-            {
-                ref Edge e = ref this.edges[i];
-                DebugLog.AppendLine(FormattableString.Invariant($"  post[{i}] pos={e.Pos:0.###} dir={e.Dir} round={e.Round} fitted={e.Fitted} new={e.NewPos:0.###} link={e.Link}"));
-            }
-        }
-
-        if (!this.ApplyDeclaredEdgeDeltas(pointCount))
-        {
-            return false;
-        }
-
-        this.InterpolateUntouched(contourEnds);
-
-        if (!isXAxis)
-        {
-            this.SuppressOvershoots(pointCount);
-        }
-
+        bool moved = false;
+        int lastIndex = 0;
         for (int i = 0; i < pointCount; i++)
         {
-            if (this.axisCurrent[i] != this.axisOriginal[i])
+            float value = isXAxis ? points[i].X : points[i].Y;
+            float mapped = MapCoordinate(this.finalMap, this.mapCount, ref lastIndex, value);
+            if (mapped != value)
             {
                 if (isXAxis)
                 {
-                    points[i].X = this.axisCurrent[i];
+                    points[i].X = mapped;
                 }
                 else
                 {
-                    points[i].Y = this.axisCurrent[i];
-                }
-            }
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    /// Builds the edge list directly from declared stem zones. Each zone contributes a
-    /// linked pair of opposing edges sorted by position. Ghost stems, whose zones are
-    /// inverted, declare a single alignment edge with no opposing flank: the first value
-    /// of the pair is the real edge and the inverted width selects its side, twenty for a
-    /// top edge and twenty one for a bottom edge. They seed unlinked edges that
-    /// participate in anchor snapping only.
-    /// </summary>
-    /// <param name="declaredStems">The declared zones as low and high edge pairs.</param>
-    /// <param name="perpLow">The outline's lowest perpendicular coordinate.</param>
-    /// <param name="perpHigh">The outline's highest perpendicular coordinate.</param>
-    /// <param name="ghostBottomThreshold">The inverted width, in pixels, separating bottom edge ghosts from top edge ghosts: twenty and a half design units under the caller's scale.</param>
-    /// <returns><see langword="true"/> if at least one zone was seeded; otherwise, <see langword="false"/>.</returns>
-    private bool SeedDeclaredEdges(float[] declaredStems, float perpLow, float perpHigh, float ghostBottomThreshold)
-    {
-        this.segmentCount = 0;
-        this.edgeCount = 0;
-
-        // Order the zones by their first edge; mask alternation can declare them out
-        // of order and the stem snapping pass walks edges in ascending position.
-        int pairCount = 0;
-        int edgesNeeded = 0;
-        for (int i = 0; i + 1 < declaredStems.Length; i += 2)
-        {
-            int contribution = declaredStems[i + 1] > declaredStems[i] ? 2 : 1;
-            if (edgesNeeded + contribution <= MaxEdges)
-            {
-                this.sortOrder[pairCount++] = i;
-                edgesNeeded += contribution;
-            }
-        }
-
-        for (int i = 1; i < pairCount; i++)
-        {
-            int key = this.sortOrder[i];
-            float keyLow = declaredStems[key];
-            int j = i - 1;
-            while (j >= 0 && declaredStems[this.sortOrder[j]] > keyLow)
-            {
-                this.sortOrder[j + 1] = this.sortOrder[j];
-                j--;
-            }
-
-            this.sortOrder[j + 1] = key;
-        }
-
-        for (int i = 0; i < pairCount; i++)
-        {
-            float low = declaredStems[this.sortOrder[i]];
-            float high = declaredStems[this.sortOrder[i] + 1];
-
-            if (high <= low)
-            {
-                ref Edge ghost = ref this.edges[this.edgeCount];
-                ghost.FirstSegment = -1;
-                ghost.Link = -1;
-                ghost.Pos = low;
-                ghost.NewPos = low;
-                ghost.PerpMin = perpLow;
-                ghost.PerpMax = perpHigh;
-                ghost.Extent = perpHigh - perpLow;
-                ghost.Dir = (sbyte)(low - high > ghostBottomThreshold ? 1 : -1);
-                ghost.Round = false;
-                ghost.Fitted = false;
-                ghost.Anchored = false;
-                ghost.Wall = false;
-
-                this.edgeCount++;
-                continue;
-            }
-
-            ref Edge left = ref this.edges[this.edgeCount];
-            left.FirstSegment = -1;
-            left.Link = this.edgeCount + 1;
-            left.Pos = low;
-            left.NewPos = low;
-            left.PerpMin = perpLow;
-            left.PerpMax = perpHigh;
-            left.Extent = perpHigh - perpLow;
-            left.Dir = 1;
-            left.Round = false;
-            left.Fitted = false;
-            left.Anchored = false;
-            left.Wall = false;
-
-            ref Edge right = ref this.edges[this.edgeCount + 1];
-            right.FirstSegment = -1;
-            right.Link = this.edgeCount;
-            right.Pos = high;
-            right.NewPos = high;
-            right.PerpMin = perpLow;
-            right.PerpMax = perpHigh;
-            right.Extent = perpHigh - perpLow;
-            right.Dir = -1;
-            right.Round = false;
-            right.Fitted = false;
-            right.Anchored = false;
-            right.Wall = false;
-
-            this.edgeCount += 2;
-        }
-
-        return this.edgeCount > 0;
-    }
-
-    /// <summary>
-    /// Marks each declared flank that forms a wall: a sustained run of outline close to
-    /// the flank, such as a straight stem side or the tall near vertical sweep of a bowl.
-    /// A diagonal stroke instead crosses its flank in a short stretch. The distinction
-    /// drives stem width normalization: walls tolerate thin regularized widths because
-    /// one pixel of wall fills its row or column completely, while a diagonal narrowed
-    /// the same way drops below the coverage threshold and breaks apart.
-    /// </summary>
-    /// <param name="pointCount">The number of outline points.</param>
-    private void ClassifyDeclaredFlanks(int pointCount)
-    {
-        for (int e = 0; e < this.edgeCount; e++)
-        {
-            ref Edge edge = ref this.edges[e];
-            float min = float.MaxValue;
-            float max = float.MinValue;
-            for (int p = 0; p < pointCount; p++)
-            {
-                if (MathF.Abs(this.axisOriginal[p] - edge.Pos) <= GridFitterTuning.WallBandPx)
-                {
-                    min = MathF.Min(min, this.perp[p]);
-                    max = MathF.Max(max, this.perp[p]);
-                }
-            }
-
-            edge.Wall = min < max && max - min >= GridFitterTuning.WallMinExtentPx;
-        }
-    }
-
-    /// <summary>
-    /// Moves every point lying on a fitted declared flank by that flank's delta. Declared
-    /// edges carry no detected member segments, so membership is by proximity to the
-    /// declared position; each point follows its nearest flank within the alignment band.
-    /// </summary>
-    /// <param name="pointCount">The number of outline points.</param>
-    /// <returns><see langword="true"/> if any edge produced a non zero delta; otherwise, <see langword="false"/>.</returns>
-    private bool ApplyDeclaredEdgeDeltas(int pointCount)
-    {
-        bool moved = false;
-        for (int p = 0; p < pointCount; p++)
-        {
-            float value = this.axisOriginal[p];
-            float bestDistance = GridFitterTuning.SegmentSlackPx;
-            int bestEdge = -1;
-            for (int i = 0; i < this.edgeCount; i++)
-            {
-                ref Edge edge = ref this.edges[i];
-                if (!edge.Fitted)
-                {
-                    continue;
+                    points[i].Y = mapped;
                 }
 
-                float distance = MathF.Abs(value - edge.Pos);
-                if (distance <= bestDistance)
-                {
-                    bestDistance = distance;
-                    bestEdge = i;
-                }
-            }
-
-            if (bestEdge >= 0)
-            {
-                float delta = this.edges[bestEdge].NewPos - this.edges[bestEdge].Pos;
-                this.axisCurrent[p] = value + delta;
-                this.touched[p] = true;
-                moved |= delta != 0F;
+                moved = true;
             }
         }
 
         return moved;
+    }
+
+    /// <summary>
+    /// Builds one of the two hint maps from the declared stems. Hints captured by an
+    /// alignment zone insert first, in declaration order, so alignment outranks pixel
+    /// rounding when overlapping hints conflict; each insertion rejects hints that
+    /// overlap an earlier one in either the unfitted or the fitted coordinate. The
+    /// initial map takes only captured hints, plus a synthetic locked edge at the origin
+    /// when no hint spans it, and positions the remaining hints of the final map so
+    /// stems keep their place relative to the aligned features around them.
+    /// </summary>
+    /// <param name="declaredStems">The declared stem zones as edge pairs, in declaration order.</param>
+    /// <param name="options">The fitting parameters carrying the alignment zones.</param>
+    /// <param name="isXAxis">Whether the horizontal axis is being fitted; zones apply only to the vertical axis.</param>
+    /// <param name="buildInitial">Whether the captured only initial map is being built; otherwise the final map.</param>
+    private void BuildHintMap(float[] declaredStems, in GridFitOptions options, bool isXAxis, bool buildInitial)
+    {
+        HintEdge[] map = buildInitial ? this.initialMap : this.finalMap;
+        int count = 0;
+
+        if (buildInitial)
+        {
+            this.initialMapValid = false;
+        }
+
+        float scale = options.AnchorScale;
+        float fuzz = options.BlueFuzz * scale;
+
+        int passCount = buildInitial ? 1 : 2;
+        for (int pass = 0; pass < passCount; pass++)
+        {
+            bool wantCaptured = pass == 0;
+            for (int s = 0; s + 1 < declaredStems.Length; s += 2)
+            {
+                if (!TryInitHintPair(declaredStems[s], declaredStems[s + 1], scale, this.stemWall[s >> 1], out HintEdge bottom, out HintEdge top, out bool isPair))
+                {
+                    continue;
+                }
+
+                bool captured = !isXAxis && TryCaptureHint(ref bottom, ref top, options.Zones, scale, fuzz);
+                if (captured != wantCaptured)
+                {
+                    continue;
+                }
+
+                this.InsertHint(map, ref count, bottom, top, isPair, buildInitial);
+            }
+        }
+
+        if (buildInitial)
+        {
+            if (count == 0 || map[0].Cs > 0F || map[count - 1].Cs < 0F)
+            {
+                HintEdge zero = default;
+                zero.Flags = HintEdgeFlags.GhostBottom | HintEdgeFlags.Locked | HintEdgeFlags.Synthetic;
+                this.InsertHint(map, ref count, zero, default, false, true);
+            }
+
+            AdjustHintMap(map, count, this.pendingMoves, ref this.pendingMoveCount);
+            ComputeMapScales(map, count);
+            this.initialMapCount = count;
+            this.initialMapValid = count > 0;
+        }
+        else
+        {
+            AdjustHintMap(map, count, this.pendingMoves, ref this.pendingMoveCount);
+            this.mapCount = count;
+        }
+    }
+
+    /// <summary>
+    /// Marks each declared stem whose flanks both form walls: sustained runs of outline
+    /// close to the flank, such as straight stem sides or the tall near vertical sweeps
+    /// of a bowl. A diagonal stroke instead crosses its flank in a short stretch. Walls
+    /// tolerate thin regularized widths because one pixel of wall fills its row or
+    /// column completely, while a diagonal narrowed the same way drops below the
+    /// coverage threshold and breaks apart.
+    /// </summary>
+    /// <param name="points">The outline points.</param>
+    /// <param name="declaredStems">The declared stem zones as edge pairs.</param>
+    /// <param name="isXAxis">Whether the horizontal axis is being fitted.</param>
+    private void ClassifyWallStems(Vector2[] points, float[] declaredStems, bool isXAxis)
+    {
+        for (int s = 0; s + 1 < declaredStems.Length; s += 2)
+        {
+            bool wall = true;
+            for (int e = 0; e < 2 && wall; e++)
+            {
+                float edge = declaredStems[s + e];
+                float min = float.MaxValue;
+                float max = float.MinValue;
+                for (int p = 0; p < points.Length; p++)
+                {
+                    float axis = isXAxis ? points[p].X : points[p].Y;
+                    if (MathF.Abs(axis - edge) <= 0.5F)
+                    {
+                        float perpendicular = isXAxis ? points[p].Y : points[p].X;
+                        min = MathF.Min(min, perpendicular);
+                        max = MathF.Max(max, perpendicular);
+                    }
+                }
+
+                wall = min < max && max - min >= 2F;
+            }
+
+            this.stemWall[s >> 1] = wall;
+        }
+    }
+
+    /// <summary>
+    /// Expands one declared stem into hint edges. Ghost stems carry inverted widths of
+    /// twenty and twenty one units: a top ghost's real edge is the first value and a
+    /// bottom ghost's real edge is the second; other inverted widths are undefined by the
+    /// format and are treated as a swapped pair. Pairs thinner than a pixel widen
+    /// symmetrically to exactly one pixel in the fitted coordinate so light strokes
+    /// cannot fall below the coverage threshold and vanish; wall pairs wider than a pixel
+    /// regularize toward the thin side the same way classic rasterizers treat declared
+    /// stems, keeping a wall of around one and a half pixels at a single crisp pixel.
+    /// </summary>
+    /// <param name="a">The first declared edge in pixel space.</param>
+    /// <param name="b">The second declared edge in pixel space.</param>
+    /// <param name="scale">The pixels per design unit scale identifying ghost widths.</param>
+    /// <param name="wall">Whether both flanks of the stem form walls.</param>
+    /// <param name="bottom">The bottom hint edge, invalid for a top ghost.</param>
+    /// <param name="top">The top hint edge, invalid for a bottom ghost.</param>
+    /// <param name="isPair">Whether both edges are valid and move together.</param>
+    /// <returns><see langword="true"/> if the stem produced at least one valid edge; otherwise, <see langword="false"/>.</returns>
+    private static bool TryInitHintPair(float a, float b, float scale, bool wall, out HintEdge bottom, out HintEdge top, out bool isPair)
+    {
+        bottom = default;
+        top = default;
+        isPair = false;
+
+        float width = b - a;
+        float ghostTolerance = 0.5F * scale;
+        if (MathF.Abs(width - (-21F * scale)) < ghostTolerance)
+        {
+            bottom.Cs = b;
+            bottom.Ds = b;
+            bottom.Scale = 1F;
+            bottom.Flags = HintEdgeFlags.GhostBottom;
+            return true;
+        }
+
+        if (MathF.Abs(width - (-20F * scale)) < ghostTolerance)
+        {
+            top.Cs = a;
+            top.Ds = a;
+            top.Scale = 1F;
+            top.Flags = HintEdgeFlags.GhostTop;
+            return true;
+        }
+
+        float low = a;
+        float high = b;
+        if (width < 0F)
+        {
+            low = b;
+            high = a;
+        }
+
+        bottom.Cs = low;
+        bottom.Ds = low;
+        bottom.Scale = 1F;
+        bottom.Flags = HintEdgeFlags.PairBottom;
+
+        top.Cs = high;
+        top.Ds = high;
+        top.Scale = 1F;
+        top.Flags = HintEdgeFlags.PairTop;
+
+        float dsWidth = high - low;
+        if (dsWidth < GridFitterTuning.OnePixelWidthPx)
+        {
+            dsWidth = 1F;
+        }
+        else if (wall)
+        {
+            dsWidth = MathF.Max(1F, MathF.Floor(dsWidth + 0.25F));
+        }
+
+        if (dsWidth != high - low)
+        {
+            float center = (low + high) * 0.5F;
+            bottom.Ds = center - (dsWidth * 0.5F);
+            top.Ds = center + (dsWidth * 0.5F);
+        }
+
+        isPair = true;
+        return true;
+    }
+
+    /// <summary>
+    /// Tests a hint against the alignment zones in zone order: a bottom edge inside a
+    /// bottom zone's band, or a top edge inside a top zone's band, captures the hint.
+    /// Both edges then move rigidly so the captured edge lands on the zone's fitted row,
+    /// and the hint locks so pixel rounding cannot move it again. Top rows take the
+    /// ceiling of the flat edge so an alignment height always earns its full pixel row;
+    /// bottom rows round to nearest, keeping the baseline exact and descenders balanced.
+    /// </summary>
+    /// <param name="bottom">The bottom hint edge.</param>
+    /// <param name="top">The top hint edge.</param>
+    /// <param name="zones">The alignment zones in design units.</param>
+    /// <param name="scale">The pixels per design unit scale.</param>
+    /// <param name="fuzz">The band extension in pixels.</param>
+    /// <returns><see langword="true"/> if a zone captured the hint; otherwise, <see langword="false"/>.</returns>
+    private static bool TryCaptureHint(ref HintEdge bottom, ref HintEdge top, HintZone[] zones, float scale, float fuzz)
+    {
+        for (int z = 0; z < zones.Length; z++)
+        {
+            HintZone zone = zones[z];
+            float bandBottom = (zone.Bottom * scale) - fuzz;
+            float bandTop = (zone.Top * scale) + fuzz;
+
+            float move;
+            if (zone.IsBottom && bottom.Flags != HintEdgeFlags.None && bottom.Cs >= bandBottom && bottom.Cs <= bandTop)
+            {
+                move = MathF.Floor((zone.Flat * scale) + 0.5F) - bottom.Ds;
+            }
+            else if (!zone.IsBottom && top.Flags != HintEdgeFlags.None && top.Cs >= bandBottom && top.Cs <= bandTop)
+            {
+                move = MathF.Ceiling((zone.Flat * scale) - GridFitterTuning.AnchorCeilingFuzzPx) - top.Ds;
+            }
+            else
+            {
+                continue;
+            }
+
+            if (bottom.Flags != HintEdgeFlags.None)
+            {
+                bottom.Ds += move;
+                bottom.Flags |= HintEdgeFlags.Locked;
+            }
+
+            if (top.Flags != HintEdgeFlags.None)
+            {
+                top.Ds += move;
+                top.Flags |= HintEdgeFlags.Locked;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Inserts a hint into a map sorted by unfitted coordinate, rejecting any hint that
+    /// overlaps an earlier insertion: an edge at the same coordinate, a pair straddling
+    /// an existing edge, an insertion between the edges of an existing pair, or fitted
+    /// coordinates that would break the map's ordering. When the final map is being
+    /// built, unlocked hints are positioned through the initial map: a pair's midpoint
+    /// maps and its width is preserved around it, so stems keep their place relative to
+    /// the aligned features around them.
+    /// </summary>
+    /// <param name="map">The map receiving the hint.</param>
+    /// <param name="count">The current edge count, updated on insertion.</param>
+    /// <param name="bottom">The bottom hint edge, invalid when flagless.</param>
+    /// <param name="top">The top hint edge, invalid when flagless.</param>
+    /// <param name="isPair">Whether both edges are valid and insert together.</param>
+    /// <param name="buildInitial">Whether the initial map is being built, which skips repositioning.</param>
+    private void InsertHint(HintEdge[] map, ref int count, HintEdge bottom, HintEdge top, bool isPair, bool buildInitial)
+    {
+        HintEdge first = bottom;
+        HintEdge second = top;
+        if (bottom.Flags == HintEdgeFlags.None)
+        {
+            if (top.Flags == HintEdgeFlags.None)
+            {
+                return;
+            }
+
+            first = top;
+            isPair = false;
+        }
+        else if (top.Flags == HintEdgeFlags.None)
+        {
+            isPair = false;
+        }
+
+        if (isPair && second.Cs < first.Cs)
+        {
+            return;
+        }
+
+        int insertAt = 0;
+        while (insertAt < count && map[insertAt].Cs < first.Cs)
+        {
+            insertAt++;
+        }
+
+        if (insertAt < count)
+        {
+            if (map[insertAt].Cs == first.Cs)
+            {
+                return;
+            }
+
+            if (isPair && map[insertAt].Cs <= second.Cs)
+            {
+                return;
+            }
+
+            if ((map[insertAt].Flags & HintEdgeFlags.PairTop) != 0)
+            {
+                return;
+            }
+        }
+
+        if (!buildInitial && this.initialMapValid && (first.Flags & HintEdgeFlags.Locked) == 0)
+        {
+            int lastIndex = 0;
+            if (isPair)
+            {
+                float midpoint = MapCoordinate(this.initialMap, this.initialMapCount, ref lastIndex, (first.Cs + second.Cs) * 0.5F);
+                float half = (second.Ds - first.Ds) * 0.5F;
+                first.Ds = midpoint - half;
+                second.Ds = midpoint + half;
+            }
+            else
+            {
+                first.Ds = MapCoordinate(this.initialMap, this.initialMapCount, ref lastIndex, first.Cs);
+            }
+        }
+
+        if (insertAt > 0 && first.Ds < map[insertAt - 1].Ds)
+        {
+            return;
+        }
+
+        if (insertAt < count && (isPair ? second.Ds > map[insertAt].Ds : first.Ds > map[insertAt].Ds))
+        {
+            return;
+        }
+
+        int inserted = isPair ? 2 : 1;
+        if (count + inserted > MaxHintEdges)
+        {
+            return;
+        }
+
+        for (int i = count - 1; i >= insertAt; i--)
+        {
+            map[i + inserted] = map[i];
+        }
+
+        map[insertAt] = first;
+        if (isPair)
+        {
+            map[insertAt + 1] = second;
+        }
+
+        count += inserted;
+    }
+
+    /// <summary>
+    /// Adjusts the fitted positions of unlocked hints so one edge of each lands on a
+    /// pixel boundary, choosing whichever of the four candidate moves is smallest while
+    /// keeping at least half a pixel of counter to each neighbor. Pairs move as one so
+    /// stem widths survive. Moves blocked by a not yet adjusted neighbor above are saved
+    /// and retried top down in a second pass once that neighbor has settled.
+    /// </summary>
+    /// <param name="map">The map to adjust.</param>
+    /// <param name="count">The number of edges in the map.</param>
+    /// <param name="pendingMoves">Scratch storage for the second pass.</param>
+    /// <param name="pendingMoveCount">The number of saved moves, reset here.</param>
+    private static void AdjustHintMap(HintEdge[] map, int count, PendingMove[] pendingMoves, ref int pendingMoveCount)
+    {
+        pendingMoveCount = 0;
+
+        for (int i = 0; i < count; i++)
+        {
+            bool isPair = (map[i].Flags & HintEdgeFlags.PairBottom) != 0 && i + 1 < count && (map[i + 1].Flags & HintEdgeFlags.PairTop) != 0;
+            int j = isPair ? i + 1 : i;
+
+            float dsLower = map[i].Ds;
+            float dsUpper = map[j].Ds;
+
+            if ((map[i].Flags & HintEdgeFlags.Locked) == 0)
+            {
+                float fracDown = dsLower - MathF.Floor(dsLower);
+                float fracUp = dsUpper - MathF.Floor(dsUpper);
+
+                float downMoveDown = -fracDown;
+                float upMoveDown = -fracUp;
+                float downMoveUp = fracDown == 0F ? 0F : 1F - fracDown;
+                float upMoveUp = fracUp == 0F ? 0F : 1F - fracUp;
+
+                float moveUp = MathF.Min(downMoveUp, upMoveUp);
+                float moveDown = MathF.Max(downMoveDown, upMoveDown);
+
+                float move = 0F;
+                bool saveEdge = false;
+
+                if (j >= count - 1 || map[j + 1].Ds >= dsUpper + moveUp + GridFitterTuning.MinCounterPx)
+                {
+                    if (i == 0 || map[i - 1].Ds <= dsLower + moveDown - GridFitterTuning.MinCounterPx)
+                    {
+                        move = -moveDown < moveUp ? moveDown : moveUp;
+                    }
+                    else
+                    {
+                        move = moveUp;
+                    }
+                }
+                else
+                {
+                    if (i == 0 || map[i - 1].Ds <= dsLower + moveDown - GridFitterTuning.MinCounterPx)
+                    {
+                        move = moveDown;
+                        saveEdge = moveUp < -moveDown;
+                    }
+                    else
+                    {
+                        saveEdge = true;
+                    }
+                }
+
+                if (saveEdge && j < count - 1 && (map[j + 1].Flags & HintEdgeFlags.Locked) == 0 && pendingMoveCount < MaxHintEdges)
+                {
+                    pendingMoves[pendingMoveCount].UpperIndex = j;
+                    pendingMoves[pendingMoveCount].MoveUp = moveUp - move;
+                    pendingMoveCount++;
+                }
+
+                map[i].Ds = dsLower + move;
+                if (isPair)
+                {
+                    map[j].Ds = dsUpper + move;
+                }
+            }
+
+            if (isPair)
+            {
+                i++;
+            }
+        }
+
+        for (int m = pendingMoveCount - 1; m >= 0; m--)
+        {
+            int j = pendingMoves[m].UpperIndex;
+            float moveUp = pendingMoves[m].MoveUp;
+            if (map[j + 1].Ds >= map[j].Ds + moveUp + GridFitterTuning.MinCounterPx)
+            {
+                map[j].Ds += moveUp;
+                if ((map[j].Flags & HintEdgeFlags.PairTop) != 0 && j > 0)
+                {
+                    map[j - 1].Ds += moveUp;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Chains successive stem centers when the glyph's counter mask requests counter
+    /// equalization: the pitch to the previous stem rounds to whole pixels so equal
+    /// design pitches round identically and the stem rhythm survives. A chained move is
+    /// skipped when it would close the counter to a neighbor or exceed the movement the
+    /// accumulated pitch rounding justifies.
+    /// </summary>
+    private void EqualizeMapCounters()
+    {
+        HintEdge[] map = this.finalMap;
+        int count = this.mapCount;
+
+        float previousCenterCs = float.MinValue;
+        float previousCenterDs = 0F;
+        for (int i = 0; i + 1 < count; i++)
+        {
+            if ((map[i].Flags & HintEdgeFlags.PairBottom) == 0 || (map[i + 1].Flags & HintEdgeFlags.PairTop) == 0)
+            {
+                continue;
+            }
+
+            float centerCs = (map[i].Cs + map[i + 1].Cs) * 0.5F;
+            float centerDs = (map[i].Ds + map[i + 1].Ds) * 0.5F;
+
+            if (previousCenterCs > float.MinValue)
+            {
+                float target = previousCenterDs + MathF.Floor(centerCs - previousCenterCs + 0.5F);
+                float delta = target - centerDs;
+                if (delta != 0F && MathF.Abs(delta) <= GridFitterTuning.MaxEdgeDeltaPx + 0.5F)
+                {
+                    bool roomBelow = i == 0 || map[i - 1].Ds <= map[i].Ds + delta - GridFitterTuning.MinCounterPx;
+                    bool roomAbove = i + 2 >= count || map[i + 2].Ds >= map[i + 1].Ds + delta + GridFitterTuning.MinCounterPx;
+                    if (roomBelow && roomAbove)
+                    {
+                        map[i].Ds += delta;
+                        map[i + 1].Ds += delta;
+                        centerDs += delta;
+                    }
+                }
+            }
+
+            previousCenterCs = centerCs;
+            previousCenterDs = centerDs;
+            i++;
+        }
+    }
+
+    /// <summary>
+    /// Computes the per segment scales of a map after its fitted positions settle, so
+    /// coordinates between adjacent edges interpolate linearly between their fitted
+    /// positions. The segment above the last edge keeps the nominal scale of one.
+    /// </summary>
+    /// <param name="map">The map to finalize.</param>
+    /// <param name="count">The number of edges in the map.</param>
+    private static void ComputeMapScales(HintEdge[] map, int count)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            map[i].Scale = 1F;
+            if (i + 1 < count && map[i + 1].Cs != map[i].Cs)
+            {
+                map[i].Scale = (map[i + 1].Ds - map[i].Ds) / (map[i + 1].Cs - map[i].Cs);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Transforms one coordinate through a hint map. Coordinates below the first edge
+    /// keep the nominal scale anchored to it; all others interpolate from the highest
+    /// edge at or below them using that segment's scale.
+    /// </summary>
+    /// <param name="map">The map to transform through.</param>
+    /// <param name="count">The number of edges in the map.</param>
+    /// <param name="lastIndex">The segment cache carried between successive lookups.</param>
+    /// <param name="value">The unfitted coordinate.</param>
+    /// <returns>The fitted coordinate.</returns>
+    private static float MapCoordinate(HintEdge[] map, int count, ref int lastIndex, float value)
+    {
+        if (count == 0)
+        {
+            return value;
+        }
+
+        int i = lastIndex;
+        if (i >= count)
+        {
+            i = count - 1;
+        }
+
+        while (i < count - 1 && value >= map[i + 1].Cs)
+        {
+            i++;
+        }
+
+        while (i > 0 && value < map[i].Cs)
+        {
+            i--;
+        }
+
+        lastIndex = i;
+
+        if (i == 0 && value < map[0].Cs)
+        {
+            return map[0].Ds + (value - map[0].Cs);
+        }
+
+        return map[i].Ds + ((value - map[i].Cs) * map[i].Scale);
     }
 
     /// <summary>
@@ -890,7 +1261,6 @@ internal sealed class GlyphGridFitter
                 edge.Round = segment.Round;
                 edge.Fitted = false;
                 edge.Anchored = false;
-                edge.Wall = false;
                 segment.NextInEdge = -1;
                 this.edgeCount++;
             }
@@ -1171,23 +1541,15 @@ internal sealed class GlyphGridFitter
     /// Pass 5: decides the fitted position of each stem. Widths round to whole pixels with
     /// sub pixel stems widened to one pixel, positions round from the stem center, and
     /// counters between successive stems never fall below one pixel when they were open in
-    /// the design. Declared stems whose flanks both form walls round their widths with a
-    /// downward bias, matching the thin regularized strokes classic rasterizers produce
-    /// from declared hints. Under counter equalization successive stem centers keep the
-    /// design pitch: the center to center distance rounds to whole pixels so the equal
-    /// counters the glyph was authored with stay equal in the fit. A pair whose fit would
-    /// exceed the movement cap or fold a counter is reverted rather than distorted. In
-    /// rescue mode only strokes thinner than a pixel are processed; instruction fitted
-    /// geometry is left exactly where the font put it.
+    /// the design. A pair whose fit would exceed the movement cap or fold a counter is
+    /// reverted rather than distorted. In rescue mode only strokes thinner than a pixel
+    /// are processed; instruction fitted geometry is left exactly where the font put it.
     /// </summary>
     /// <param name="rescueOnly">Whether only sub pixel strokes are processed.</param>
-    /// <param name="equalizeCounters">Whether the glyph's counter mask requests counter equalization on the axis.</param>
-    private void SnapStems(bool rescueOnly, bool equalizeCounters)
+    private void SnapStems(bool rescueOnly)
     {
         float prevRight = float.MinValue;
         float prevRightOriginal = float.MinValue;
-        float prevCenter = float.MinValue;
-        float prevCenterOriginal = float.MinValue;
         for (int i = 0; i < this.edgeCount; i++)
         {
             ref Edge left = ref this.edges[i];
@@ -1201,8 +1563,6 @@ internal sealed class GlyphGridFitter
             {
                 prevRight = right.NewPos;
                 prevRightOriginal = right.Pos;
-                prevCenter = (left.NewPos + right.NewPos) * 0.5F;
-                prevCenterOriginal = (left.Pos + right.Pos) * 0.5F;
                 continue;
             }
 
@@ -1212,33 +1572,18 @@ internal sealed class GlyphGridFitter
                 continue;
             }
 
-            bool declared = left.FirstSegment < 0;
-            bool round = left.Round && right.Round;
-            if (!declared && round && width >= GridFitterTuning.OnePixelWidthPx && MathF.Abs(width - MathF.Floor(width + 0.5F)) > GridFitterTuning.RoundWidthSnapPx)
+            if (left.Round && right.Round && width >= GridFitterTuning.OnePixelWidthPx && MathF.Abs(width - MathF.Floor(width + 0.5F)) > GridFitterTuning.RoundWidthSnapPx)
             {
                 continue;
             }
 
-            float fittedWidth;
-            if (width < GridFitterTuning.OnePixelWidthPx)
-            {
-                fittedWidth = 1F;
-            }
-            else if (declared && left.Wall && right.Wall)
-            {
-                fittedWidth = MathF.Max(1F, MathF.Floor(width + GridFitterTuning.DeclaredWidthRoundBiasPx));
-            }
-            else
-            {
-                fittedWidth = MathF.Floor(width + 0.5F);
-            }
+            float fittedWidth = width < GridFitterTuning.OnePixelWidthPx ? 1F : MathF.Floor(width + 0.5F);
 
             // Sub pixel strokes must widen to a full pixel, so the flank movement that the
             // widening itself demands is granted on top of the base cap. Reverting such a
             // pair would leave one anchored flank moved and the other interpolated past it,
             // inverting the stroke, which is far worse than the bounded extra movement.
             float allowance = GridFitterTuning.MaxEdgeDeltaPx + MathF.Max(0F, 1F - width);
-            float pairAllowance = allowance;
 
             float newLeft;
             float newRight;
@@ -1261,25 +1606,6 @@ internal sealed class GlyphGridFitter
                 float center = (left.Pos + right.Pos) * 0.5F;
                 bool oddWidth = ((int)fittedWidth & 1) == 1;
                 float fittedCenter = oddWidth ? MathF.Floor(center) + 0.5F : MathF.Ceiling(center - 0.5F);
-
-                // Chain the stem centers when the glyph requests counter equalization:
-                // the pitch to the previous fitted stem rounds to whole pixels, so equal
-                // design pitches round identically instead of each center rounding its
-                // own way. Counter control outranks the per flank movement cap, since a
-                // chained stem accumulates the rounding of every pitch before it, so the
-                // chain accepts an extra half pixel before falling back to the
-                // independent center.
-                if (equalizeCounters && prevCenter > float.MinValue)
-                {
-                    float pitchCenter = prevCenter + MathF.Floor(center - prevCenterOriginal + 0.5F);
-                    float chainAllowance = allowance + 0.5F;
-                    if (MathF.Abs(pitchCenter - (fittedWidth * 0.5F) - left.Pos) <= chainAllowance && MathF.Abs(pitchCenter + (fittedWidth * 0.5F) - right.Pos) <= chainAllowance)
-                    {
-                        fittedCenter = pitchCenter;
-                        pairAllowance = chainAllowance;
-                    }
-                }
-
                 newLeft = fittedCenter - (fittedWidth * 0.5F);
                 newRight = fittedCenter + (fittedWidth * 0.5F);
             }
@@ -1297,7 +1623,7 @@ internal sealed class GlyphGridFitter
                 continue;
             }
 
-            if (MathF.Abs(newLeft - left.Pos) > pairAllowance || MathF.Abs(newRight - right.Pos) > pairAllowance)
+            if (MathF.Abs(newLeft - left.Pos) > allowance || MathF.Abs(newRight - right.Pos) > allowance)
             {
                 continue;
             }
@@ -1308,8 +1634,6 @@ internal sealed class GlyphGridFitter
             right.Fitted = true;
             prevRight = newRight;
             prevRightOriginal = right.Pos;
-            prevCenter = (newLeft + newRight) * 0.5F;
-            prevCenterOriginal = (left.Pos + right.Pos) * 0.5F;
         }
     }
 
@@ -1568,7 +1892,20 @@ internal sealed class GlyphGridFitter
         public bool Round;
         public bool Fitted;
         public bool Anchored;
-        public bool Wall;
+    }
+
+    private struct HintEdge
+    {
+        public float Cs;
+        public float Ds;
+        public float Scale;
+        public HintEdgeFlags Flags;
+    }
+
+    private struct PendingMove
+    {
+        public int UpperIndex;
+        public float MoveUp;
     }
 
     private sealed class PooledObjectPolicy : IPooledObjectPolicy<GlyphGridFitter>

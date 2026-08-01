@@ -289,7 +289,7 @@ public partial class TrueTypeGlyphMetrics : FontGlyphMetrics
             // instructions left unfitted are fully fitted.
             GridFitAxisMode fitX = result == TrueTypeHintingResult.AppliedXY ? GridFitAxisMode.Rescue : GridFitAxisMode.Full;
             GridFitAxisMode fitY = result is TrueTypeHintingResult.None or TrueTypeHintingResult.Failed ? GridFitAxisMode.Full : GridFitAxisMode.Rescue;
-            GridFitOptions options = new(pixelSize, fitX, fitY, this.FontMetrics.GridFitTopAnchors, [], scale.Y);
+            GridFitOptions options = new(pixelSize, fitX, fitY, this.FontMetrics.GridFitTopAnchors, [], [], 1F, scale.Y);
             if (GlyphGridFitter.FitInPlace(ref clone, in options))
             {
                 clone.IsHinted = true;

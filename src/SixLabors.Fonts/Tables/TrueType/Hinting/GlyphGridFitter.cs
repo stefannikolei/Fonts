@@ -356,13 +356,34 @@ internal sealed class GlyphGridFitter
             return false;
         }
 
+        this.ClassifyDeclaredFlanks(pointCount);
+
         GridFitAxisMode axisMode = isXAxis ? options.FitX : options.FitY;
         if (!isXAxis)
         {
             this.SnapAnchors(in options);
         }
 
+        if (DebugLog is not null)
+        {
+            DebugLog.AppendLine(FormattableString.Invariant($"buffered axis={(isXAxis ? "X" : "Y")} mode={axisMode} edges={this.edgeCount}"));
+            for (int i = 0; i < this.edgeCount; i++)
+            {
+                ref Edge e = ref this.edges[i];
+                DebugLog.AppendLine(FormattableString.Invariant($"  edge[{i}] pos={e.Pos:0.###} dir={e.Dir} round={e.Round} fitted={e.Fitted} anchored={e.Anchored} new={e.NewPos:0.###} link={e.Link}"));
+            }
+        }
+
         this.SnapStems(axisMode == GridFitAxisMode.Rescue);
+
+        if (DebugLog is not null)
+        {
+            for (int i = 0; i < this.edgeCount; i++)
+            {
+                ref Edge e = ref this.edges[i];
+                DebugLog.AppendLine(FormattableString.Invariant($"  post[{i}] pos={e.Pos:0.###} dir={e.Dir} round={e.Round} fitted={e.Fitted} new={e.NewPos:0.###} link={e.Link}"));
+            }
+        }
 
         if (!this.ApplyDeclaredEdgeDeltas(pointCount))
         {
@@ -459,6 +480,7 @@ internal sealed class GlyphGridFitter
                 ghost.Round = false;
                 ghost.Fitted = false;
                 ghost.Anchored = false;
+                ghost.Wall = false;
 
                 this.edgeCount++;
                 continue;
@@ -476,6 +498,7 @@ internal sealed class GlyphGridFitter
             left.Round = false;
             left.Fitted = false;
             left.Anchored = false;
+            left.Wall = false;
 
             ref Edge right = ref this.edges[this.edgeCount + 1];
             right.FirstSegment = -1;
@@ -489,11 +512,41 @@ internal sealed class GlyphGridFitter
             right.Round = false;
             right.Fitted = false;
             right.Anchored = false;
+            right.Wall = false;
 
             this.edgeCount += 2;
         }
 
         return this.edgeCount > 0;
+    }
+
+    /// <summary>
+    /// Marks each declared flank that forms a wall: a sustained run of outline close to
+    /// the flank, such as a straight stem side or the tall near vertical sweep of a bowl.
+    /// A diagonal stroke instead crosses its flank in a short stretch. The distinction
+    /// drives stem width normalization: walls tolerate thin regularized widths because
+    /// one pixel of wall fills its row or column completely, while a diagonal narrowed
+    /// the same way drops below the coverage threshold and breaks apart.
+    /// </summary>
+    /// <param name="pointCount">The number of outline points.</param>
+    private void ClassifyDeclaredFlanks(int pointCount)
+    {
+        for (int e = 0; e < this.edgeCount; e++)
+        {
+            ref Edge edge = ref this.edges[e];
+            float min = float.MaxValue;
+            float max = float.MinValue;
+            for (int p = 0; p < pointCount; p++)
+            {
+                if (MathF.Abs(this.axisOriginal[p] - edge.Pos) <= GridFitterTuning.WallBandPx)
+                {
+                    min = MathF.Min(min, this.perp[p]);
+                    max = MathF.Max(max, this.perp[p]);
+                }
+            }
+
+            edge.Wall = min < max && max - min >= GridFitterTuning.WallMinExtentPx;
+        }
     }
 
     /// <summary>
@@ -834,6 +887,7 @@ internal sealed class GlyphGridFitter
                 edge.Round = segment.Round;
                 edge.Fitted = false;
                 edge.Anchored = false;
+                edge.Wall = false;
                 segment.NextInEdge = -1;
                 this.edgeCount++;
             }
@@ -1114,10 +1168,14 @@ internal sealed class GlyphGridFitter
     /// Pass 5: decides the fitted position of each stem. Widths round to whole pixels with
     /// sub pixel stems widened to one pixel, positions round from the stem center, and
     /// counters between successive stems never fall below one pixel when they were open in
-    /// the design. A pair whose fit would exceed the movement cap or fold a counter is
-    /// reverted rather than distorted. In rescue mode only strokes thinner than a pixel are
-    /// processed; instruction fitted geometry is left exactly where the font put it.
+    /// the design. Declared stems whose flanks both form walls round their widths with a
+    /// downward bias, matching the thin regularized strokes classic rasterizers produce
+    /// from declared hints. A pair whose fit would exceed the movement cap or fold a
+    /// counter is reverted rather than distorted. In rescue mode only strokes thinner
+    /// than a pixel are processed; instruction fitted geometry is left exactly where the
+    /// font put it.
     /// </summary>
+    /// <param name="rescueOnly">Whether only sub pixel strokes are processed.</param>
     private void SnapStems(bool rescueOnly)
     {
         float prevRight = float.MinValue;
@@ -1144,12 +1202,26 @@ internal sealed class GlyphGridFitter
                 continue;
             }
 
-            if (left.Round && right.Round && width >= GridFitterTuning.OnePixelWidthPx && MathF.Abs(width - MathF.Floor(width + 0.5F)) > GridFitterTuning.RoundWidthSnapPx)
+            bool declared = left.FirstSegment < 0;
+            bool round = left.Round && right.Round;
+            if (!declared && round && width >= GridFitterTuning.OnePixelWidthPx && MathF.Abs(width - MathF.Floor(width + 0.5F)) > GridFitterTuning.RoundWidthSnapPx)
             {
                 continue;
             }
 
-            float fittedWidth = width < GridFitterTuning.OnePixelWidthPx ? 1F : MathF.Floor(width + 0.5F);
+            float fittedWidth;
+            if (width < GridFitterTuning.OnePixelWidthPx)
+            {
+                fittedWidth = 1F;
+            }
+            else if (declared && left.Wall && right.Wall)
+            {
+                fittedWidth = MathF.Max(1F, MathF.Floor(width + GridFitterTuning.DeclaredWidthRoundBiasPx));
+            }
+            else
+            {
+                fittedWidth = MathF.Floor(width + 0.5F);
+            }
 
             // Sub pixel strokes must widen to a full pixel, so the flank movement that the
             // widening itself demands is granted on top of the base cap. Reverting such a
@@ -1464,6 +1536,7 @@ internal sealed class GlyphGridFitter
         public bool Round;
         public bool Fitted;
         public bool Anchored;
+        public bool Wall;
     }
 
     private sealed class PooledObjectPolicy : IPooledObjectPolicy<GlyphGridFitter>

@@ -170,6 +170,27 @@ internal class CffGlyphMetrics : FontGlyphMetrics
     }
 
     /// <summary>
+    /// Gets the buffered outline for the given size and mode, building and caching it on
+    /// first use. Exposed for diagnostics and tests.
+    /// </summary>
+    /// <param name="scaledPPEM">The scaled size to build the outline for.</param>
+    /// <param name="hintingMode">The hinting mode shaping the outline.</param>
+    /// <returns>The buffered <see cref="CffOutline"/>.</returns>
+    internal CffOutline GetScaledOutline(float scaledPPEM, HintingMode hintingMode)
+    {
+        ConcurrentDictionary<ScaledOutlineKey, CffOutline> cache =
+            LazyInitializer.EnsureInitialized(ref this.scaledOutlineCache, static () => new());
+        return cache.GetOrAdd(new ScaledOutlineKey(scaledPPEM, hintingMode), static (key, self) => self.CreateScaledOutline(key), this);
+    }
+
+    /// <summary>
+    /// Gets the declarative hinting values from the owning Private DICT, or
+    /// <see langword="null"/> when the font carries none. Exposed for diagnostics and tests.
+    /// </summary>
+    /// <returns>The <see cref="CffHintingValues"/>.</returns>
+    internal CffHintingValues? GetHintingValues() => this.glyphData.HintingValues;
+
+    /// <summary>
     /// Builds the buffered outline cached per pixel size and hinting mode, aligning the
     /// mode semantics with the TrueType interpreter: unhinted geometry stays untouched,
     /// standard hinting fits the vertical axis only from the declared horizontal stem

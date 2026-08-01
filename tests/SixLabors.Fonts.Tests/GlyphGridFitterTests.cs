@@ -228,27 +228,28 @@ public class GlyphGridFitterTests
         }
     }
 
-    // Renders a small size ladder of a professionally hinted CFF face under each hinting
-    // mode so the fitting behavior is visually pinned: unhinted, vertical only fitting
-    // with even baselines and x-heights, and full grid fitting with crisp stems.
+    // Renders the same size ladder as the TrueType hinting robustness tests for a
+    // professionally hinted CFF face under each hinting mode so the fitting behavior is
+    // visually pinned: unhinted, vertical only fitting with even baselines and x-heights,
+    // and full grid fitting with crisp stems.
     [Theory]
     [InlineData(HintingMode.None)]
     [InlineData(HintingMode.Standard)]
     [InlineData(HintingMode.Full)]
     public void CffHinting_VisualOutput(HintingMode hintingMode)
     {
-        const string copy = "Hamburgefonstiv 0123456789";
+        const string copy = "The quick brown fox jumps over the lazy dog.";
         FontCollection collection = new();
         FontFamily family = collection.Add(TestFonts.PlantinStdRegularFile);
-        Font font = family.CreateFont(6);
+        Font font = family.CreateFont(5);
 
-        int fontSize = 6;
+        int fontSize = 5;
         int start = 0;
         int end = copy.GetGraphemeCount();
         int length = (end - start) + 1;
         List<TextRun> textRuns = [];
         StringBuilder stringBuilder = new();
-        while (fontSize <= 16)
+        while (fontSize < 64)
         {
             stringBuilder.AppendLine(copy);
             TextRun run = new()

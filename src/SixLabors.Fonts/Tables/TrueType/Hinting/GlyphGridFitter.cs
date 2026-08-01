@@ -866,7 +866,7 @@ internal sealed class GlyphGridFitter
             float[] topAnchors = options.TopAnchors;
             for (int a = 0; a < topAnchors.Length; a++)
             {
-                if (topAnchors[a] > 0F && TrySnapAnchor(ref edge, topAnchors[a]))
+                if (topAnchors[a] > 0F && TrySnapAnchor(ref edge, topAnchors[a] * options.AnchorScale))
                 {
                     break;
                 }

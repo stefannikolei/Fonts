@@ -28,11 +28,24 @@ internal partial class StreamFontMetrics
     private readonly ObjectPool<TrueTypeInterpreter>? interpreterPool;
 
     /// <summary>
+    /// The font level alignment heights the geometric grid fitter anchors top edges to, in
+    /// design units. Allocated once and shared by every glyph and size so per glyph
+    /// fitting never allocates. The benign publication race always stores the same values.
+    /// </summary>
+    private float[]? gridFitTopAnchors;
+
+    /// <summary>
     /// Gets the exception that aborted the most recent failed glyph program, or
     /// <see langword="null"/> when no program has failed. Diagnostic only: written on the
     /// hinting path without synchronization.
     /// </summary>
     public Exception? LastHintingFault { get; private set; }
+
+    /// <summary>
+    /// Gets the font level alignment heights the geometric grid fitter anchors top edges
+    /// to, in design units.
+    /// </summary>
+    internal float[] GridFitTopAnchors => this.gridFitTopAnchors ??= [this.XHeight, this.CapHeight];
 
     /// <summary>
     /// Attempts to resolve the precomputed device advance width for the glyph at the given

@@ -45,7 +45,32 @@ internal sealed class CffHintingValues
         this.StemSnapH = stemSnapH;
         this.StemSnapV = stemSnapV;
         this.LanguageGroup = languageGroup;
+
+        // The first zone straddles the baseline; each subsequent zone contributes its flat
+        // edge, the lower value of the pair, which is the height round and flat tops share
+        // once overshoots are suppressed. Computed once here so per glyph fitting never
+        // allocates.
+        if (blueValues.Length < 4)
+        {
+            this.BlueFlats = [];
+        }
+        else
+        {
+            float[] flats = new float[(blueValues.Length - 2) / 2];
+            for (int i = 0; i < flats.Length; i++)
+            {
+                flats[i] = blueValues[2 + (i * 2)];
+            }
+
+            this.BlueFlats = flats;
+        }
     }
+
+    /// <summary>
+    /// Gets the flat edges of the top alignment zones in design units, precomputed for the
+    /// grid fitter's anchor list.
+    /// </summary>
+    public float[] BlueFlats { get; }
 
     /// <summary>
     /// Gets the baseline and horizontal alignment zone pairs, lowest first.

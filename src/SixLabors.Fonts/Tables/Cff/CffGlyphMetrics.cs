@@ -86,11 +86,11 @@ internal class CffGlyphMetrics : FontGlyphMetrics
 
         // Charstrings evaluate once per size into a buffered outline; every render replays
         // it through a unit scale transforming renderer, which reproduces the streaming
-        // arithmetic exactly. Modes that shape the outline identically share one entry.
+        // arithmetic exactly. Each mode shapes the outline differently: unhinted geometry,
+        // vertical only fitting, or full grid fitting.
         ConcurrentDictionary<ScaledOutlineKey, CffOutline> cache =
             LazyInitializer.EnsureInitialized(ref this.scaledOutlineCache, static () => new());
-        HintingMode cacheMode = hintingMode == HintingMode.Full ? HintingMode.Full : HintingMode.Standard;
-        CffOutline outline = cache.GetOrAdd(new ScaledOutlineKey(scaledPPEM, cacheMode), static (key, self) => self.CreateScaledOutline(key), this);
+        CffOutline outline = cache.GetOrAdd(new ScaledOutlineKey(scaledPPEM, hintingMode), static (key, self) => self.CreateScaledOutline(key), this);
 
         Vector2 scaledOffset = (this.Offset + positionOffset) * scale;
 
@@ -170,11 +170,13 @@ internal class CffGlyphMetrics : FontGlyphMetrics
     }
 
     /// <summary>
-    /// Builds the buffered outline cached per pixel size and hinting mode. Under full
-    /// hinting the declared stem zones and blue zone flats drive the geometric grid
-    /// fitter; other modes replay the unfitted evaluation.
+    /// Builds the buffered outline cached per pixel size and hinting mode, aligning the
+    /// mode semantics with the TrueType interpreter: unhinted geometry stays untouched,
+    /// standard hinting fits the vertical axis only from the declared horizontal stem
+    /// zones and blue zone flats, and full hinting fits both axes. The anchor array is
+    /// font level state precomputed at parse time, so fitting allocates nothing here.
     /// </summary>
-    /// <param name="key">The cache key carrying the pixel size and normalized hinting mode.</param>
+    /// <param name="key">The cache key carrying the pixel size and hinting mode.</param>
     /// <returns>The buffered <see cref="CffOutline"/>.</returns>
     private CffOutline CreateScaledOutline(ScaledOutlineKey key)
     {
@@ -182,9 +184,11 @@ internal class CffGlyphMetrics : FontGlyphMetrics
         CffOutline outline = this.glyphData.BuildOutline(scale);
 
         float pixelSize = key.ScaledPPEM / 72F;
-        if (key.HintingMode == HintingMode.Full && pixelSize <= GlyphGridFitter.MaxFitPixelsPerEm)
+        if (key.HintingMode != HintingMode.None && pixelSize <= GlyphGridFitter.MaxFitPixelsPerEm)
         {
-            GridFitOptions options = new(pixelSize, GridFitAxisMode.Full, GridFitAxisMode.Full, this.GetBlueZoneAnchors(scale.Y));
+            GridFitAxisMode fitX = key.HintingMode == HintingMode.Full ? GridFitAxisMode.Full : GridFitAxisMode.None;
+            float[] topAnchors = this.glyphData.HintingValues?.BlueFlats ?? [];
+            GridFitOptions options = new(pixelSize, fitX, GridFitAxisMode.Full, topAnchors, scale.Y);
             if (GlyphGridFitter.FitInPlace(outline.Points, outline.ContourEnds, outline.VerticalStems, outline.HorizontalStems, in options))
             {
                 outline.IsFitted = true;
@@ -192,30 +196,6 @@ internal class CffGlyphMetrics : FontGlyphMetrics
         }
 
         return outline;
-    }
-
-    /// <summary>
-    /// Converts the Private DICT blue zones into top anchor heights in pixels. The first
-    /// zone straddles the baseline, which the fitter anchors implicitly at zero; each
-    /// subsequent zone contributes its flat edge, the lower value of the pair, which is
-    /// the height round and flat tops share once overshoots are suppressed.
-    /// </summary>
-    /// <param name="scaleY">The pixels per design unit scale for the vertical axis.</param>
-    /// <returns>The anchor heights in pixels, or an empty array when the font declares no zones.</returns>
-    private float[] GetBlueZoneAnchors(float scaleY)
-    {
-        if (this.glyphData.HintingValues is not CffHintingValues hinting || hinting.BlueValues.Length < 4)
-        {
-            return [];
-        }
-
-        float[] anchors = new float[(hinting.BlueValues.Length - 2) / 2];
-        for (int i = 0; i < anchors.Length; i++)
-        {
-            anchors[i] = hinting.BlueValues[2 + (i * 2)] * scaleY;
-        }
-
-        return anchors;
     }
 
     /// <summary>

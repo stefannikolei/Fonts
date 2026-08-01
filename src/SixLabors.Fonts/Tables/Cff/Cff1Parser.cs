@@ -660,6 +660,18 @@ internal class Cff1Parser : CffParserBase
         byte[][] localSubrRawBuffers = [];
         int defaultWidthX = 0;
         int nominalWidthX = 0;
+        float[] blueValues = [];
+        float[] otherBlues = [];
+        float[] familyBlues = [];
+        float[] familyOtherBlues = [];
+        float blueScale = 0.039625F;
+        float blueShift = 7F;
+        float blueFuzz = 1F;
+        float stdHW = 0F;
+        float stdVW = 0F;
+        float[] stemSnapH = [];
+        float[] stemSnapV = [];
+        int languageGroup = 0;
 
         if (dicData.Count > 0)
         {
@@ -681,10 +693,78 @@ internal class Cff1Parser : CffParserBase
                     case "nominalWidthX":
                         nominalWidthX = (int)dicEntry.Operands[0].RealNumValue;
                         break;
+
+                    case "BlueValues":
+                        blueValues = ReadDeltaValues(dicEntry);
+                        break;
+
+                    case "OtherBlues":
+                        otherBlues = ReadDeltaValues(dicEntry);
+                        break;
+
+                    case "FamilyBlues":
+                        familyBlues = ReadDeltaValues(dicEntry);
+                        break;
+
+                    case "FamilyOtherBlues":
+                        familyOtherBlues = ReadDeltaValues(dicEntry);
+                        break;
+
+                    case "BlueScale":
+                        blueScale = (float)dicEntry.Operands[0].RealNumValue;
+                        break;
+
+                    case "BlueShift":
+                        blueShift = (float)dicEntry.Operands[0].RealNumValue;
+                        break;
+
+                    case "BlueFuzz":
+                        blueFuzz = (float)dicEntry.Operands[0].RealNumValue;
+                        break;
+
+                    case "StdHW":
+                        stdHW = (float)dicEntry.Operands[0].RealNumValue;
+                        break;
+
+                    case "StdVW":
+                        stdVW = (float)dicEntry.Operands[0].RealNumValue;
+                        break;
+
+                    case "StemSnapH":
+                        stemSnapH = ReadDeltaValues(dicEntry);
+                        break;
+
+                    case "StemSnapV":
+                        stemSnapV = ReadDeltaValues(dicEntry);
+                        break;
+
+                    case "LanguageGroup":
+                        languageGroup = (int)dicEntry.Operands[0].RealNumValue;
+                        break;
                 }
             }
         }
 
-        return new CffPrivateDictionary(localSubrRawBuffers, defaultWidthX, nominalWidthX);
+        CffHintingValues hintingValues = new(blueValues, otherBlues, familyBlues, familyOtherBlues, blueScale, blueShift, blueFuzz, stdHW, stdVW, stemSnapH, stemSnapV, languageGroup);
+        return new CffPrivateDictionary(localSubrRawBuffers, defaultWidthX, nominalWidthX, hintingValues);
+    }
+
+    /// <summary>
+    /// Decodes a delta encoded operand array into absolute values: the first operand is
+    /// absolute and each subsequent operand is a difference from its predecessor.
+    /// </summary>
+    /// <param name="entry">The dictionary entry carrying delta encoded operands.</param>
+    /// <returns>The absolute values.</returns>
+    private static float[] ReadDeltaValues(CffDataDicEntry entry)
+    {
+        float[] values = new float[entry.Operands.Length];
+        float current = 0F;
+        for (int i = 0; i < values.Length; i++)
+        {
+            current += (float)entry.Operands[i].RealNumValue;
+            values[i] = current;
+        }
+
+        return values;
     }
 }

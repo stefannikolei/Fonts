@@ -132,4 +132,28 @@ internal struct CffGlyphData
 
         engine.RenderTo(renderer, origin, scale, offset, transform);
     }
+
+    /// <summary>
+    /// Evaluates the charstring once into a buffered outline in upright pixel space, Y up
+    /// with the baseline at zero. Placement, synthetic oblique, rotation and origin apply
+    /// at replay time, so one buffered outline serves every render at the size.
+    /// </summary>
+    /// <param name="scale">The pixels per design unit scale, including the font matrix.</param>
+    /// <returns>The buffered <see cref="CffOutline"/>.</returns>
+    public readonly CffOutline BuildOutline(Vector2 scale)
+    {
+        CffOutlineBuilder builder = CffOutlineBuilder.Rent();
+        try
+        {
+            // A negated Y scale composed with the streaming sink's Y flip captures points
+            // in Y up pixel space through sign exact arithmetic, so replaying them through
+            // a unit scale transforming renderer reproduces the streaming path bit for bit.
+            this.RenderTo(builder, Vector2.Zero, new Vector2(scale.X, -scale.Y), Vector2.Zero, Matrix3x2.Identity);
+            return builder.ToOutline();
+        }
+        finally
+        {
+            builder.Release();
+        }
+    }
 }

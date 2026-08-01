@@ -18,7 +18,7 @@ public class GlyphGridFitterTests
     public void SnapsRectangleStemToWholePixels()
     {
         GlyphVector vector = CreateVector([[On(1.3F, 0F), On(1.3F, 5F), On(2.6F, 5F), On(2.6F, 0F)]]);
-        GridFitOptions options = new(8F, GridFitAxisMode.Full, GridFitAxisMode.None, 0F, 0F);
+        GridFitOptions options = new(8F, GridFitAxisMode.Full, GridFitAxisMode.None, []);
 
         Assert.True(GlyphGridFitter.FitInPlace(ref vector, in options));
 
@@ -43,7 +43,7 @@ public class GlyphGridFitterTests
             [On(0.8F, 0F), On(0.8F, 5F), On(1.7F, 5F), On(1.7F, 0F)],
             [On(3.1F, 0F), On(3.1F, 5F), On(4.0F, 5F), On(4.0F, 0F)]
         ]);
-        GridFitOptions options = new(8F, GridFitAxisMode.Full, GridFitAxisMode.None, 0F, 0F);
+        GridFitOptions options = new(8F, GridFitAxisMode.Full, GridFitAxisMode.None, []);
 
         Assert.True(GlyphGridFitter.FitInPlace(ref vector, in options));
 
@@ -64,7 +64,7 @@ public class GlyphGridFitterTests
             [On(0.8F, 0F), On(0.8F, 5F), On(1.7F, 5F), On(1.7F, 0F)],
             [On(2.3F, 0F), On(2.3F, 5F), On(3.2F, 5F), On(3.2F, 0F)]
         ]);
-        GridFitOptions options = new(8F, GridFitAxisMode.Full, GridFitAxisMode.None, 0F, 0F);
+        GridFitOptions options = new(8F, GridFitAxisMode.Full, GridFitAxisMode.None, []);
 
         Assert.True(GlyphGridFitter.FitInPlace(ref vector, in options));
 
@@ -80,7 +80,7 @@ public class GlyphGridFitterTests
     public void VerticalPassSnapsBaselineAndXHeight()
     {
         GlyphVector vector = CreateVector([[On(1F, -0.2F), On(1F, 4.7F), On(2F, 4.7F), On(2F, -0.2F)]]);
-        GridFitOptions options = new(8F, GridFitAxisMode.None, GridFitAxisMode.Full, 4.6F, 0F);
+        GridFitOptions options = new(8F, GridFitAxisMode.None, GridFitAxisMode.Full, [4.6F]);
 
         Assert.True(GlyphGridFitter.FitInPlace(ref vector, in options));
 
@@ -99,7 +99,7 @@ public class GlyphGridFitterTests
     public void InterpolatesUntouchedPointsBetweenFittedEdges()
     {
         GlyphVector vector = CreateVector([[On(1.3F, 0F), On(1.3F, 5F), Off(1.95F, 6F), On(2.6F, 5F), On(2.6F, 0F)]]);
-        GridFitOptions options = new(8F, GridFitAxisMode.Full, GridFitAxisMode.None, 0F, 0F);
+        GridFitOptions options = new(8F, GridFitAxisMode.Full, GridFitAxisMode.None, []);
 
         Assert.True(GlyphGridFitter.FitInPlace(ref vector, in options));
 
@@ -123,7 +123,7 @@ public class GlyphGridFitterTests
         [
             [On(0F, 2.3F), On(0F, 2.6F), On(5F, 2.6F), On(5F, 2.3F)]
         ]);
-        GridFitOptions options = new(8F, GridFitAxisMode.None, GridFitAxisMode.Rescue, 0F, 0F);
+        GridFitOptions options = new(8F, GridFitAxisMode.None, GridFitAxisMode.Rescue, []);
 
         Assert.True(GlyphGridFitter.FitInPlace(ref vector, in options));
 
@@ -141,7 +141,7 @@ public class GlyphGridFitterTests
         [
             [On(0F, 2.3F), On(0F, 3.4F), On(5F, 3.4F), On(5F, 2.3F)]
         ]);
-        GridFitOptions options = new(8F, GridFitAxisMode.None, GridFitAxisMode.Rescue, 0F, 0F);
+        GridFitOptions options = new(8F, GridFitAxisMode.None, GridFitAxisMode.Rescue, []);
 
         Assert.False(GlyphGridFitter.FitInPlace(ref vector, in options));
 
@@ -155,7 +155,7 @@ public class GlyphGridFitterTests
     public void IsIdempotent()
     {
         GlyphVector vector = CreateVector([[On(1.3F, 0F), On(1.3F, 5F), On(2.6F, 5F), On(2.6F, 0F)]]);
-        GridFitOptions options = new(8F, GridFitAxisMode.Full, GridFitAxisMode.None, 0F, 0F);
+        GridFitOptions options = new(8F, GridFitAxisMode.Full, GridFitAxisMode.None, []);
 
         Assert.True(GlyphGridFitter.FitInPlace(ref vector, in options));
 
@@ -200,16 +200,22 @@ public class GlyphGridFitterTests
         }
     }
 
-    // CFF outlines never pass through the TrueType hinting or fitting path, so full mode
-    // must render them identically to unhinted output.
+    // CFF outlines carry no instruction programs, so standard hinting renders identically
+    // to unhinted output. Full hinting fits the declared stem zones and blue zone flats,
+    // so a professionally hinted face must differ, deterministically, with finite geometry.
     [Fact]
-    public void DoesNotAlterCffRendering()
+    public void CffStandardMatchesNoneAndFullFitsDeclaredStems()
     {
         const string text = "Hamburgefonstiv";
         List<Vector2> none = RenderFreshCollection(TestFonts.PlantinStdRegularFile, text, 10F, HintingMode.None);
+        List<Vector2> standard = RenderFreshCollection(TestFonts.PlantinStdRegularFile, text, 10F, HintingMode.Standard);
         List<Vector2> full = RenderFreshCollection(TestFonts.PlantinStdRegularFile, text, 10F, HintingMode.Full);
+        List<Vector2> fullSecond = RenderFreshCollection(TestFonts.PlantinStdRegularFile, text, 10F, HintingMode.Full);
 
-        Assert.Equal(none, full);
+        Assert.Equal(none, standard);
+        Assert.NotEqual(none, full);
+        Assert.Equal(full, fullSecond);
+        Assert.All(full, static p => Assert.True(float.IsFinite(p.X) && float.IsFinite(p.Y)));
     }
 
     private static List<Vector2> RenderFreshCollection(string path, string text, float size, HintingMode mode)

@@ -15,15 +15,13 @@ internal readonly struct GridFitOptions
     /// <param name="pixelsPerEm">The pixel size of the em square, which scales the feature detection thresholds.</param>
     /// <param name="fitX">The fitting mode for the horizontal axis.</param>
     /// <param name="fitY">The fitting mode for the vertical axis.</param>
-    /// <param name="xHeight">The x-height in pixels, or zero when the font does not provide one.</param>
-    /// <param name="capHeight">The cap height in pixels, or zero when the font does not provide one.</param>
-    public GridFitOptions(float pixelsPerEm, GridFitAxisMode fitX, GridFitAxisMode fitY, float xHeight, float capHeight)
+    /// <param name="topAnchors">The alignment heights that attract top edges, such as the x-height and cap height for TrueType or the blue zone flats for CFF. The baseline at zero always attracts bottom edges.</param>
+    public GridFitOptions(float pixelsPerEm, GridFitAxisMode fitX, GridFitAxisMode fitY, float[] topAnchors)
     {
         this.PixelsPerEm = pixelsPerEm;
         this.FitX = fitX;
         this.FitY = fitY;
-        this.XHeight = xHeight;
-        this.CapHeight = capHeight;
+        this.TopAnchors = topAnchors;
     }
 
     /// <summary>
@@ -42,12 +40,7 @@ internal readonly struct GridFitOptions
     public GridFitAxisMode FitY { get; }
 
     /// <summary>
-    /// Gets the x-height in pixels, or zero when unknown.
+    /// Gets the alignment heights that attract top edges. Zero valued entries are ignored.
     /// </summary>
-    public float XHeight { get; }
-
-    /// <summary>
-    /// Gets the cap height in pixels, or zero when unknown.
-    /// </summary>
-    public float CapHeight { get; }
+    public float[] TopAnchors { get; }
 }

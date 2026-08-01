@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Numerics;
 using SixLabors.Fonts.Rendering;
+using SixLabors.Fonts.Tables.TrueType.Hinting;
 using SixLabors.Fonts.Unicode;
 
 namespace SixLabors.Fonts.Tables.Cff;
@@ -92,6 +93,19 @@ internal class CffGlyphMetrics : FontGlyphMetrics
         CffOutline outline = cache.GetOrAdd(new ScaledOutlineKey(scaledPPEM, cacheMode), static (key, self) => self.CreateScaledOutline(key), this);
 
         Vector2 scaledOffset = (this.Offset + positionOffset) * scale;
+
+        // Full hinting aligns the outline to the pixel grid in glyph space; adjusting the
+        // origin so the composed translation lands on whole pixels preserves that grid in
+        // device space. The adjustment mirrors the exact per point arithmetic of the
+        // transforming renderer, so replay stays sign exact. Snapping only applies to
+        // upright, untransformed renders where the grid survives.
+        if (hintingMode == HintingMode.Full && outline.IsFitted && transform.IsIdentity)
+        {
+            Vector2 composed = (scaledOffset * new Vector2(1F, -1F)) + glyphOrigin;
+            Vector2 snapped = new(MathF.Floor(composed.X + 0.5F), MathF.Floor(composed.Y + 0.5F));
+            glyphOrigin += snapped - composed;
+        }
+
         float boldStrength = this.GetSyntheticBoldStrength(scaledPPEM, textRun);
         if (boldStrength > 0F)
         {
@@ -136,11 +150,73 @@ internal class CffGlyphMetrics : FontGlyphMetrics
     }
 
     /// <summary>
-    /// Builds the buffered outline cached per pixel size and hinting mode.
+    /// Returns the size to render/measure the glyph at. Under full hinting the em square is
+    /// constrained to whole pixels, matching the classic rasterizers the declared hinting
+    /// values were authored for.
+    /// </summary>
+    /// <param name="pointSize">The font size in pt units.</param>
+    /// <param name="dpi">The DPI (Dots Per Inch) to render/measure the glyph at</param>
+    /// <param name="hintingMode">The hinting mode, which may constrain the size to whole pixels.</param>
+    /// <returns>The <see cref="float"/>.</returns>
+    internal override float GetScaledSize(float pointSize, float dpi, HintingMode hintingMode)
+    {
+        float scaledPPEM = base.GetScaledSize(pointSize, dpi, hintingMode);
+        if (hintingMode == HintingMode.Full)
+        {
+            scaledPPEM = MathF.Max(1F, MathF.Floor((scaledPPEM / 72F) + 0.5F)) * 72F;
+        }
+
+        return scaledPPEM;
+    }
+
+    /// <summary>
+    /// Builds the buffered outline cached per pixel size and hinting mode. Under full
+    /// hinting the declared stem zones and blue zone flats drive the geometric grid
+    /// fitter; other modes replay the unfitted evaluation.
     /// </summary>
     /// <param name="key">The cache key carrying the pixel size and normalized hinting mode.</param>
     /// <returns>The buffered <see cref="CffOutline"/>.</returns>
-    private CffOutline CreateScaledOutline(ScaledOutlineKey key) => this.glyphData.BuildOutline(this.GetOutlineScale(key.ScaledPPEM));
+    private CffOutline CreateScaledOutline(ScaledOutlineKey key)
+    {
+        Vector2 scale = this.GetOutlineScale(key.ScaledPPEM);
+        CffOutline outline = this.glyphData.BuildOutline(scale);
+
+        float pixelSize = key.ScaledPPEM / 72F;
+        if (key.HintingMode == HintingMode.Full && pixelSize <= GlyphGridFitter.MaxFitPixelsPerEm)
+        {
+            GridFitOptions options = new(pixelSize, GridFitAxisMode.Full, GridFitAxisMode.Full, this.GetBlueZoneAnchors(scale.Y));
+            if (GlyphGridFitter.FitInPlace(outline.Points, outline.ContourEnds, outline.VerticalStems, outline.HorizontalStems, in options))
+            {
+                outline.IsFitted = true;
+            }
+        }
+
+        return outline;
+    }
+
+    /// <summary>
+    /// Converts the Private DICT blue zones into top anchor heights in pixels. The first
+    /// zone straddles the baseline, which the fitter anchors implicitly at zero; each
+    /// subsequent zone contributes its flat edge, the lower value of the pair, which is
+    /// the height round and flat tops share once overshoots are suppressed.
+    /// </summary>
+    /// <param name="scaleY">The pixels per design unit scale for the vertical axis.</param>
+    /// <returns>The anchor heights in pixels, or an empty array when the font declares no zones.</returns>
+    private float[] GetBlueZoneAnchors(float scaleY)
+    {
+        if (this.glyphData.HintingValues is not CffHintingValues hinting || hinting.BlueValues.Length < 4)
+        {
+            return [];
+        }
+
+        float[] anchors = new float[(hinting.BlueValues.Length - 2) / 2];
+        for (int i = 0; i < anchors.Length; i++)
+        {
+            anchors[i] = hinting.BlueValues[2 + (i * 2)] * scaleY;
+        }
+
+        return anchors;
+    }
 
     /// <summary>
     /// Identifies a cached buffered outline by pixel size and the hinting mode that shaped

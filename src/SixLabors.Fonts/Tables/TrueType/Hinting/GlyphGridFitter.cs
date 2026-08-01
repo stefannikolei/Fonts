@@ -1,6 +1,7 @@
 // Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
+using System.Numerics;
 using SixLabors.Fonts.Tables.TrueType.Glyphs;
 
 namespace SixLabors.Fonts.Tables.TrueType.Hinting;
@@ -80,6 +81,55 @@ internal sealed class GlyphGridFitter
         try
         {
             return fitter.Fit(ref vector, in options);
+        }
+        finally
+        {
+            Pool.Return(fitter);
+        }
+    }
+
+    /// <summary>
+    /// Fits a buffered outline whose stems are declared by the font rather than detected.
+    /// The declared zones seed the edge list directly, so the geometric detection and
+    /// pairing heuristics never run; anchor snapping, stem snapping, movement application
+    /// and interpolation proceed exactly as for detected edges. The points must be in
+    /// upright pixel space, Y up, baseline at zero.
+    /// </summary>
+    /// <param name="points">The outline points to fit in place, in contour order.</param>
+    /// <param name="contourEnds">The index of the last point of each contour.</param>
+    /// <param name="verticalStems">The declared vertical stem zones as X edge pairs.</param>
+    /// <param name="horizontalStems">The declared horizontal stem zones as Y edge pairs.</param>
+    /// <param name="options">The fitting parameters.</param>
+    /// <returns><see langword="true"/> if any point was moved; otherwise, <see langword="false"/>.</returns>
+    public static bool FitInPlace(Vector2[] points, ushort[] contourEnds, float[] verticalStems, float[] horizontalStems, in GridFitOptions options)
+    {
+        if (options.FitX == GridFitAxisMode.None && options.FitY == GridFitAxisMode.None)
+        {
+            return false;
+        }
+
+        if (points.Length < 4 || contourEnds.Length == 0)
+        {
+            return false;
+        }
+
+        GlyphGridFitter fitter = Pool.Get();
+        try
+        {
+            fitter.EnsureCapacity(points.Length);
+
+            bool moved = false;
+            if (options.FitX != GridFitAxisMode.None && fitter.FitBufferedAxis(points, contourEnds, verticalStems, in options, true))
+            {
+                moved = true;
+            }
+
+            if (options.FitY != GridFitAxisMode.None && fitter.FitBufferedAxis(points, contourEnds, horizontalStems, in options, false))
+            {
+                moved = true;
+            }
+
+            return moved;
         }
         finally
         {
@@ -245,6 +295,210 @@ internal sealed class GlyphGridFitter
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Fits one axis of a buffered outline from declared stem zones: gathers coordinates,
+    /// seeds edges from the zones, snaps anchors and stems, applies the deltas to points
+    /// on the declared flanks and interpolates the rest.
+    /// </summary>
+    /// <param name="points">The outline points, in contour order.</param>
+    /// <param name="contourEnds">The index of the last point of each contour.</param>
+    /// <param name="declaredStems">The declared stem zones for the axis as low and high edge pairs.</param>
+    /// <param name="options">The fitting parameters.</param>
+    /// <param name="isXAxis">Whether the horizontal axis is being fitted; otherwise the vertical axis.</param>
+    /// <returns><see langword="true"/> if any point was moved on the axis; otherwise, <see langword="false"/>.</returns>
+    private bool FitBufferedAxis(Vector2[] points, ushort[] contourEnds, float[] declaredStems, in GridFitOptions options, bool isXAxis)
+    {
+        int pointCount = points.Length;
+
+        // Gather the axis and perpendicular coordinates and the outline's perpendicular
+        // range, which stands in for per edge extents: declared zones are authoritative,
+        // so no overlap scoring is needed.
+        float perpLow = float.MaxValue;
+        float perpHigh = float.MinValue;
+        int contourStart = 0;
+        for (int c = 0; c < contourEnds.Length; c++)
+        {
+            int contourEnd = contourEnds[c];
+            if (contourEnd >= pointCount || contourEnd < contourStart)
+            {
+                return false;
+            }
+
+            contourStart = contourEnd + 1;
+        }
+
+        for (int i = 0; i < pointCount; i++)
+        {
+            float axis = isXAxis ? points[i].X : points[i].Y;
+            float perpendicular = isXAxis ? points[i].Y : points[i].X;
+            if (!float.IsFinite(axis) || !float.IsFinite(perpendicular))
+            {
+                return false;
+            }
+
+            this.axisOriginal[i] = axis;
+            this.axisCurrent[i] = axis;
+            this.perp[i] = perpendicular;
+            this.touched[i] = false;
+            perpLow = MathF.Min(perpLow, perpendicular);
+            perpHigh = MathF.Max(perpHigh, perpendicular);
+        }
+
+        if (!this.SeedDeclaredEdges(declaredStems, perpLow, perpHigh))
+        {
+            return false;
+        }
+
+        GridFitAxisMode axisMode = isXAxis ? options.FitX : options.FitY;
+        if (!isXAxis)
+        {
+            this.SnapAnchors(in options);
+        }
+
+        this.SnapStems(axisMode == GridFitAxisMode.Rescue);
+
+        if (!this.ApplyDeclaredEdgeDeltas(pointCount))
+        {
+            return false;
+        }
+
+        this.InterpolateUntouched(contourEnds);
+
+        for (int i = 0; i < pointCount; i++)
+        {
+            if (this.axisCurrent[i] != this.axisOriginal[i])
+            {
+                if (isXAxis)
+                {
+                    points[i].X = this.axisCurrent[i];
+                }
+                else
+                {
+                    points[i].Y = this.axisCurrent[i];
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Builds the edge list directly from declared stem zones. Each zone contributes a
+    /// linked pair of opposing edges sorted by position; ghost stems, whose zones are
+    /// inverted, mark single alignment edges and are skipped in this pass.
+    /// </summary>
+    /// <param name="declaredStems">The declared zones as low and high edge pairs.</param>
+    /// <param name="perpLow">The outline's lowest perpendicular coordinate.</param>
+    /// <param name="perpHigh">The outline's highest perpendicular coordinate.</param>
+    /// <returns><see langword="true"/> if at least one zone was seeded; otherwise, <see langword="false"/>.</returns>
+    private bool SeedDeclaredEdges(float[] declaredStems, float perpLow, float perpHigh)
+    {
+        this.segmentCount = 0;
+        this.edgeCount = 0;
+
+        // Order the usable zones by their low edge; mask alternation can declare them out
+        // of order and the stem snapping pass walks edges in ascending position.
+        int pairCount = 0;
+        for (int i = 0; i + 1 < declaredStems.Length; i += 2)
+        {
+            if (declaredStems[i + 1] > declaredStems[i] && this.edgeCount + ((pairCount + 1) * 2) <= MaxEdges)
+            {
+                this.sortOrder[pairCount++] = i;
+            }
+        }
+
+        for (int i = 1; i < pairCount; i++)
+        {
+            int key = this.sortOrder[i];
+            float keyLow = declaredStems[key];
+            int j = i - 1;
+            while (j >= 0 && declaredStems[this.sortOrder[j]] > keyLow)
+            {
+                this.sortOrder[j + 1] = this.sortOrder[j];
+                j--;
+            }
+
+            this.sortOrder[j + 1] = key;
+        }
+
+        for (int i = 0; i < pairCount; i++)
+        {
+            float low = declaredStems[this.sortOrder[i]];
+            float high = declaredStems[this.sortOrder[i] + 1];
+
+            ref Edge left = ref this.edges[this.edgeCount];
+            left.FirstSegment = -1;
+            left.Link = this.edgeCount + 1;
+            left.Pos = low;
+            left.NewPos = low;
+            left.PerpMin = perpLow;
+            left.PerpMax = perpHigh;
+            left.Extent = perpHigh - perpLow;
+            left.Dir = 1;
+            left.Round = false;
+            left.Fitted = false;
+
+            ref Edge right = ref this.edges[this.edgeCount + 1];
+            right.FirstSegment = -1;
+            right.Link = this.edgeCount;
+            right.Pos = high;
+            right.NewPos = high;
+            right.PerpMin = perpLow;
+            right.PerpMax = perpHigh;
+            right.Extent = perpHigh - perpLow;
+            right.Dir = -1;
+            right.Round = false;
+            right.Fitted = false;
+
+            this.edgeCount += 2;
+        }
+
+        return this.edgeCount > 0;
+    }
+
+    /// <summary>
+    /// Moves every point lying on a fitted declared flank by that flank's delta. Declared
+    /// edges carry no detected member segments, so membership is by proximity to the
+    /// declared position; each point follows its nearest flank within the alignment band.
+    /// </summary>
+    /// <param name="pointCount">The number of outline points.</param>
+    /// <returns><see langword="true"/> if any edge produced a non zero delta; otherwise, <see langword="false"/>.</returns>
+    private bool ApplyDeclaredEdgeDeltas(int pointCount)
+    {
+        bool moved = false;
+        for (int p = 0; p < pointCount; p++)
+        {
+            float value = this.axisOriginal[p];
+            float bestDistance = GridFitterTuning.SegmentSlackPx;
+            int bestEdge = -1;
+            for (int i = 0; i < this.edgeCount; i++)
+            {
+                ref Edge edge = ref this.edges[i];
+                if (!edge.Fitted)
+                {
+                    continue;
+                }
+
+                float distance = MathF.Abs(value - edge.Pos);
+                if (distance <= bestDistance)
+                {
+                    bestDistance = distance;
+                    bestEdge = i;
+                }
+            }
+
+            if (bestEdge >= 0)
+            {
+                float delta = this.edges[bestEdge].NewPos - this.edges[bestEdge].Pos;
+                this.axisCurrent[p] = value + delta;
+                this.touched[p] = true;
+                moved |= delta != 0F;
+            }
+        }
+
+        return moved;
     }
 
     /// <summary>
@@ -586,7 +840,7 @@ internal sealed class GlyphGridFitter
     }
 
     /// <summary>
-    /// Pass 3: snaps vertical axis edges near the baseline, x-height or cap height to the
+    /// Pass 3: snaps vertical axis edges near the baseline or an alignment height to the
     /// rounded anchor. Snapping overshoots and flats to the same pixel is what keeps round
     /// and flat glyph heights consistent across a line of text. Only the edge whose ink
     /// faces away from the anchor snaps: the baseline attracts bottom edges and the height
@@ -609,14 +863,13 @@ internal sealed class GlyphGridFitter
                 continue;
             }
 
-            if (options.XHeight > 0F && TrySnapAnchor(ref edge, options.XHeight))
+            float[] topAnchors = options.TopAnchors;
+            for (int a = 0; a < topAnchors.Length; a++)
             {
-                continue;
-            }
-
-            if (options.CapHeight > 0F)
-            {
-                TrySnapAnchor(ref edge, options.CapHeight);
+                if (topAnchors[a] > 0F && TrySnapAnchor(ref edge, topAnchors[a]))
+                {
+                    break;
+                }
             }
         }
     }

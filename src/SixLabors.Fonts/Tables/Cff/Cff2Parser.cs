@@ -241,7 +241,8 @@ internal class Cff2Parser : CffParserBase
                 this.itemVariationStore,
                 vsIndex)
             {
-                FontMatrix = topDictionary.FontMatrix
+                FontMatrix = topDictionary.FontMatrix,
+                HintingValues = privateDictionary?.HintingValues
             };
         }
 

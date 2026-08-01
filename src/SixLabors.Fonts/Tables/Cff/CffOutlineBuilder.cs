@@ -17,6 +17,7 @@ internal sealed class CffOutlineBuilder : IGlyphRenderer
 
     private readonly List<CffOutlineVerb> verbs = [];
     private readonly List<Vector2> points = [];
+    private readonly List<ushort> contourEnds = [];
     private Vector2 last;
 
     private CffOutlineBuilder()
@@ -32,6 +33,7 @@ internal sealed class CffOutlineBuilder : IGlyphRenderer
         CffOutlineBuilder builder = Pool.Get();
         builder.verbs.Clear();
         builder.points.Clear();
+        builder.contourEnds.Clear();
         builder.last = Vector2.Zero;
         return builder;
     }
@@ -47,7 +49,15 @@ internal sealed class CffOutlineBuilder : IGlyphRenderer
     /// <param name="verticalStems">The declared vertical stem zones as X edge pairs in pixel space.</param>
     /// <param name="horizontalStems">The declared horizontal stem zones as Y edge pairs in pixel space.</param>
     /// <returns>The buffered outline.</returns>
-    public CffOutline ToOutline(float[] verticalStems, float[] horizontalStems) => new([.. this.verbs], [.. this.points], verticalStems, horizontalStems);
+    public CffOutline ToOutline(float[] verticalStems, float[] horizontalStems)
+    {
+        if (this.points.Count > 0)
+        {
+            this.contourEnds.Add((ushort)(this.points.Count - 1));
+        }
+
+        return new([.. this.verbs], [.. this.points], [.. this.contourEnds], verticalStems, horizontalStems);
+    }
 
     /// <inheritdoc/>
     public void BeginText(in FontRectangle bounds)
@@ -85,6 +95,11 @@ internal sealed class CffOutlineBuilder : IGlyphRenderer
     /// <inheritdoc/>
     public void MoveTo(Vector2 point)
     {
+        if (this.points.Count > 0)
+        {
+            this.contourEnds.Add((ushort)(this.points.Count - 1));
+        }
+
         this.verbs.Add(CffOutlineVerb.Move);
         this.points.Add(point);
         this.last = point;

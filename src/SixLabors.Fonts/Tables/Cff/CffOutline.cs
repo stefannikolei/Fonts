@@ -16,6 +16,7 @@ internal sealed class CffOutline
 {
     private readonly CffOutlineVerb[] verbs;
     private readonly Vector2[] points;
+    private readonly ushort[] contourEnds;
     private readonly float[] verticalStems;
     private readonly float[] horizontalStems;
 
@@ -24,15 +25,28 @@ internal sealed class CffOutline
     /// </summary>
     /// <param name="verbs">The drawing commands in order.</param>
     /// <param name="points">The packed points: one per move or line, three per cubic.</param>
+    /// <param name="contourEnds">The index of the last point of each contour.</param>
     /// <param name="verticalStems">The declared vertical stem zones as X edge pairs in pixel space.</param>
     /// <param name="horizontalStems">The declared horizontal stem zones as Y edge pairs in pixel space.</param>
-    public CffOutline(CffOutlineVerb[] verbs, Vector2[] points, float[] verticalStems, float[] horizontalStems)
+    public CffOutline(CffOutlineVerb[] verbs, Vector2[] points, ushort[] contourEnds, float[] verticalStems, float[] horizontalStems)
     {
         this.verbs = verbs;
         this.points = points;
+        this.contourEnds = contourEnds;
         this.verticalStems = verticalStems;
         this.horizontalStems = horizontalStems;
     }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the outline has been grid fitted. Only
+    /// fitted outlines qualify for whole pixel origin snapping at replay time.
+    /// </summary>
+    public bool IsFitted { get; set; }
+
+    /// <summary>
+    /// Gets the index of the last point of each contour.
+    /// </summary>
+    public ushort[] ContourEnds => this.contourEnds;
 
     /// <summary>
     /// Gets the packed outline points for in place fitting. Layout follows the verbs: one

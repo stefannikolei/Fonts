@@ -291,7 +291,7 @@ public partial class TrueTypeGlyphMetrics : FontGlyphMetrics
             GridFitAxisMode fitY = result is TrueTypeHintingResult.None or TrueTypeHintingResult.Failed ? GridFitAxisMode.Full : GridFitAxisMode.Rescue;
             float xHeight = this.FontMetrics.XHeight * scale.Y;
             float capHeight = this.FontMetrics.CapHeight * scale.Y;
-            GridFitOptions options = new(pixelSize, fitX, fitY, xHeight, capHeight);
+            GridFitOptions options = new(pixelSize, fitX, fitY, [xHeight, capHeight]);
             if (GlyphGridFitter.FitInPlace(ref clone, in options))
             {
                 clone.IsHinted = true;

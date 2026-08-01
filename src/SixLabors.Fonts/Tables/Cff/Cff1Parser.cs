@@ -569,7 +569,10 @@ internal class Cff1Parser : CffParserBase
                 localSubBuffer ?? [],
                 privateDictionary?.NominalWidthX ?? 0,
                 charstringsBuffer,
-                1);
+                1)
+            {
+                HintingValues = privateDictionary?.HintingValues
+            };
         }
 
         return glyphs;

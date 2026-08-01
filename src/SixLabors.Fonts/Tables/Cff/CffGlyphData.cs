@@ -90,6 +90,12 @@ internal struct CffGlyphData
     public double[]? FontMatrix { get; set; }
 
     /// <summary>
+    /// Gets or sets the declarative hinting values from the owning Private DICT, or
+    /// <see langword="null"/> when the font carries none.
+    /// </summary>
+    public CffHintingValues? HintingValues { get; set; }
+
+    /// <summary>
     /// Computes the bounding box of this glyph by evaluating the charstring program.
     /// </summary>
     /// <returns>The <see cref="Bounds"/> of the glyph.</returns>

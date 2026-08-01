@@ -135,8 +135,9 @@ internal struct CffGlyphData
 
     /// <summary>
     /// Evaluates the charstring once into a buffered outline in upright pixel space, Y up
-    /// with the baseline at zero. Placement, synthetic oblique, rotation and origin apply
-    /// at replay time, so one buffered outline serves every render at the size.
+    /// with the baseline at zero, collecting the declared stem zones along the way.
+    /// Placement, synthetic oblique, rotation and origin apply at replay time, so one
+    /// buffered outline serves every render at the size.
     /// </summary>
     /// <param name="scale">The pixels per design unit scale, including the font matrix.</param>
     /// <returns>The buffered <see cref="CffOutline"/>.</returns>
@@ -145,15 +146,53 @@ internal struct CffGlyphData
         CffOutlineBuilder builder = CffOutlineBuilder.Rent();
         try
         {
+            using CffEvaluationEngine engine = new(
+                this.charStrings,
+                this.globalSubrBuffers,
+                this.localSubrBuffers,
+                this.nominalWidthX,
+                this.version,
+                this.itemVariationStore,
+                this.FVar,
+                this.AVar,
+                this.vsIndex);
+
+            // The lists are per cache fill; they become the outline's retained stem arrays.
+            List<float> horizontal = [];
+            List<float> vertical = [];
+            engine.CollectStems(horizontal, vertical);
+
             // A negated Y scale composed with the streaming sink's Y flip captures points
             // in Y up pixel space through sign exact arithmetic, so replaying them through
             // a unit scale transforming renderer reproduces the streaming path bit for bit.
-            this.RenderTo(builder, Vector2.Zero, new Vector2(scale.X, -scale.Y), Vector2.Zero, Matrix3x2.Identity);
-            return builder.ToOutline();
+            engine.RenderTo(builder, Vector2.Zero, new Vector2(scale.X, -scale.Y), Vector2.Zero, Matrix3x2.Identity);
+            return builder.ToOutline(ScaleStems(vertical, scale.X), ScaleStems(horizontal, scale.Y));
         }
         finally
         {
             builder.Release();
         }
+    }
+
+    /// <summary>
+    /// Scales collected stem edges from charstring units into pixel space.
+    /// </summary>
+    /// <param name="edges">The collected edge pairs.</param>
+    /// <param name="scale">The pixels per design unit scale for the stem axis.</param>
+    /// <returns>The scaled edge pairs.</returns>
+    private static float[] ScaleStems(List<float> edges, float scale)
+    {
+        if (edges.Count == 0)
+        {
+            return [];
+        }
+
+        float[] scaled = new float[edges.Count];
+        for (int i = 0; i < scaled.Length; i++)
+        {
+            scaled[i] = edges[i] * scale;
+        }
+
+        return scaled;
     }
 }

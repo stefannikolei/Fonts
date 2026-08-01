@@ -26,6 +26,8 @@ internal ref struct CffEvaluationEngine
     private static readonly Random Random = new();
     private float? width;
     private int nStems;
+    private List<float>? horizontalStemEdges;
+    private List<float>? verticalStemEdges;
     private float x;
     private float y;
     private RefStack<float> stack;
@@ -173,11 +175,15 @@ internal ref struct CffEvaluationEngine
                 switch (oneByteOperator)
                 {
                     case Type2Operator1.Hstem:
-                    case Type2Operator1.Vstem:
                     case Type2Operator1.Hstemhm:
+
+                        this.ParseStems(this.horizontalStemEdges);
+                        break;
+
+                    case Type2Operator1.Vstem:
                     case Type2Operator1.Vstemhm:
 
-                        this.ParseStems();
+                        this.ParseStems(this.verticalStemEdges);
                         break;
 
                     case Type2Operator1.Vmoveto:
@@ -328,7 +334,9 @@ internal ref struct CffEvaluationEngine
                     case Type2Operator1.Hintmask:
                     case Type2Operator1.Cntrmask:
 
-                        this.ParseStems();
+                        // Operands pending when a mask operator arrives are implicit
+                        // vertical stems whose vstem operator was elided.
+                        this.ParseStems(this.verticalStemEdges);
                         reader.Position += (this.nStems + 7) >> 3;
 
                         break;
@@ -827,14 +835,44 @@ internal ref struct CffEvaluationEngine
     }
 
     /// <summary>
-    /// Parses stem hint operators, consuming width if present and counting hint pairs.
+    /// Directs the engine to collect declared stem zones into the given lists during
+    /// evaluation. Stem edges are recorded in charstring units as low and high pairs;
+    /// ghost stems keep their negative widths so consumers can recognize edge hints.
+    /// When not enabled, stem operators are consumed exactly as before at no cost.
     /// </summary>
+    /// <param name="horizontal">Receives the horizontal stem zone edge pairs, in Y coordinates.</param>
+    /// <param name="vertical">Receives the vertical stem zone edge pairs, in X coordinates.</param>
+    public void CollectStems(List<float> horizontal, List<float> vertical)
+    {
+        this.horizontalStemEdges = horizontal;
+        this.verticalStemEdges = vertical;
+    }
+
+    /// <summary>
+    /// Parses stem hint operators, consuming width if present and counting hint pairs.
+    /// Operands encode each stem's low edge relative to the previous stem's high edge
+    /// followed by its width, so absolute zones accumulate across the operand run.
+    /// </summary>
+    /// <param name="target">Receives decoded absolute edge pairs, or <see langword="null"/> when collection is disabled.</param>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void ParseStems()
+    private void ParseStems(List<float>? target)
     {
         if (this.stack.Length % 2 != 0)
         {
             this.CheckWidth();
+        }
+
+        if (target is not null)
+        {
+            float running = 0F;
+            for (int i = 0; i + 1 < this.stack.Length; i += 2)
+            {
+                float low = running + this.stack[i];
+                float high = low + this.stack[i + 1];
+                target.Add(low);
+                target.Add(high);
+                running = high;
+            }
         }
 
         this.nStems += this.stack.Length >> 1;

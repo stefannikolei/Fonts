@@ -16,16 +16,22 @@ internal sealed class CffOutline
 {
     private readonly CffOutlineVerb[] verbs;
     private readonly Vector2[] points;
+    private readonly float[] verticalStems;
+    private readonly float[] horizontalStems;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CffOutline"/> class.
     /// </summary>
     /// <param name="verbs">The drawing commands in order.</param>
     /// <param name="points">The packed points: one per move or line, three per cubic.</param>
-    public CffOutline(CffOutlineVerb[] verbs, Vector2[] points)
+    /// <param name="verticalStems">The declared vertical stem zones as X edge pairs in pixel space.</param>
+    /// <param name="horizontalStems">The declared horizontal stem zones as Y edge pairs in pixel space.</param>
+    public CffOutline(CffOutlineVerb[] verbs, Vector2[] points, float[] verticalStems, float[] horizontalStems)
     {
         this.verbs = verbs;
         this.points = points;
+        this.verticalStems = verticalStems;
+        this.horizontalStems = horizontalStems;
     }
 
     /// <summary>
@@ -38,6 +44,18 @@ internal sealed class CffOutline
     /// Gets the drawing commands in order.
     /// </summary>
     public CffOutlineVerb[] Verbs => this.verbs;
+
+    /// <summary>
+    /// Gets the declared vertical stem zones as low and high X edge pairs in pixel space.
+    /// Ghost stems retain their inverted edges so consumers can recognize edge hints.
+    /// </summary>
+    public float[] VerticalStems => this.verticalStems;
+
+    /// <summary>
+    /// Gets the declared horizontal stem zones as low and high Y edge pairs in pixel space.
+    /// Ghost stems retain their inverted edges so consumers can recognize edge hints.
+    /// </summary>
+    public float[] HorizontalStems => this.horizontalStems;
 
     /// <summary>
     /// Replays the outline into the given transforming renderer, reproducing the exact

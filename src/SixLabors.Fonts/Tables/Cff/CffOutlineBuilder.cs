@@ -44,8 +44,10 @@ internal sealed class CffOutlineBuilder : IGlyphRenderer
     /// <summary>
     /// Materializes the captured commands into an outline with exactly sized arrays.
     /// </summary>
+    /// <param name="verticalStems">The declared vertical stem zones as X edge pairs in pixel space.</param>
+    /// <param name="horizontalStems">The declared horizontal stem zones as Y edge pairs in pixel space.</param>
     /// <returns>The buffered outline.</returns>
-    public CffOutline ToOutline() => new([.. this.verbs], [.. this.points]);
+    public CffOutline ToOutline(float[] verticalStems, float[] horizontalStems) => new([.. this.verbs], [.. this.points], verticalStems, horizontalStems);
 
     /// <inheritdoc/>
     public void BeginText(in FontRectangle bounds)

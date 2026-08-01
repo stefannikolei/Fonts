@@ -172,7 +172,13 @@ internal struct CffGlyphData
             // in Y up pixel space through sign exact arithmetic, so replaying them through
             // a unit scale transforming renderer reproduces the streaming path bit for bit.
             engine.RenderTo(builder, Vector2.Zero, new Vector2(scale.X, -scale.Y), Vector2.Zero, Matrix3x2.Identity);
-            return builder.ToOutline(ScaleStems(vertical, scale.X), ScaleStems(horizontal, scale.Y));
+            CffOutline outline = builder.ToOutline(ScaleStems(vertical, scale.X), ScaleStems(horizontal, scale.Y));
+
+            // A counter mask covering three or more stems, and all of them, marks the
+            // axis for counter equalization: the glyph was authored for even stem rhythm.
+            outline.EqualizeVerticalCounters = engine.VerticalCounterStems >= 3 && engine.VerticalCounterStems == vertical.Count >> 1;
+            outline.EqualizeHorizontalCounters = engine.HorizontalCounterStems >= 3 && engine.HorizontalCounterStems == horizontal.Count >> 1;
+            return outline;
         }
         finally
         {

@@ -99,9 +99,11 @@ internal sealed class GlyphGridFitter
     /// <param name="contourEnds">The index of the last point of each contour.</param>
     /// <param name="verticalStems">The declared vertical stem zones as X edge pairs.</param>
     /// <param name="horizontalStems">The declared horizontal stem zones as Y edge pairs.</param>
+    /// <param name="equalizeVerticalCounters">Whether the glyph's counter mask requests counter equalization across its vertical stems.</param>
+    /// <param name="equalizeHorizontalCounters">Whether the glyph's counter mask requests counter equalization across its horizontal stems.</param>
     /// <param name="options">The fitting parameters.</param>
     /// <returns><see langword="true"/> if any point was moved; otherwise, <see langword="false"/>.</returns>
-    public static bool FitInPlace(Vector2[] points, ushort[] contourEnds, float[] verticalStems, float[] horizontalStems, in GridFitOptions options)
+    public static bool FitInPlace(Vector2[] points, ushort[] contourEnds, float[] verticalStems, float[] horizontalStems, bool equalizeVerticalCounters, bool equalizeHorizontalCounters, in GridFitOptions options)
     {
         if (options.FitX == GridFitAxisMode.None && options.FitY == GridFitAxisMode.None)
         {
@@ -119,12 +121,12 @@ internal sealed class GlyphGridFitter
             fitter.EnsureCapacity(points.Length);
 
             bool moved = false;
-            if (options.FitX != GridFitAxisMode.None && fitter.FitBufferedAxis(points, contourEnds, verticalStems, in options, true))
+            if (options.FitX != GridFitAxisMode.None && fitter.FitBufferedAxis(points, contourEnds, verticalStems, equalizeVerticalCounters, in options, true))
             {
                 moved = true;
             }
 
-            if (options.FitY != GridFitAxisMode.None && fitter.FitBufferedAxis(points, contourEnds, horizontalStems, in options, false))
+            if (options.FitY != GridFitAxisMode.None && fitter.FitBufferedAxis(points, contourEnds, horizontalStems, equalizeHorizontalCounters, in options, false))
             {
                 moved = true;
             }
@@ -255,7 +257,7 @@ internal sealed class GlyphGridFitter
             }
         }
 
-        this.SnapStems(axisMode == GridFitAxisMode.Rescue);
+        this.SnapStems(axisMode == GridFitAxisMode.Rescue, false);
         this.AbsorbSatellites();
 
         if (DebugLog is not null)
@@ -310,10 +312,11 @@ internal sealed class GlyphGridFitter
     /// <param name="points">The outline points, in contour order.</param>
     /// <param name="contourEnds">The index of the last point of each contour.</param>
     /// <param name="declaredStems">The declared stem zones for the axis as low and high edge pairs.</param>
+    /// <param name="equalizeCounters">Whether the glyph's counter mask requests counter equalization on the axis.</param>
     /// <param name="options">The fitting parameters.</param>
     /// <param name="isXAxis">Whether the horizontal axis is being fitted; otherwise the vertical axis.</param>
     /// <returns><see langword="true"/> if any point was moved on the axis; otherwise, <see langword="false"/>.</returns>
-    private bool FitBufferedAxis(Vector2[] points, ushort[] contourEnds, float[] declaredStems, in GridFitOptions options, bool isXAxis)
+    private bool FitBufferedAxis(Vector2[] points, ushort[] contourEnds, float[] declaredStems, bool equalizeCounters, in GridFitOptions options, bool isXAxis)
     {
         int pointCount = points.Length;
 
@@ -374,7 +377,7 @@ internal sealed class GlyphGridFitter
             }
         }
 
-        this.SnapStems(axisMode == GridFitAxisMode.Rescue);
+        this.SnapStems(axisMode == GridFitAxisMode.Rescue, equalizeCounters);
 
         if (DebugLog is not null)
         {
@@ -1170,16 +1173,21 @@ internal sealed class GlyphGridFitter
     /// counters between successive stems never fall below one pixel when they were open in
     /// the design. Declared stems whose flanks both form walls round their widths with a
     /// downward bias, matching the thin regularized strokes classic rasterizers produce
-    /// from declared hints. A pair whose fit would exceed the movement cap or fold a
-    /// counter is reverted rather than distorted. In rescue mode only strokes thinner
-    /// than a pixel are processed; instruction fitted geometry is left exactly where the
-    /// font put it.
+    /// from declared hints. Under counter equalization successive stem centers keep the
+    /// design pitch: the center to center distance rounds to whole pixels so the equal
+    /// counters the glyph was authored with stay equal in the fit. A pair whose fit would
+    /// exceed the movement cap or fold a counter is reverted rather than distorted. In
+    /// rescue mode only strokes thinner than a pixel are processed; instruction fitted
+    /// geometry is left exactly where the font put it.
     /// </summary>
     /// <param name="rescueOnly">Whether only sub pixel strokes are processed.</param>
-    private void SnapStems(bool rescueOnly)
+    /// <param name="equalizeCounters">Whether the glyph's counter mask requests counter equalization on the axis.</param>
+    private void SnapStems(bool rescueOnly, bool equalizeCounters)
     {
         float prevRight = float.MinValue;
         float prevRightOriginal = float.MinValue;
+        float prevCenter = float.MinValue;
+        float prevCenterOriginal = float.MinValue;
         for (int i = 0; i < this.edgeCount; i++)
         {
             ref Edge left = ref this.edges[i];
@@ -1193,6 +1201,8 @@ internal sealed class GlyphGridFitter
             {
                 prevRight = right.NewPos;
                 prevRightOriginal = right.Pos;
+                prevCenter = (left.NewPos + right.NewPos) * 0.5F;
+                prevCenterOriginal = (left.Pos + right.Pos) * 0.5F;
                 continue;
             }
 
@@ -1228,6 +1238,7 @@ internal sealed class GlyphGridFitter
             // pair would leave one anchored flank moved and the other interpolated past it,
             // inverting the stroke, which is far worse than the bounded extra movement.
             float allowance = GridFitterTuning.MaxEdgeDeltaPx + MathF.Max(0F, 1F - width);
+            float pairAllowance = allowance;
 
             float newLeft;
             float newRight;
@@ -1250,6 +1261,25 @@ internal sealed class GlyphGridFitter
                 float center = (left.Pos + right.Pos) * 0.5F;
                 bool oddWidth = ((int)fittedWidth & 1) == 1;
                 float fittedCenter = oddWidth ? MathF.Floor(center) + 0.5F : MathF.Ceiling(center - 0.5F);
+
+                // Chain the stem centers when the glyph requests counter equalization:
+                // the pitch to the previous fitted stem rounds to whole pixels, so equal
+                // design pitches round identically instead of each center rounding its
+                // own way. Counter control outranks the per flank movement cap, since a
+                // chained stem accumulates the rounding of every pitch before it, so the
+                // chain accepts an extra half pixel before falling back to the
+                // independent center.
+                if (equalizeCounters && prevCenter > float.MinValue)
+                {
+                    float pitchCenter = prevCenter + MathF.Floor(center - prevCenterOriginal + 0.5F);
+                    float chainAllowance = allowance + 0.5F;
+                    if (MathF.Abs(pitchCenter - (fittedWidth * 0.5F) - left.Pos) <= chainAllowance && MathF.Abs(pitchCenter + (fittedWidth * 0.5F) - right.Pos) <= chainAllowance)
+                    {
+                        fittedCenter = pitchCenter;
+                        pairAllowance = chainAllowance;
+                    }
+                }
+
                 newLeft = fittedCenter - (fittedWidth * 0.5F);
                 newRight = fittedCenter + (fittedWidth * 0.5F);
             }
@@ -1267,7 +1297,7 @@ internal sealed class GlyphGridFitter
                 continue;
             }
 
-            if (MathF.Abs(newLeft - left.Pos) > allowance || MathF.Abs(newRight - right.Pos) > allowance)
+            if (MathF.Abs(newLeft - left.Pos) > pairAllowance || MathF.Abs(newRight - right.Pos) > pairAllowance)
             {
                 continue;
             }
@@ -1278,6 +1308,8 @@ internal sealed class GlyphGridFitter
             right.Fitted = true;
             prevRight = newRight;
             prevRightOriginal = right.Pos;
+            prevCenter = (newLeft + newRight) * 0.5F;
+            prevCenterOriginal = (left.Pos + right.Pos) * 0.5F;
         }
     }
 

@@ -26,6 +26,7 @@ internal ref struct CffEvaluationEngine
     private static readonly Random Random = new();
     private float? width;
     private int nStems;
+    private bool counterMaskSeen;
     private List<float>? horizontalStemEdges;
     private List<float>? verticalStemEdges;
     private float x;
@@ -98,6 +99,18 @@ internal ref struct CffEvaluationEngine
 
         this.vsIndex = vsIndex;
     }
+
+    /// <summary>
+    /// Gets the number of horizontal stems named by the glyph's first counter mask.
+    /// Populated during evaluation when stem collection is enabled.
+    /// </summary>
+    public int HorizontalCounterStems { get; private set; }
+
+    /// <summary>
+    /// Gets the number of vertical stems named by the glyph's first counter mask.
+    /// Populated during evaluation when stem collection is enabled.
+    /// </summary>
+    public int VerticalCounterStems { get; private set; }
 
     /// <summary>
     /// Computes the bounding box of the glyph by evaluating the charstring program.
@@ -337,7 +350,40 @@ internal ref struct CffEvaluationEngine
                         // Operands pending when a mask operator arrives are implicit
                         // vertical stems whose vstem operator was elided.
                         this.ParseStems(this.verticalStemEdges);
-                        reader.Position += (this.nStems + 7) >> 3;
+
+                        // The first counter mask names the stems participating in counter
+                        // control, in declaration order with horizontal stems first. The
+                        // per axis counts tell the grid fitter which axes carry equalized
+                        // counters, the treatment multi stem glyphs were authored for.
+                        if (oneByteOperator == Type2Operator1.Cntrmask && this.horizontalStemEdges is not null && !this.counterMaskSeen)
+                        {
+                            this.counterMaskSeen = true;
+                            int horizontalStemCount = this.horizontalStemEdges.Count >> 1;
+                            int stemIndex = 0;
+                            int maskBytes = (this.nStems + 7) >> 3;
+                            for (int i = 0; i < maskBytes; i++)
+                            {
+                                byte mask = reader.ReadByte();
+                                for (int bit = 7; bit >= 0 && stemIndex < this.nStems; bit--, stemIndex++)
+                                {
+                                    if ((mask & (1 << bit)) != 0)
+                                    {
+                                        if (stemIndex < horizontalStemCount)
+                                        {
+                                            this.HorizontalCounterStems++;
+                                        }
+                                        else
+                                        {
+                                            this.VerticalCounterStems++;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        else
+                        {
+                            reader.Position += (this.nStems + 7) >> 3;
+                        }
 
                         break;
 
@@ -896,6 +942,9 @@ internal ref struct CffEvaluationEngine
         this.y = 0;
         this.width = null;
         this.nStems = 0;
+        this.counterMaskSeen = false;
+        this.HorizontalCounterStems = 0;
+        this.VerticalCounterStems = 0;
         this.stack.Clear();
         this.trans.Clear();
     }

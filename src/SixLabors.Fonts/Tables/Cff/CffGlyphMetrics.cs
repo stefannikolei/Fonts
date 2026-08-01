@@ -246,7 +246,7 @@ internal class CffGlyphMetrics : FontGlyphMetrics
             float[] topAnchors = this.glyphData.HintingValues?.BlueFlats ?? [];
             float[] bottomAnchors = this.glyphData.HintingValues?.OtherBlueFlats ?? [];
             GridFitOptions options = new(pixelSize, fitX, GridFitAxisMode.Full, topAnchors, bottomAnchors, scale.Y);
-            if (GlyphGridFitter.FitInPlace(outline.Points, outline.ContourEnds, outline.VerticalStems, outline.HorizontalStems, in options))
+            if (GlyphGridFitter.FitInPlace(outline.Points, outline.ContourEnds, outline.VerticalStems, outline.HorizontalStems, outline.EqualizeVerticalCounters, outline.EqualizeHorizontalCounters, in options))
             {
                 outline.IsFitted = true;
             }

@@ -44,6 +44,18 @@ internal sealed class CffOutline
     public bool IsFitted { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether the glyph's counter mask requests counter
+    /// equalization across all of its vertical stems.
+    /// </summary>
+    public bool EqualizeVerticalCounters { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the glyph's counter mask requests counter
+    /// equalization across all of its horizontal stems.
+    /// </summary>
+    public bool EqualizeHorizontalCounters { get; set; }
+
+    /// <summary>
     /// Gets the index of the last point of each contour.
     /// </summary>
     public ushort[] ContourEnds => this.contourEnds;

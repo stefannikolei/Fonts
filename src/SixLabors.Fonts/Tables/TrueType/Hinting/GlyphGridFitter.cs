@@ -275,6 +275,11 @@ internal sealed class GlyphGridFitter
 
         this.InterpolateUntouched(endPoints);
 
+        if (!isXAxis)
+        {
+            this.SuppressOvershoots(pointCount);
+        }
+
         // Pass 8: scatter the fitted coordinates back into the outline.
         for (int i = 0; i < pointCount; i++)
         {
@@ -346,7 +351,7 @@ internal sealed class GlyphGridFitter
             perpHigh = MathF.Max(perpHigh, perpendicular);
         }
 
-        if (!this.SeedDeclaredEdges(declaredStems, perpLow, perpHigh))
+        if (!this.SeedDeclaredEdges(declaredStems, perpLow, perpHigh, 20.5F * options.AnchorScale))
         {
             return false;
         }
@@ -365,6 +370,11 @@ internal sealed class GlyphGridFitter
         }
 
         this.InterpolateUntouched(contourEnds);
+
+        if (!isXAxis)
+        {
+            this.SuppressOvershoots(pointCount);
+        }
 
         for (int i = 0; i < pointCount; i++)
         {
@@ -386,26 +396,33 @@ internal sealed class GlyphGridFitter
 
     /// <summary>
     /// Builds the edge list directly from declared stem zones. Each zone contributes a
-    /// linked pair of opposing edges sorted by position; ghost stems, whose zones are
-    /// inverted, mark single alignment edges and are skipped in this pass.
+    /// linked pair of opposing edges sorted by position. Ghost stems, whose zones are
+    /// inverted, declare a single alignment edge with no opposing flank: the first value
+    /// of the pair is the real edge and the inverted width selects its side, twenty for a
+    /// top edge and twenty one for a bottom edge. They seed unlinked edges that
+    /// participate in anchor snapping only.
     /// </summary>
     /// <param name="declaredStems">The declared zones as low and high edge pairs.</param>
     /// <param name="perpLow">The outline's lowest perpendicular coordinate.</param>
     /// <param name="perpHigh">The outline's highest perpendicular coordinate.</param>
+    /// <param name="ghostBottomThreshold">The inverted width, in pixels, separating bottom edge ghosts from top edge ghosts: twenty and a half design units under the caller's scale.</param>
     /// <returns><see langword="true"/> if at least one zone was seeded; otherwise, <see langword="false"/>.</returns>
-    private bool SeedDeclaredEdges(float[] declaredStems, float perpLow, float perpHigh)
+    private bool SeedDeclaredEdges(float[] declaredStems, float perpLow, float perpHigh, float ghostBottomThreshold)
     {
         this.segmentCount = 0;
         this.edgeCount = 0;
 
-        // Order the usable zones by their low edge; mask alternation can declare them out
+        // Order the zones by their first edge; mask alternation can declare them out
         // of order and the stem snapping pass walks edges in ascending position.
         int pairCount = 0;
+        int edgesNeeded = 0;
         for (int i = 0; i + 1 < declaredStems.Length; i += 2)
         {
-            if (declaredStems[i + 1] > declaredStems[i] && this.edgeCount + ((pairCount + 1) * 2) <= MaxEdges)
+            int contribution = declaredStems[i + 1] > declaredStems[i] ? 2 : 1;
+            if (edgesNeeded + contribution <= MaxEdges)
             {
                 this.sortOrder[pairCount++] = i;
+                edgesNeeded += contribution;
             }
         }
 
@@ -428,6 +445,25 @@ internal sealed class GlyphGridFitter
             float low = declaredStems[this.sortOrder[i]];
             float high = declaredStems[this.sortOrder[i] + 1];
 
+            if (high <= low)
+            {
+                ref Edge ghost = ref this.edges[this.edgeCount];
+                ghost.FirstSegment = -1;
+                ghost.Link = -1;
+                ghost.Pos = low;
+                ghost.NewPos = low;
+                ghost.PerpMin = perpLow;
+                ghost.PerpMax = perpHigh;
+                ghost.Extent = perpHigh - perpLow;
+                ghost.Dir = (sbyte)(low - high > ghostBottomThreshold ? 1 : -1);
+                ghost.Round = false;
+                ghost.Fitted = false;
+                ghost.Anchored = false;
+
+                this.edgeCount++;
+                continue;
+            }
+
             ref Edge left = ref this.edges[this.edgeCount];
             left.FirstSegment = -1;
             left.Link = this.edgeCount + 1;
@@ -439,6 +475,7 @@ internal sealed class GlyphGridFitter
             left.Dir = 1;
             left.Round = false;
             left.Fitted = false;
+            left.Anchored = false;
 
             ref Edge right = ref this.edges[this.edgeCount + 1];
             right.FirstSegment = -1;
@@ -451,6 +488,7 @@ internal sealed class GlyphGridFitter
             right.Dir = -1;
             right.Round = false;
             right.Fitted = false;
+            right.Anchored = false;
 
             this.edgeCount += 2;
         }
@@ -795,6 +833,7 @@ internal sealed class GlyphGridFitter
                 edge.Dir = segment.Dir;
                 edge.Round = segment.Round;
                 edge.Fitted = false;
+                edge.Anchored = false;
                 segment.NextInEdge = -1;
                 this.edgeCount++;
             }
@@ -843,9 +882,11 @@ internal sealed class GlyphGridFitter
     /// Pass 3: snaps vertical axis edges near the baseline or an alignment height to the
     /// rounded anchor. Snapping overshoots and flats to the same pixel is what keeps round
     /// and flat glyph heights consistent across a line of text. Only the edge whose ink
-    /// faces away from the anchor snaps: the baseline attracts bottom edges and the height
-    /// anchors attract top edges. The stroke's opposite edge then follows through stem
-    /// width normalization, so a thin stroke can never collapse onto its own anchor.
+    /// faces away from the anchor snaps: the baseline and the descender depths attract
+    /// bottom edges and the height anchors attract top edges. Each edge snaps to its
+    /// nearest candidate because the anchor arrays carry no ordering guarantee. The
+    /// stroke's opposite edge then follows through stem width normalization, so a thin
+    /// stroke can never collapse onto its own anchor.
     /// </summary>
     /// <param name="options">The fitting parameters carrying the anchor heights.</param>
     private void SnapAnchors(in GridFitOptions options)
@@ -853,29 +894,65 @@ internal sealed class GlyphGridFitter
         for (int i = 0; i < this.edgeCount; i++)
         {
             ref Edge edge = ref this.edges[i];
-            if (edge.Dir == 1 && TrySnapAnchor(ref edge, 0F))
+            if (edge.Dir == 1)
             {
-                continue;
-            }
+                float best = 0F;
+                float bestDistance = MathF.Abs(edge.Pos);
 
-            if (edge.Dir != -1)
-            {
-                continue;
-            }
-
-            float[] topAnchors = options.TopAnchors;
-            for (int a = 0; a < topAnchors.Length; a++)
-            {
-                if (topAnchors[a] > 0F && TrySnapAnchor(ref edge, topAnchors[a] * options.AnchorScale))
+                float[] bottomAnchors = options.BottomAnchors;
+                for (int a = 0; a < bottomAnchors.Length; a++)
                 {
-                    break;
+                    if (bottomAnchors[a] >= 0F)
+                    {
+                        continue;
+                    }
+
+                    float anchor = bottomAnchors[a] * options.AnchorScale;
+                    float distance = MathF.Abs(edge.Pos - anchor);
+                    if (distance < bestDistance)
+                    {
+                        best = anchor;
+                        bestDistance = distance;
+                    }
+                }
+
+                TrySnapAnchor(ref edge, best);
+            }
+            else if (edge.Dir == -1)
+            {
+                float best = 0F;
+                float bestDistance = float.MaxValue;
+
+                float[] topAnchors = options.TopAnchors;
+                for (int a = 0; a < topAnchors.Length; a++)
+                {
+                    if (topAnchors[a] <= 0F)
+                    {
+                        continue;
+                    }
+
+                    float anchor = topAnchors[a] * options.AnchorScale;
+                    float distance = MathF.Abs(edge.Pos - anchor);
+                    if (distance < bestDistance)
+                    {
+                        best = anchor;
+                        bestDistance = distance;
+                    }
+                }
+
+                if (bestDistance != float.MaxValue)
+                {
+                    TrySnapAnchor(ref edge, best);
                 }
             }
         }
     }
 
     /// <summary>
-    /// Snaps one edge to a rounded anchor position when it sits within snapping range.
+    /// Snaps one edge to a whole pixel anchor position when it sits within snapping range.
+    /// Top edges take the ceiling of the anchor so an alignment height always earns its
+    /// full pixel row, stretching small strokes upward rather than truncating them; bottom
+    /// edges round to nearest, keeping the baseline exact and descender depths balanced.
     /// </summary>
     /// <param name="edge">The edge to snap.</param>
     /// <param name="anchor">The anchor height in pixels.</param>
@@ -887,9 +964,56 @@ internal sealed class GlyphGridFitter
             return false;
         }
 
-        edge.NewPos = MathF.Floor(anchor + 0.5F);
+        edge.NewPos = edge.Dir == -1 ? MathF.Ceiling(anchor - GridFitterTuning.AnchorCeilingFuzzPx) : MathF.Floor(anchor + 0.5F);
         edge.Fitted = true;
+        edge.Anchored = true;
         return true;
+    }
+
+    /// <summary>
+    /// Flattens overshoots onto their fitted alignment rows. Serif tips and curve extrema
+    /// drawn just past an alignment height are shifted rigidly by interpolation, so after
+    /// fitting they can poke one row beyond the snapped edge and light a stray pixel row.
+    /// Classic rasterizers collapse all ink within the zone onto the aligned row at small
+    /// sizes; any point that started within snapping range of an anchored edge and ended
+    /// beyond its fitted position clamps onto that position.
+    /// </summary>
+    /// <param name="pointCount">The number of outline points.</param>
+    private void SuppressOvershoots(int pointCount)
+    {
+        for (int e = 0; e < this.edgeCount; e++)
+        {
+            ref Edge edge = ref this.edges[e];
+            if (!edge.Anchored)
+            {
+                continue;
+            }
+
+            if (edge.Dir == -1)
+            {
+                float limit = edge.Pos + GridFitterTuning.AnchorSnapRangePx;
+                for (int p = 0; p < pointCount; p++)
+                {
+                    if (this.axisOriginal[p] > edge.Pos && this.axisOriginal[p] <= limit && this.axisCurrent[p] > edge.NewPos)
+                    {
+                        this.axisCurrent[p] = edge.NewPos;
+                        this.touched[p] = true;
+                    }
+                }
+            }
+            else
+            {
+                float limit = edge.Pos - GridFitterTuning.AnchorSnapRangePx;
+                for (int p = 0; p < pointCount; p++)
+                {
+                    if (this.axisOriginal[p] < edge.Pos && this.axisOriginal[p] >= limit && this.axisCurrent[p] < edge.NewPos)
+                    {
+                        this.axisCurrent[p] = edge.NewPos;
+                        this.touched[p] = true;
+                    }
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -1026,6 +1150,13 @@ internal sealed class GlyphGridFitter
             }
 
             float fittedWidth = width < GridFitterTuning.OnePixelWidthPx ? 1F : MathF.Floor(width + 0.5F);
+
+            // Sub pixel strokes must widen to a full pixel, so the flank movement that the
+            // widening itself demands is granted on top of the base cap. Reverting such a
+            // pair would leave one anchored flank moved and the other interpolated past it,
+            // inverting the stroke, which is far worse than the bounded extra movement.
+            float allowance = GridFitterTuning.MaxEdgeDeltaPx + MathF.Max(0F, 1F - width);
+
             float newLeft;
             float newRight;
             if (left.Fitted != right.Fitted)
@@ -1064,11 +1195,6 @@ internal sealed class GlyphGridFitter
                 continue;
             }
 
-            // Sub pixel strokes must widen to a full pixel, so the flank movement that the
-            // widening itself demands is granted on top of the base cap. Reverting such a
-            // pair would leave one anchored flank moved and the other interpolated past it,
-            // inverting the stroke, which is far worse than the bounded extra movement.
-            float allowance = GridFitterTuning.MaxEdgeDeltaPx + MathF.Max(0F, 1F - width);
             if (MathF.Abs(newLeft - left.Pos) > allowance || MathF.Abs(newRight - right.Pos) > allowance)
             {
                 continue;
@@ -1337,6 +1463,7 @@ internal sealed class GlyphGridFitter
         public sbyte Dir;
         public bool Round;
         public bool Fitted;
+        public bool Anchored;
     }
 
     private sealed class PooledObjectPolicy : IPooledObjectPolicy<GlyphGridFitter>

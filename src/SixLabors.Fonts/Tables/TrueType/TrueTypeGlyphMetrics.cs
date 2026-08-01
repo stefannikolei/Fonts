@@ -108,7 +108,7 @@ public partial class TrueTypeGlyphMetrics : FontGlyphMetrics
     /// <param name="hintingMode">The requested hinting mode.</param>
     /// <param name="advancePx">The advance width in whole device pixels.</param>
     /// <returns><see langword="true"/> if a hinted advance applies; otherwise, <see langword="false"/>.</returns>
-    internal bool TryGetHintedAdvanceWidth(float pointSize, float dpi, HintingMode hintingMode, out float advancePx)
+    internal override bool TryGetHintedAdvanceWidth(float pointSize, float dpi, HintingMode hintingMode, out float advancePx)
     {
         advancePx = 0F;
         if (this.GetHintingMode(hintingMode) != HintingMode.Full)
@@ -289,7 +289,7 @@ public partial class TrueTypeGlyphMetrics : FontGlyphMetrics
             // instructions left unfitted are fully fitted.
             GridFitAxisMode fitX = result == TrueTypeHintingResult.AppliedXY ? GridFitAxisMode.Rescue : GridFitAxisMode.Full;
             GridFitAxisMode fitY = result is TrueTypeHintingResult.None or TrueTypeHintingResult.Failed ? GridFitAxisMode.Full : GridFitAxisMode.Rescue;
-            GridFitOptions options = new(pixelSize, fitX, fitY, this.FontMetrics.GridFitTopAnchors, scale.Y);
+            GridFitOptions options = new(pixelSize, fitX, fitY, this.FontMetrics.GridFitTopAnchors, [], scale.Y);
             if (GlyphGridFitter.FitInPlace(ref clone, in options))
             {
                 clone.IsHinted = true;

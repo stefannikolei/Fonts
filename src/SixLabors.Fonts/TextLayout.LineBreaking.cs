@@ -103,8 +103,7 @@ internal static partial class TextLayout
             // the compatibility lists receive matching advances under any requested mode.
             ushort advanceWidth = position.AdvanceWidth;
             if (isHorizontalLayout
-                && glyphMetrics is TrueTypeGlyphMetrics trueTypeMetrics
-                && trueTypeMetrics.TryGetHintedAdvanceWidth(run.Font.Size, options.Dpi, options.HintingMode, out float hintedAdvancePx))
+                && glyphMetrics.TryGetHintedAdvanceWidth(run.Font.Size, options.Dpi, options.HintingMode, out float hintedAdvancePx))
             {
                 float rawScaledPPEM = options.Dpi * run.Font.Size;
                 float hintedUnits = hintedAdvancePx * glyphMetrics.UnitsPerEm * 72F / rawScaledPPEM;

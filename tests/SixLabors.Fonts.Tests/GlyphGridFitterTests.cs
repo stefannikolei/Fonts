@@ -20,7 +20,7 @@ public class GlyphGridFitterTests
     public void SnapsRectangleStemToWholePixels()
     {
         GlyphVector vector = CreateVector([[On(1.3F, 0F), On(1.3F, 5F), On(2.6F, 5F), On(2.6F, 0F)]]);
-        GridFitOptions options = new(8F, GridFitAxisMode.Full, GridFitAxisMode.None, [], 1F);
+        GridFitOptions options = new(8F, GridFitAxisMode.Full, GridFitAxisMode.None, [], [], 1F);
 
         Assert.True(GlyphGridFitter.FitInPlace(ref vector, in options));
 
@@ -45,7 +45,7 @@ public class GlyphGridFitterTests
             [On(0.8F, 0F), On(0.8F, 5F), On(1.7F, 5F), On(1.7F, 0F)],
             [On(3.1F, 0F), On(3.1F, 5F), On(4.0F, 5F), On(4.0F, 0F)]
         ]);
-        GridFitOptions options = new(8F, GridFitAxisMode.Full, GridFitAxisMode.None, [], 1F);
+        GridFitOptions options = new(8F, GridFitAxisMode.Full, GridFitAxisMode.None, [], [], 1F);
 
         Assert.True(GlyphGridFitter.FitInPlace(ref vector, in options));
 
@@ -66,7 +66,7 @@ public class GlyphGridFitterTests
             [On(0.8F, 0F), On(0.8F, 5F), On(1.7F, 5F), On(1.7F, 0F)],
             [On(2.3F, 0F), On(2.3F, 5F), On(3.2F, 5F), On(3.2F, 0F)]
         ]);
-        GridFitOptions options = new(8F, GridFitAxisMode.Full, GridFitAxisMode.None, [], 1F);
+        GridFitOptions options = new(8F, GridFitAxisMode.Full, GridFitAxisMode.None, [], [], 1F);
 
         Assert.True(GlyphGridFitter.FitInPlace(ref vector, in options));
 
@@ -82,7 +82,7 @@ public class GlyphGridFitterTests
     public void VerticalPassSnapsBaselineAndXHeight()
     {
         GlyphVector vector = CreateVector([[On(1F, -0.2F), On(1F, 4.7F), On(2F, 4.7F), On(2F, -0.2F)]]);
-        GridFitOptions options = new(8F, GridFitAxisMode.None, GridFitAxisMode.Full, [4.6F], 1F);
+        GridFitOptions options = new(8F, GridFitAxisMode.None, GridFitAxisMode.Full, [4.6F], [], 1F);
 
         Assert.True(GlyphGridFitter.FitInPlace(ref vector, in options));
 
@@ -101,7 +101,7 @@ public class GlyphGridFitterTests
     public void InterpolatesUntouchedPointsBetweenFittedEdges()
     {
         GlyphVector vector = CreateVector([[On(1.3F, 0F), On(1.3F, 5F), Off(1.95F, 6F), On(2.6F, 5F), On(2.6F, 0F)]]);
-        GridFitOptions options = new(8F, GridFitAxisMode.Full, GridFitAxisMode.None, [], 1F);
+        GridFitOptions options = new(8F, GridFitAxisMode.Full, GridFitAxisMode.None, [], [], 1F);
 
         Assert.True(GlyphGridFitter.FitInPlace(ref vector, in options));
 
@@ -125,7 +125,7 @@ public class GlyphGridFitterTests
         [
             [On(0F, 2.3F), On(0F, 2.6F), On(5F, 2.6F), On(5F, 2.3F)]
         ]);
-        GridFitOptions options = new(8F, GridFitAxisMode.None, GridFitAxisMode.Rescue, [], 1F);
+        GridFitOptions options = new(8F, GridFitAxisMode.None, GridFitAxisMode.Rescue, [], [], 1F);
 
         Assert.True(GlyphGridFitter.FitInPlace(ref vector, in options));
 
@@ -143,7 +143,7 @@ public class GlyphGridFitterTests
         [
             [On(0F, 2.3F), On(0F, 3.4F), On(5F, 3.4F), On(5F, 2.3F)]
         ]);
-        GridFitOptions options = new(8F, GridFitAxisMode.None, GridFitAxisMode.Rescue, [], 1F);
+        GridFitOptions options = new(8F, GridFitAxisMode.None, GridFitAxisMode.Rescue, [], [], 1F);
 
         Assert.False(GlyphGridFitter.FitInPlace(ref vector, in options));
 
@@ -157,7 +157,7 @@ public class GlyphGridFitterTests
     public void IsIdempotent()
     {
         GlyphVector vector = CreateVector([[On(1.3F, 0F), On(1.3F, 5F), On(2.6F, 5F), On(2.6F, 0F)]]);
-        GridFitOptions options = new(8F, GridFitAxisMode.Full, GridFitAxisMode.None, [], 1F);
+        GridFitOptions options = new(8F, GridFitAxisMode.Full, GridFitAxisMode.None, [], [], 1F);
 
         Assert.True(GlyphGridFitter.FitInPlace(ref vector, in options));
 

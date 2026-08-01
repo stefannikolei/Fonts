@@ -925,6 +925,25 @@ public abstract class FontGlyphMetrics
     }
 
     /// <summary>
+    /// Attempts to compute the whole pixel advance width for the glyph under full hinting.
+    /// Outline formats that grid fit under <see cref="HintingMode.Full"/> override this so
+    /// layout can accumulate whole pixel advances matching the fitted outlines. The base
+    /// implementation never applies: glyphs without fitted outlines keep their shaped
+    /// fractional advances. Implementations must not execute hinting or touch outline
+    /// caches, as this runs on the layout hot path.
+    /// </summary>
+    /// <param name="pointSize">The font size in pt units.</param>
+    /// <param name="dpi">The DPI (Dots Per Inch) to render/measure the glyph at</param>
+    /// <param name="hintingMode">The requested hinting mode.</param>
+    /// <param name="advancePx">The advance width in whole device pixels.</param>
+    /// <returns><see langword="true"/> if a hinted advance applies; otherwise, <see langword="false"/>.</returns>
+    internal virtual bool TryGetHintedAdvanceWidth(float pointSize, float dpi, HintingMode hintingMode, out float advancePx)
+    {
+        advancePx = 0F;
+        return false;
+    }
+
+    /// <summary>
     /// Gets the rotation matrix for the glyph based on the layout mode.
     /// </summary>
     /// <param name="mode">The glyph layout mode.</param>

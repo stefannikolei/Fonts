@@ -114,4 +114,13 @@ internal static class GridFitterTuning
     /// pulled apart by interpolation.
     /// </summary>
     public const float SatelliteRangePx = 0.5F;
+
+    /// <summary>
+    /// The tolerance subtracted before taking the ceiling of a top anchor. An anchor that
+    /// already sits on a whole pixel must stay there; without the tolerance, floating
+    /// point noise above the integer would push such an anchor a full row higher. Kept
+    /// tight: an x-height just five hundredths over the integer still earns its extra row
+    /// in classic rasterizer output.
+    /// </summary>
+    public const float AnchorCeilingFuzzPx = 0.02F;
 }

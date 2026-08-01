@@ -170,6 +170,41 @@ internal class CffGlyphMetrics : FontGlyphMetrics
     }
 
     /// <summary>
+    /// Attempts to compute the whole pixel advance width for the glyph under full hinting.
+    /// CFF fonts carry no device advance records, so the design advance rounds linearly to
+    /// whole pixels at the integer em size, matching the grid fitted outlines. No outline
+    /// is built and no cache is touched, so this is safe on the layout hot path.
+    /// </summary>
+    /// <param name="pointSize">The font size in pt units.</param>
+    /// <param name="dpi">The DPI (Dots Per Inch) to render/measure the glyph at</param>
+    /// <param name="hintingMode">The requested hinting mode.</param>
+    /// <param name="advancePx">The advance width in whole device pixels.</param>
+    /// <returns><see langword="true"/> if a hinted advance applies; otherwise, <see langword="false"/>.</returns>
+    internal override bool TryGetHintedAdvanceWidth(float pointSize, float dpi, HintingMode hintingMode, out float advancePx)
+    {
+        advancePx = 0F;
+        if (hintingMode != HintingMode.Full)
+        {
+            return false;
+        }
+
+        // Sub and superscript metrics shrink the glyph by adjusting the scale factor while
+        // the em square stays at the base size, so layout maps font units to pixels through
+        // a different ratio than the base em. Whole pixel advances resolved against the
+        // base em would be rescaled by that ratio on the way back into layout units,
+        // advancing the pen by the wrong amount, so those runs keep their shaped
+        // fractional advances.
+        if (this.ScaleFactor.X != this.UnitsPerEm * 72F)
+        {
+            return false;
+        }
+
+        float scaledPPEM = this.GetScaledSize(pointSize, dpi, hintingMode);
+        advancePx = MathF.Floor((this.AdvanceWidth * scaledPPEM / (this.UnitsPerEm * 72F)) + 0.5F);
+        return true;
+    }
+
+    /// <summary>
     /// Gets the buffered outline for the given size and mode, building and caching it on
     /// first use. Exposed for diagnostics and tests.
     /// </summary>
@@ -209,7 +244,8 @@ internal class CffGlyphMetrics : FontGlyphMetrics
         {
             GridFitAxisMode fitX = key.HintingMode == HintingMode.Full ? GridFitAxisMode.Full : GridFitAxisMode.None;
             float[] topAnchors = this.glyphData.HintingValues?.BlueFlats ?? [];
-            GridFitOptions options = new(pixelSize, fitX, GridFitAxisMode.Full, topAnchors, scale.Y);
+            float[] bottomAnchors = this.glyphData.HintingValues?.OtherBlueFlats ?? [];
+            GridFitOptions options = new(pixelSize, fitX, GridFitAxisMode.Full, topAnchors, bottomAnchors, scale.Y);
             if (GlyphGridFitter.FitInPlace(outline.Points, outline.ContourEnds, outline.VerticalStems, outline.HorizontalStems, in options))
             {
                 outline.IsFitted = true;

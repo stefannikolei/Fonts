@@ -64,6 +64,24 @@ internal sealed class CffHintingValues
 
             this.BlueFlats = flats;
         }
+
+        // Descender zones run below the baseline; each contributes its flat edge, the
+        // upper value of the pair, which descender bottoms share once overshoots are
+        // suppressed.
+        if (otherBlues.Length < 2)
+        {
+            this.OtherBlueFlats = [];
+        }
+        else
+        {
+            float[] flats = new float[otherBlues.Length / 2];
+            for (int i = 0; i < flats.Length; i++)
+            {
+                flats[i] = otherBlues[(i * 2) + 1];
+            }
+
+            this.OtherBlueFlats = flats;
+        }
     }
 
     /// <summary>
@@ -71,6 +89,12 @@ internal sealed class CffHintingValues
     /// grid fitter's anchor list.
     /// </summary>
     public float[] BlueFlats { get; }
+
+    /// <summary>
+    /// Gets the flat edges of the descender alignment zones in design units, precomputed
+    /// for the grid fitter's anchor list.
+    /// </summary>
+    public float[] OtherBlueFlats { get; }
 
     /// <summary>
     /// Gets the baseline and horizontal alignment zone pairs, lowest first.

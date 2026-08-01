@@ -16,13 +16,15 @@ internal readonly struct GridFitOptions
     /// <param name="fitX">The fitting mode for the horizontal axis.</param>
     /// <param name="fitY">The fitting mode for the vertical axis.</param>
     /// <param name="topAnchors">The alignment heights that attract top edges, such as the x-height and cap height for TrueType or the blue zone flats for CFF. The baseline at zero always attracts bottom edges. The array is font level state and is never modified.</param>
+    /// <param name="bottomAnchors">The alignment depths below the baseline that attract bottom edges, such as the descender zone flats for CFF. The array is font level state and is never modified.</param>
     /// <param name="anchorScale">The factor converting the anchor heights into pixels, letting callers share one design unit anchor array across all sizes without allocating.</param>
-    public GridFitOptions(float pixelsPerEm, GridFitAxisMode fitX, GridFitAxisMode fitY, float[] topAnchors, float anchorScale)
+    public GridFitOptions(float pixelsPerEm, GridFitAxisMode fitX, GridFitAxisMode fitY, float[] topAnchors, float[] bottomAnchors, float anchorScale)
     {
         this.PixelsPerEm = pixelsPerEm;
         this.FitX = fitX;
         this.FitY = fitY;
         this.TopAnchors = topAnchors;
+        this.BottomAnchors = bottomAnchors;
         this.AnchorScale = anchorScale;
     }
 
@@ -45,6 +47,12 @@ internal readonly struct GridFitOptions
     /// Gets the alignment heights that attract top edges. Zero valued entries are ignored.
     /// </summary>
     public float[] TopAnchors { get; }
+
+    /// <summary>
+    /// Gets the alignment depths below the baseline that attract bottom edges. Entries at
+    /// or above zero are ignored.
+    /// </summary>
+    public float[] BottomAnchors { get; }
 
     /// <summary>
     /// Gets the factor converting the anchor heights into pixels.

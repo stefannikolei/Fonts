@@ -2,10 +2,12 @@
 // Licensed under the Six Labors Split License.
 
 using System.Numerics;
+using System.Text;
 using SixLabors.Fonts.Rendering;
 using SixLabors.Fonts.Tables.TrueType;
 using SixLabors.Fonts.Tables.TrueType.Glyphs;
 using SixLabors.Fonts.Tables.TrueType.Hinting;
+using SixLabors.Fonts.Unicode;
 
 namespace SixLabors.Fonts.Tests;
 
@@ -224,6 +226,56 @@ public class GlyphGridFitterTests
         {
             Assert.Equal(none[i].X, standard[i].X);
         }
+    }
+
+    // Renders a small size ladder of a professionally hinted CFF face under each hinting
+    // mode so the fitting behavior is visually pinned: unhinted, vertical only fitting
+    // with even baselines and x-heights, and full grid fitting with crisp stems.
+    [Theory]
+    [InlineData(HintingMode.None)]
+    [InlineData(HintingMode.Standard)]
+    [InlineData(HintingMode.Full)]
+    public void CffHinting_VisualOutput(HintingMode hintingMode)
+    {
+        const string copy = "Hamburgefonstiv 0123456789";
+        FontCollection collection = new();
+        FontFamily family = collection.Add(TestFonts.PlantinStdRegularFile);
+        Font font = family.CreateFont(6);
+
+        int fontSize = 6;
+        int start = 0;
+        int end = copy.GetGraphemeCount();
+        int length = (end - start) + 1;
+        List<TextRun> textRuns = [];
+        StringBuilder stringBuilder = new();
+        while (fontSize <= 16)
+        {
+            stringBuilder.AppendLine(copy);
+            TextRun run = new()
+            {
+                Start = start,
+                End = end,
+                Font = new Font(font, fontSize),
+            };
+
+            textRuns.Add(run);
+            fontSize += 1;
+            start += length;
+            end += length;
+        }
+
+        string text = stringBuilder.ToString();
+
+        TextOptions options = new(font)
+        {
+            TextRuns = textRuns,
+            HintingMode = hintingMode,
+        };
+
+        TextLayoutTestUtilities.TestLayout(
+            text,
+            options,
+            properties: hintingMode);
     }
 
     private static List<Vector2> RenderFreshCollection(string path, string text, float size, HintingMode mode)

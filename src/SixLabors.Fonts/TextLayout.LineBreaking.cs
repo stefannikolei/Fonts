@@ -2,6 +2,7 @@
 // Licensed under the Six Labors Split License.
 
 using System.Numerics;
+using SixLabors.Fonts.Tables.TrueType;
 using SixLabors.Fonts.Unicode;
 
 namespace SixLabors.Fonts;
@@ -95,7 +96,23 @@ internal static partial class TextLayout
                 shapedText.LayoutMode,
                 options.ColorFontSupport);
 
-            glyphStorage[i] = new(glyphMetrics, position.AdvanceWidth, position.AdvanceHeight, position.Offset, run.TextRun);
+            // Full hinting accumulates whole pixel advances so glyph spacing stays even on
+            // the pixel grid. The base advance is replaced by its hinted counterpart while
+            // any shaping adjustment such as kerning is preserved on top. The metrics
+            // resolve the effective mode themselves so fonts forced onto full hinting by
+            // the compatibility lists receive matching advances under any requested mode.
+            ushort advanceWidth = position.AdvanceWidth;
+            if (isHorizontalLayout
+                && glyphMetrics is TrueTypeGlyphMetrics trueTypeMetrics
+                && trueTypeMetrics.TryGetHintedAdvanceWidth(run.Font.Size, options.Dpi, options.HintingMode, out float hintedAdvancePx))
+            {
+                float rawScaledPPEM = options.Dpi * run.Font.Size;
+                float hintedUnits = hintedAdvancePx * glyphMetrics.UnitsPerEm * 72F / rawScaledPPEM;
+                float substituted = hintedUnits + (position.AdvanceWidth - glyphMetrics.AdvanceWidth);
+                advanceWidth = (ushort)Math.Clamp(MathF.Floor(substituted + 0.5F), 0F, ushort.MaxValue);
+            }
+
+            glyphStorage[i] = new(glyphMetrics, advanceWidth, position.AdvanceHeight, position.Offset, run.TextRun);
         }
 
         // Word-boundary segments are prepared with the logical line, while grapheme

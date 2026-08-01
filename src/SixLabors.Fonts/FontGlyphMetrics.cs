@@ -495,11 +495,11 @@ public abstract class FontGlyphMetrics
         glyphOrigin *= dpi;
         decorationOrigin *= dpi;
         layoutAdvance *= dpi;
-        float scaledPPEM = this.GetScaledSize(pointSize, dpi);
+        float scaledPPEM = this.GetScaledSize(pointSize, dpi, hintingMode);
 
         Matrix3x2 rotation = GetRotationMatrix(mode);
         FontRectangle box = this.GetBoundingBox(mode, glyphOrigin, scaledPPEM, textRun, positionOffset, positionedAdvance);
-        GlyphRendererParameters parameters = new(this, textRun, pointSize, dpi, mode, graphemeIndex);
+        GlyphRendererParameters parameters = new(this, textRun, pointSize, dpi, mode, graphemeIndex, hintingMode);
 
         if (!renderer.BeginGlyph(in box, in parameters))
         {
@@ -909,8 +909,9 @@ public abstract class FontGlyphMetrics
     /// </summary>
     /// <param name="pointSize">The font size in pt units.</param>
     /// <param name="dpi">The DPI (Dots Per Inch) to render/measure the glyph at</param>
+    /// <param name="hintingMode">The hinting mode, which may constrain the size to whole pixels.</param>
     /// <returns>The <see cref="float"/>.</returns>
-    internal float GetScaledSize(float pointSize, float dpi)
+    internal virtual float GetScaledSize(float pointSize, float dpi, HintingMode hintingMode)
     {
         float scaledPPEM = dpi * pointSize;
         bool forcePPEMToInt = (this.FontMetrics.HeadFlags & HeadTable.HeadFlags.ForcePPEMToInt) != 0;

@@ -27,6 +27,28 @@ internal partial class StreamFontMetrics
     // Size tied to logical CPU count.
     private readonly ObjectPool<TrueTypeInterpreter>? interpreterPool;
 
+    /// <summary>
+    /// Gets the exception that aborted the most recent failed glyph program, or
+    /// <see langword="null"/> when no program has failed. Diagnostic only: written on the
+    /// hinting path without synchronization.
+    /// </summary>
+    public Exception? LastHintingFault { get; private set; }
+
+    /// <summary>
+    /// Attempts to resolve the precomputed device advance width for the glyph at the given
+    /// pixel size from the 'hdmx' table, avoiding any instruction execution.
+    /// </summary>
+    /// <param name="glyphId">The glyph identifier.</param>
+    /// <param name="ppem">The pixels per em to look up.</param>
+    /// <param name="advance">The advance width in whole device pixels.</param>
+    /// <returns><see langword="true"/> if a device record covers the size; otherwise, <see langword="false"/>.</returns>
+    internal bool TryGetDeviceAdvanceWidth(ushort glyphId, int ppem, out byte advance)
+    {
+        advance = 0;
+        HdmxTable? hdmx = this.trueTypeFontTables?.Hdmx;
+        return hdmx is not null && hdmx.TryGetAdvance(ppem, glyphId, out advance);
+    }
+
     private TrueTypeInterpreter CreateInterpreter()
     {
         TrueTypeFontTables tables = this.trueTypeFontTables!;
@@ -48,16 +70,16 @@ internal partial class StreamFontMetrics
         return interpreter;
     }
 
-    internal void ApplyTrueTypeHinting(HintingMode hintingMode, FontGlyphMetrics metrics, ref GlyphVector glyphVector, Vector2 scaleXY, float pixelSize)
+    internal TrueTypeHintingResult ApplyTrueTypeHinting(HintingMode hintingMode, FontGlyphMetrics metrics, ref GlyphVector glyphVector, Vector2 scaleXY, float pixelSize)
     {
         if (hintingMode == HintingMode.None || this.outlineType != OutlineType.TrueType)
         {
-            return;
+            return TrueTypeHintingResult.None;
         }
 
         if (this.trueTypeFontTables is null || this.interpreterPool is null)
         {
-            return;
+            return TrueTypeHintingResult.None;
         }
 
         TrueTypeFontTables tables = this.trueTypeFontTables;
@@ -69,6 +91,16 @@ internal partial class StreamFontMetrics
             PrepTable? prep = tables.Prep;
             float hintingScaleFactor = pixelSize / this.UnitsPerEm;
 
+            // Sub and superscript metrics shrink the outline by adjusting the scale factor
+            // while the requested pixel size still describes the base em. Control values and
+            // delta triggers must match the scale the outline was actually transformed by,
+            // so both derive from that scale when the two disagree.
+            if (metrics.ScaleFactor.Y != this.UnitsPerEm * 72F)
+            {
+                hintingScaleFactor = scaleXY.Y;
+                pixelSize = this.UnitsPerEm * scaleXY.Y;
+            }
+
             // Apply cvar deltas to CVT values for variable fonts before hinting.
             short[]? cvtValues = cvt?.ControlValues;
             if (cvtValues is not null && this.GlyphVariationProcessor is not null)
@@ -79,16 +111,30 @@ internal partial class StreamFontMetrics
             // Provide normalized axis coordinates for the GETVARIATION opcode.
             interpreter.SetNormalizedAxisCoordinates(this.GlyphVariationProcessor?.NormalizedCoordinates);
 
-            interpreter.SetControlValueTable(cvtValues, hintingScaleFactor, pixelSize, prep?.Instructions);
+            interpreter.SetControlValueTable(cvtValues, hintingScaleFactor, pixelSize, prep?.Instructions, hintingMode);
 
+            // Phantom points are passed unrounded: their original positions must keep the
+            // true fractional metrics because instructions measure signed distances against
+            // them. Only the current positions of the dependent phantoms are rounded, inside
+            // the interpreter, before the glyph program runs.
             Bounds bounds = glyphVector.Bounds;
 
-            Vector2 pp1 = new(MathF.Round(bounds.Min.X - (metrics.LeftSideBearing * scaleXY.X)), 0);
-            Vector2 pp2 = new(MathF.Round(pp1.X + (metrics.AdvanceWidth * scaleXY.X)), 0);
-            Vector2 pp3 = new(0, MathF.Round(bounds.Max.Y + (metrics.TopSideBearing * scaleXY.Y)));
-            Vector2 pp4 = new(0, MathF.Round(pp3.Y - (metrics.AdvanceHeight * scaleXY.Y)));
+            Vector2 pp1 = new(bounds.Min.X - (metrics.LeftSideBearing * scaleXY.X), 0);
+            Vector2 pp2 = new(pp1.X + (metrics.AdvanceWidth * scaleXY.X), 0);
+            Vector2 pp3 = new(0, bounds.Max.Y + (metrics.TopSideBearing * scaleXY.Y));
+            Vector2 pp4 = new(0, pp3.Y - (metrics.AdvanceHeight * scaleXY.Y));
 
-            GlyphVector.Hint(hintingMode, ref glyphVector, interpreter, pp1, pp2, pp3, pp4);
+            if (!GlyphVector.Hint(hintingMode, ref glyphVector, interpreter, pp1, pp2, pp3, pp4))
+            {
+                // The fault must be read before the interpreter returns to the pool. A
+                // faulted program leaves the glyph unhinted by design; the exception is
+                // retained so diagnostics can identify which instruction stream failed.
+                this.LastHintingFault = interpreter.LastError;
+                return TrueTypeHintingResult.Failed;
+            }
+
+            // The touch flags must be read before the interpreter returns to the pool.
+            return interpreter.LastRunTouchedX ? TrueTypeHintingResult.AppliedXY : TrueTypeHintingResult.AppliedY;
         }
         finally
         {
@@ -111,6 +157,9 @@ internal partial class StreamFontMetrics
         FpgmTable? fpgm = reader.TryGetTable<FpgmTable>();
         PrepTable? prep = reader.TryGetTable<PrepTable>();
         CvtTable? cvt = reader.TryGetTable<CvtTable>();
+
+        // hdmx depends on the glyph count from maxp, so it cannot be auto-loaded via TryGetTable.
+        HdmxTable? hdmx = HdmxTable.Load(reader, maxp.GlyphCount);
         IndexLocationTable loca = reader.GetTable<IndexLocationTable>();
         GlyphTable glyf = reader.GetTable<GlyphTable>();
         KerningTable? kern = reader.TryGetTable<KerningTable>();
@@ -153,6 +202,7 @@ internal partial class StreamFontMetrics
             Fpgm = fpgm,
             Prep = prep,
             Cvt = cvt,
+            Hdmx = hdmx,
             Kern = kern,
             Vhea = vhea,
             Vmtx = vmtx,

@@ -142,6 +142,12 @@ internal sealed class TrueTypeFontTables : IFontTables
     public FpgmTable? Fpgm { get; set; }
 
     /// <summary>
+    /// Gets or sets the optional 'hdmx' (Horizontal Device Metrics) table carrying
+    /// precomputed device advance widths per pixel size.
+    /// </summary>
+    public HdmxTable? Hdmx { get; set; }
+
+    /// <summary>
     /// Gets or sets the 'glyf' (Glyph Data) table containing TrueType glyph outlines.
     /// </summary>
     public GlyphTable Glyf { get; set; }

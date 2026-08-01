@@ -923,7 +923,7 @@ public static class TextMeasurer
         return metrics.GetBoundingBox(
             layoutMode,
             GetAnchoredOrigin(options, layoutMode),
-            metrics.GetScaledSize(options.Font.Size, options.Dpi),
+            metrics.GetScaledSize(options.Font.Size, options.Dpi, options.HintingMode),
             null,
             Vector2.Zero,
             new Vector2(metrics.AdvanceWidth, metrics.AdvanceHeight));
@@ -939,7 +939,7 @@ public static class TextMeasurer
     /// <returns>The zero-based logical advance rectangle.</returns>
     private static FontRectangle GetGlyphAdvance(FontGlyphMetrics metrics, GlyphOptions options)
     {
-        float scaledSize = metrics.GetScaledSize(options.Font.Size, options.Dpi);
+        float scaledSize = metrics.GetScaledSize(options.Font.Size, options.Dpi, options.HintingMode);
         Vector2 scale = new(scaledSize / metrics.ScaleFactor.X, scaledSize / metrics.ScaleFactor.Y);
         float emHeight = metrics.UnitsPerEm * scale.Y;
 

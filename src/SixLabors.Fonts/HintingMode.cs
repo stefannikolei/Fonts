@@ -17,5 +17,13 @@ public enum HintingMode
     /// <summary>
     /// Hint the glyph using standard configuration.
     /// </summary>
-    Standard
+    Standard,
+
+    /// <summary>
+    /// Hint the glyph using the complete horizontal and vertical instruction set.
+    /// Glyph outlines and origins are aligned to the pixel grid on both axes, producing
+    /// the sharpest results at small sizes at the cost of shape fidelity and up to half a
+    /// pixel of inter-glyph spacing variation. Measured layout is unaffected.
+    /// </summary>
+    Full
 }

@@ -19,13 +19,20 @@ namespace SixLabors.Fonts.Tables.TrueType.Hinting;
 /// documentation of FreeType's subpixel hinting engines, including the v40 "minimal" interpreter.
 ///
 /// <para>
-/// This implementation matches the behavior of FreeType's v40 subpixel hinting interpreter,
-/// with horizontal hinting disabled and full vertical TrueType instruction processing preserved.
-/// Backward compatibility mode is active by default, exactly as in FreeType's minimal (v40)
-/// engine: X-axis moves are ignored, no point moves after both IUP calls, and SHPIX/DELTAP
-/// execute only in their gated forms. Fonts opt out per FreeType's rules by executing
-/// INSTCTRL selector 3 (the native ClearType waiver) in the prep program, or temporarily
-/// within a single glyph program.
+/// In <see cref="HintingMode.Standard"/> this implementation matches the behavior of FreeType's
+/// v40 subpixel hinting interpreter, with horizontal hinting disabled and full vertical TrueType
+/// instruction processing preserved. Backward compatibility mode is active by default, exactly as
+/// in FreeType's minimal (v40) engine: X-axis moves are ignored, no point moves after both IUP
+/// calls, and SHPIX/DELTAP execute only in their gated forms. Fonts opt out per FreeType's rules
+/// by executing INSTCTRL selector 3 (the native ClearType waiver) in the prep program, or
+/// temporarily within a single glyph program.
+/// </para>
+///
+/// <para>
+/// In <see cref="HintingMode.Full"/> the backward compatibility restrictions are lifted entirely,
+/// matching FreeType's behavior when subpixel hinting is disabled for a mono render target:
+/// instructions move points freely on both axes and GETINFO reports the v35 grayscale identity,
+/// so fonts execute their classic bidirectional grid fitting branches.
 /// </para>
 ///
 /// <para>
@@ -63,6 +70,11 @@ internal partial class TrueTypeInterpreter
     private int ppem;
     private int callStackSize;
 
+    // Active hinting mode. Full mode lifts the v40 backward compatibility movement
+    // restrictions and reports a v35 grayscale identity through GETINFO. The mode is
+    // part of the prep memoization key because prep programs branch on GETINFO.
+    private HintingMode hintingMode = HintingMode.Standard;
+
     // Dot product of freedom and projection vectors, used to decompose
     // scalar distances into movement along the freedom vector.
     private float fdotp;
@@ -97,6 +109,13 @@ internal partial class TrueTypeInterpreter
     private Zone zp2;
     private Zone points;
     private Zone twilight;
+
+    // Interpreter-owned glyph zone buffers, grown once and reused for every glyph so
+    // hinting performs no per-glyph allocation. The buffers may exceed the live point
+    // count, which the zone tracks separately.
+    private ControlPoint[] glyphZoneCurrent = [];
+    private ControlPoint[] glyphZoneOriginal = [];
+    private TouchState[] glyphZoneTouch = [];
 
     private static readonly float Sqrt2Over2 = (float)(Math.Sqrt(2) / 2);
     private const int MaxCallStack = 128;
@@ -136,6 +155,48 @@ internal partial class TrueTypeInterpreter
     }
 
     /// <summary>
+    /// Gets the exception that aborted the most recent glyph program, or <see langword="null"/>
+    /// when it completed. Execution faults leave the glyph unhinted by design; the fault is
+    /// retained so diagnostics can distinguish a failed program from an absent one.
+    /// </summary>
+    public Exception? LastError { get; private set; }
+
+    /// <summary>
+    /// Gets a value indicating whether the most recent successful glyph program marked any
+    /// outline point as touched on the X axis, excluding the four phantom points. Under
+    /// full hinting a touch implies an applied movement, so this reports whether the font's
+    /// own instructions grid fitted the horizontal axis.
+    /// </summary>
+    public bool LastRunTouchedX { get; private set; }
+
+    /// <summary>
+    /// Gets a value indicating whether the most recent successful glyph program marked any
+    /// outline point as touched on the Y axis, excluding the four phantom points.
+    /// </summary>
+    public bool LastRunTouchedY { get; private set; }
+
+    /// <summary>
+    /// Gets the buffer holding the most recent glyph zone points, hinted in place. Only the
+    /// first <see cref="GlyphZonePointCount"/> entries are live, with the four phantom
+    /// points last; the buffer is reused by the next glyph program.
+    /// </summary>
+    public ControlPoint[] GlyphZonePoints => this.glyphZoneCurrent;
+
+    /// <summary>
+    /// Gets the number of live points in <see cref="GlyphZonePoints"/>, including the four
+    /// phantom points.
+    /// </summary>
+    public int GlyphZonePointCount { get; private set; }
+
+    /// <summary>
+    /// Gets a value indicating whether point movement is free of the v40 backward
+    /// compatibility restrictions. Movement is unrestricted in full hinting mode and
+    /// when a font has executed the INSTCTRL native ClearType waiver, which may be
+    /// toggled mid glyph program, so this must remain a dynamic check.
+    /// </summary>
+    private bool IsMovementUnrestricted => this.hintingMode == HintingMode.Full || (this.state.InstructionControl & InstructionControlFlags.NativeClearType) != 0;
+
+    /// <summary>
     /// Sets the normalized axis coordinates for variable font hinting.
     /// These are used by the GETVARIATION and GETINFO instructions.
     /// </summary>
@@ -146,6 +207,9 @@ internal partial class TrueTypeInterpreter
     /// <summary>
     /// Executes the font program (fpgm) to populate function definitions (FDEF/IDEF).
     /// This must be called once per font before any CVT or glyph programs are executed.
+    /// The font program runs once per interpreter instance regardless of hinting mode:
+    /// FDEF bodies are static bytecode and any storage or twilight side effects are
+    /// discarded before each prep execution, so no mode dependent state can leak from it.
     /// </summary>
     /// <param name="instructions">The raw font program bytecode.</param>
     public void InitializeFunctionDefs(byte[] instructions)
@@ -161,12 +225,15 @@ internal partial class TrueTypeInterpreter
     /// <param name="scale">The scale factor to apply to CVT entries (units-per-em to pixels).</param>
     /// <param name="ppem">The pixels-per-em value at the current size.</param>
     /// <param name="cvProgram">The raw prep program bytecode, or <see langword="null"/> if absent.</param>
-    public void SetControlValueTable(short[]? cvt, float scale, float ppem, byte[]? cvProgram)
+    /// <param name="mode">The hinting mode governing movement restrictions and the GETINFO identity.</param>
+    public void SetControlValueTable(short[]? cvt, float scale, float ppem, byte[]? cvProgram, HintingMode mode)
     {
-        if (this.scale == scale)
+        if (this.scale == scale && this.hintingMode == mode)
         {
             return;
         }
+
+        this.hintingMode = mode;
 
         // A missing CVT table must not skip the prep program: fonts may carry a prep
         // program without control values, and prep still establishes the graphics state,
@@ -281,17 +348,21 @@ internal partial class TrueTypeInterpreter
     /// inhibited by the current interpreter state. If the instructions are malformed or an error occurs during
     /// execution, the method returns <see langword="false"/> and the glyph outline remains unhinted.
     /// </remarks>
-    /// <param name="controlPoints">An array of control points representing the glyph's outline to be hinted.</param>
+    /// <param name="glyphPoints">The glyph's outline control points, excluding phantom points.</param>
+    /// <param name="pp1">The first phantom point at the true fractional metrics.</param>
+    /// <param name="pp2">The second phantom point at the true fractional metrics.</param>
+    /// <param name="pp3">The third phantom point at the true fractional metrics.</param>
+    /// <param name="pp4">The fourth phantom point at the true fractional metrics.</param>
     /// <param name="endPoints">A read-only list of indices indicating the end points of each contour in the glyph.</param>
     /// <param name="instructions">A read-only memory buffer containing the TrueType hinting instructions to execute.</param>
     /// <param name="isComposite">Indicates whether the glyph is a composite glyph. Set to <see langword="true"/> for composite glyphs; otherwise, <see langword="false"/>.</param>
     /// <returns><see langword="true"/> if hinting was successfully applied; otherwise, <see langword="false"/>.</returns>
-    public bool TryHintGlyph(
-        ControlPoint[] controlPoints,
-        IReadOnlyList<ushort> endPoints,
-        ReadOnlyMemory<byte> instructions,
-        bool isComposite)
+    public bool TryHintGlyph(IList<ControlPoint> glyphPoints, Vector2 pp1, Vector2 pp2, Vector2 pp3, Vector2 pp4, IReadOnlyList<ushort> endPoints, ReadOnlyMemory<byte> instructions, bool isComposite)
     {
+        this.LastError = null;
+        this.LastRunTouchedX = false;
+        this.LastRunTouchedY = false;
+
         if (instructions.Length == 0)
         {
             return false;
@@ -305,9 +376,34 @@ internal partial class TrueTypeInterpreter
 
         try
         {
+            // Stage the outline and phantom points into the interpreter owned glyph zone
+            // buffers, which grow once and are reused for every subsequent glyph.
+            int count = glyphPoints.Count + 4;
+            this.EnsureGlyphZoneCapacity(count);
+            ControlPoint[] current = this.glyphZoneCurrent;
+            for (int i = 0; i < glyphPoints.Count; i++)
+            {
+                current[i] = glyphPoints[i];
+            }
+
+            current[count - 4] = new ControlPoint(pp1, false);
+            current[count - 3] = new ControlPoint(pp2, false);
+            current[count - 2] = new ControlPoint(pp3, false);
+            current[count - 1] = new ControlPoint(pp4, false);
+            current.AsSpan(0, count).CopyTo(this.glyphZoneOriginal);
+            Array.Clear(this.glyphZoneTouch, 0, count);
+            this.GlyphZonePointCount = count;
+
             // Save contours and points
             this.contours = endPoints;
-            this.zp0 = this.zp1 = this.zp2 = this.points = new Zone(controlPoints, isTwilight: false);
+            this.zp0 = this.zp1 = this.zp2 = this.points = new Zone(current, this.glyphZoneOriginal, this.glyphZoneTouch, count);
+
+            // FreeType TT_Hint_Glyph: the dependent phantom points, horizontal advance and
+            // vertical advance, are rounded to the grid in their current positions only.
+            // Original positions stay at the true fractional metrics so instructions that
+            // measure signed distances against a phantom resolve the correct direction.
+            current[count - 3].Point.X = MathF.Floor(current[count - 3].Point.X + 0.5F);
+            current[count - 1].Point.Y = MathF.Floor(current[count - 1].Point.Y + 0.5F);
 
             // reset all of our shared state
             this.state = this.cvtState;
@@ -348,7 +444,7 @@ internal partial class TrueTypeInterpreter
 
 #if HINTING_TRACE
             this.traceLog.Clear();
-            this.traceLog.AppendLine(System.FormattableString.Invariant($"=== GLYPH {this.traceGlyphIndex++} pts={controlPoints.Length - 4} composite={isComposite} ==="));
+            this.traceLog.AppendLine(System.FormattableString.Invariant($"=== GLYPH {this.traceGlyphIndex++} pts={count - 4} composite={isComposite} ==="));
 #endif
 
             this.stack.Clear();
@@ -361,7 +457,7 @@ internal partial class TrueTypeInterpreter
             this.insCounter = 0;
             this.loopcallCounter = 0;
             this.negJumpCounter = 0;
-            int nPoints = controlPoints.Length;
+            int nPoints = count;
             int cvtSize = this.controlValueTable.Length;
             if (nPoints > 0)
             {
@@ -391,17 +487,55 @@ internal partial class TrueTypeInterpreter
             System.Console.Error.Write(this.traceLog);
 #endif
 
+            // Record which axes the program marked touched on the outline itself. The four
+            // appended phantom points are excluded: advance adjustments alone do not
+            // constitute outline grid fitting.
+            TouchState[] touchStates = this.points.TouchState;
+            int outlinePointCount = count - 4;
+            bool touchedX = false;
+            bool touchedY = false;
+            for (int i = 0; i < outlinePointCount && !(touchedX && touchedY); i++)
+            {
+                touchedX |= (touchStates[i] & TouchState.X) != 0;
+                touchedY |= (touchStates[i] & TouchState.Y) != 0;
+            }
+
+            this.LastRunTouchedX = touchedX;
+            this.LastRunTouchedY = touchedY;
+
             return true;
         }
+#if HINTING_TRACE
         catch (Exception)
         {
-#if HINTING_TRACE
             System.Console.Error.Write(this.traceLog);
 
             // Rethrow to diagnose hinting failures.
             throw;
-#endif
+        }
+#else
+        catch (Exception ex)
+        {
+            this.LastError = ex;
             return false;
+        }
+#endif
+    }
+
+    /// <summary>
+    /// Grows the interpreter owned glyph zone buffers to hold at least the given point
+    /// count. Growth doubles so repeated hinting reaches a steady state with no
+    /// per-glyph allocation.
+    /// </summary>
+    /// <param name="count">The number of points the zone must hold, including phantoms.</param>
+    private void EnsureGlyphZoneCapacity(int count)
+    {
+        if (this.glyphZoneCurrent.Length < count)
+        {
+            int capacity = Math.Max(count, Math.Max(64, this.glyphZoneCurrent.Length * 2));
+            this.glyphZoneCurrent = new ControlPoint[capacity];
+            this.glyphZoneOriginal = new ControlPoint[capacity];
+            this.glyphZoneTouch = new TouchState[capacity];
         }
     }
 
@@ -423,7 +557,7 @@ internal partial class TrueTypeInterpreter
             twOriginal[i].Point = default;
         }
 
-        Array.Clear(this.twilight.TouchState, 0, this.twilight.TouchState.Length);
+        Array.Clear(this.twilight.TouchState, 0, this.twilight.Count);
     }
 
     /// <summary>
@@ -887,7 +1021,7 @@ internal partial class TrueTypeInterpreter
                 case OpCode.GC0:
                 {
                     int pointIndex = this.stack.Pop();
-                    if ((uint)pointIndex >= (uint)this.zp2.Current.Length)
+                    if ((uint)pointIndex >= (uint)this.zp2.Count)
                     {
                         this.stack.Push(0);
                         break;
@@ -900,7 +1034,7 @@ internal partial class TrueTypeInterpreter
                 case OpCode.GC1:
                 {
                     int pointIndex = this.stack.Pop();
-                    if ((uint)pointIndex >= (uint)this.zp2.Current.Length)
+                    if ((uint)pointIndex >= (uint)this.zp2.Count)
                     {
                         this.stack.Push(0);
                         break;
@@ -914,7 +1048,7 @@ internal partial class TrueTypeInterpreter
                 {
                     float value = this.stack.PopFloat();
                     int index = this.stack.Pop();
-                    if ((uint)index >= (uint)this.zp2.Current.Length)
+                    if ((uint)index >= (uint)this.zp2.Count)
                     {
                         break;
                     }
@@ -934,8 +1068,8 @@ internal partial class TrueTypeInterpreter
                 {
                     int i0 = this.stack.Pop();
                     int i1 = this.stack.Pop();
-                    if ((uint)i0 >= (uint)this.zp1.Current.Length ||
-                        (uint)i1 >= (uint)this.zp0.Current.Length)
+                    if ((uint)i0 >= (uint)this.zp1.Count ||
+                        (uint)i1 >= (uint)this.zp0.Count)
                     {
                         this.stack.Push(0);
                         break;
@@ -949,8 +1083,8 @@ internal partial class TrueTypeInterpreter
                 {
                     int i0 = this.stack.Pop();
                     int i1 = this.stack.Pop();
-                    if ((uint)i0 >= (uint)this.zp1.Current.Length ||
-                        (uint)i1 >= (uint)this.zp0.Current.Length)
+                    if ((uint)i0 >= (uint)this.zp1.Count ||
+                        (uint)i1 >= (uint)this.zp0.Count)
                     {
                         this.stack.Push(0);
                         break;
@@ -977,12 +1111,11 @@ internal partial class TrueTypeInterpreter
                 case OpCode.FLIPPT:
                 {
                     // FreeType: FLIP instructions skip when backward_compatibility == 0x7.
-                    bool nativeClearType = (this.state.InstructionControl & InstructionControlFlags.NativeClearType) != 0;
-                    bool blocked = !nativeClearType && this.iupXCalled && this.iupYCalled;
+                    bool blocked = !this.IsMovementUnrestricted && this.iupXCalled && this.iupYCalled;
                     for (int i = 0; i < this.state.Loop; i++)
                     {
                         int index = this.stack.Pop();
-                        if (blocked || (uint)index >= (uint)this.points.Current.Length)
+                        if (blocked || (uint)index >= (uint)this.points.Count)
                         {
                             continue;
                         }
@@ -996,13 +1129,12 @@ internal partial class TrueTypeInterpreter
                 break;
                 case OpCode.FLIPRGON:
                 {
-                    bool nativeClearType = (this.state.InstructionControl & InstructionControlFlags.NativeClearType) != 0;
-                    bool blocked = !nativeClearType && this.iupXCalled && this.iupYCalled;
+                    bool blocked = !this.IsMovementUnrestricted && this.iupXCalled && this.iupYCalled;
                     int end = this.stack.Pop();
                     int start = this.stack.Pop();
                     if (blocked ||
-                        (uint)end >= (uint)this.points.Current.Length ||
-                        (uint)start >= (uint)this.points.Current.Length)
+                        (uint)end >= (uint)this.points.Count ||
+                        (uint)start >= (uint)this.points.Count)
                     {
                         break;
                     }
@@ -1016,13 +1148,12 @@ internal partial class TrueTypeInterpreter
                 break;
                 case OpCode.FLIPRGOFF:
                 {
-                    bool nativeClearType = (this.state.InstructionControl & InstructionControlFlags.NativeClearType) != 0;
-                    bool blocked = !nativeClearType && this.iupXCalled && this.iupYCalled;
+                    bool blocked = !this.IsMovementUnrestricted && this.iupXCalled && this.iupYCalled;
                     int end = this.stack.Pop();
                     int start = this.stack.Pop();
                     if (blocked ||
-                        (uint)end >= (uint)this.points.Current.Length ||
-                        (uint)start >= (uint)this.points.Current.Length)
+                        (uint)end >= (uint)this.points.Count ||
+                        (uint)start >= (uint)this.points.Count)
                     {
                         break;
                     }
@@ -1053,7 +1184,7 @@ internal partial class TrueTypeInterpreter
                     for (int i = 0; i < this.state.Loop; i++)
                     {
                         int pointIndex = this.stack.Pop();
-                        if ((uint)pointIndex < (uint)this.zp2.Current.Length)
+                        if ((uint)pointIndex < (uint)this.zp2.Count)
                         {
                             this.MoveZp2Point(this.zp2, pointIndex, displacement.X, displacement.Y, true);
                         }
@@ -1069,19 +1200,19 @@ internal partial class TrueTypeInterpreter
                     float magnitude = this.stack.PopFloat();
                     float dx = magnitude * this.state.Freedom.X;
                     float dy = magnitude * this.state.Freedom.Y;
-                    bool nativeClearType = (this.state.InstructionControl & InstructionControlFlags.NativeClearType) != 0;
+                    bool unrestricted = this.IsMovementUnrestricted;
                     bool postIUP = this.iupXCalled && this.iupYCalled;
                     bool inTwilight = this.zp0.IsTwilight || this.zp1.IsTwilight || this.zp2.IsTwilight;
 
                     for (int i = 0; i < this.state.Loop; i++)
                     {
                         int pointIndex = this.stack.Pop();
-                        if ((uint)pointIndex >= (uint)this.zp2.Current.Length)
+                        if ((uint)pointIndex >= (uint)this.zp2.Count)
                         {
                             continue;
                         }
 
-                        if (!nativeClearType)
+                        if (!unrestricted)
                         {
                             // Backward compat mode: gated Y-only movement.
                             // Twilight zone always allowed; otherwise need composite+freeY or Y-touched.
@@ -1096,7 +1227,8 @@ internal partial class TrueTypeInterpreter
                         }
                         else
                         {
-                            // Native ClearType: move freely on both axes.
+                            // Unrestricted movement (full hinting or the native ClearType waiver):
+                            // move freely on both axes.
                             this.MoveZp2Point(this.zp2, pointIndex, dx, dy, true);
                         }
                     }
@@ -1122,7 +1254,7 @@ internal partial class TrueTypeInterpreter
                     }
 
                     int start = contour == 0 ? 0 : this.contours[contour - 1] + 1;
-                    int count = this.zp2.IsTwilight ? this.zp2.Current.Length : this.contours[contour] + 1;
+                    int count = this.zp2.IsTwilight ? this.zp2.Count : this.contours[contour] + 1;
                     ControlPoint[] current = this.zp2.Current;
                     TouchState[] states = this.zp2.TouchState;
 
@@ -1155,7 +1287,7 @@ internal partial class TrueTypeInterpreter
                     int count = 0;
                     if (this.zp2.IsTwilight)
                     {
-                        count = this.zp2.Current.Length;
+                        count = this.zp2.Count;
                     }
                     else if (this.contours.Count > 0)
                     {
@@ -1179,7 +1311,7 @@ internal partial class TrueTypeInterpreter
                 {
                     float distance = this.ReadCvt();
                     int pointIndex = this.stack.Pop();
-                    if ((uint)pointIndex >= (uint)this.zp0.Current.Length)
+                    if ((uint)pointIndex >= (uint)this.zp0.Count)
                     {
                         // FreeType Fail label: still sets rp0/rp1.
                         this.state.Rp0 = pointIndex;
@@ -1220,7 +1352,7 @@ internal partial class TrueTypeInterpreter
                 {
                     // FreeType Ins_MDAP: bounds check before access.
                     int pointIndex = this.stack.Pop();
-                    if ((uint)pointIndex >= (uint)this.zp0.Current.Length)
+                    if ((uint)pointIndex >= (uint)this.zp0.Count)
                     {
                         break;
                     }
@@ -1244,8 +1376,8 @@ internal partial class TrueTypeInterpreter
                 {
                     float targetDistance = this.stack.PopFloat();
                     int pointIndex = this.stack.Pop();
-                    if ((uint)pointIndex >= (uint)this.zp1.Current.Length ||
-                        (uint)this.state.Rp0 >= (uint)this.zp0.Current.Length)
+                    if ((uint)pointIndex >= (uint)this.zp1.Count ||
+                        (uint)this.state.Rp0 >= (uint)this.zp0.Count)
                     {
                         break;
                     }
@@ -1275,7 +1407,7 @@ internal partial class TrueTypeInterpreter
                 case OpCode.IP:
                 {
                     // FreeType Ins_IP: bounds check rp1 first.
-                    if ((uint)this.state.Rp1 >= (uint)this.zp0.Current.Length)
+                    if ((uint)this.state.Rp1 >= (uint)this.zp0.Count)
                     {
                         // Fail label: drain stack and reset loop.
                         for (int i = 0; i < this.state.Loop; i++)
@@ -1293,7 +1425,7 @@ internal partial class TrueTypeInterpreter
                     // FreeType: if rp2 fails, set ranges to 0 but continue.
                     float originalRange = 0;
                     float currentRange = 0;
-                    if ((uint)this.state.Rp2 < (uint)this.zp1.Current.Length)
+                    if ((uint)this.state.Rp2 < (uint)this.zp1.Count)
                     {
                         originalRange = this.DualProject(this.zp1.GetOriginal(this.state.Rp2) - originalBase);
                         currentRange = this.Project(this.zp1.GetCurrent(this.state.Rp2) - currentBase);
@@ -1302,7 +1434,7 @@ internal partial class TrueTypeInterpreter
                     for (int i = 0; i < this.state.Loop; i++)
                     {
                         int pointIndex = this.stack.Pop();
-                        if ((uint)pointIndex >= (uint)this.zp2.Current.Length)
+                        if ((uint)pointIndex >= (uint)this.zp2.Count)
                         {
                             continue;
                         }
@@ -1335,7 +1467,7 @@ internal partial class TrueTypeInterpreter
                 case OpCode.ALIGNRP:
                 {
                     // FreeType Ins_ALIGNRP: bounds check rp0 first.
-                    if ((uint)this.state.Rp0 >= (uint)this.zp0.Current.Length)
+                    if ((uint)this.state.Rp0 >= (uint)this.zp0.Count)
                     {
                         for (int i = 0; i < this.state.Loop; i++)
                         {
@@ -1349,7 +1481,7 @@ internal partial class TrueTypeInterpreter
                     for (int i = 0; i < this.state.Loop; i++)
                     {
                         int pointIndex = this.stack.Pop();
-                        if ((uint)pointIndex >= (uint)this.zp1.Current.Length)
+                        if ((uint)pointIndex >= (uint)this.zp1.Count)
                         {
                             continue;
                         }
@@ -1368,8 +1500,8 @@ internal partial class TrueTypeInterpreter
                     // FreeType Ins_ALIGNPTS: args[1] (top) = p2 in zp0, args[0] (deeper) = p1 in zp1.
                     int p2 = this.stack.Pop();
                     int p1 = this.stack.Pop();
-                    if ((uint)p1 >= (uint)this.zp1.Current.Length ||
-                        (uint)p2 >= (uint)this.zp0.Current.Length)
+                    if ((uint)p1 >= (uint)this.zp1.Count ||
+                        (uint)p2 >= (uint)this.zp0.Count)
                     {
                         break;
                     }
@@ -1383,7 +1515,7 @@ internal partial class TrueTypeInterpreter
                 case OpCode.UTP:
                 {
                     int pointIndex = this.stack.Pop();
-                    if ((uint)pointIndex >= (uint)this.zp0.Current.Length)
+                    if ((uint)pointIndex >= (uint)this.zp0.Count)
                     {
                         break;
                     }
@@ -1395,8 +1527,10 @@ internal partial class TrueTypeInterpreter
                 case OpCode.IUP0:
                 case OpCode.IUP1:
                 {
-                    // FreeType: IUP returns immediately once both axes have been processed.
-                    if (this.iupXCalled && this.iupYCalled)
+                    // FreeType: under backward compatibility IUP returns immediately once both
+                    // axes have been processed. With unrestricted movement a repeated IUP on an
+                    // axis must re-run because instructions may touch more points between calls.
+                    if (!this.IsMovementUnrestricted && this.iupXCalled && this.iupYCalled)
                     {
                         break;
                     }
@@ -1512,11 +1646,11 @@ internal partial class TrueTypeInterpreter
                     int ia1 = this.stack.Pop();
                     int ia0 = this.stack.Pop();
                     int index = this.stack.Pop();
-                    if ((uint)ib0 >= (uint)this.zp0.Current.Length ||
-                        (uint)ib1 >= (uint)this.zp0.Current.Length ||
-                        (uint)ia0 >= (uint)this.zp1.Current.Length ||
-                        (uint)ia1 >= (uint)this.zp1.Current.Length ||
-                        (uint)index >= (uint)this.zp2.Current.Length)
+                    if ((uint)ib0 >= (uint)this.zp0.Count ||
+                        (uint)ib1 >= (uint)this.zp0.Count ||
+                        (uint)ia0 >= (uint)this.zp1.Count ||
+                        (uint)ia1 >= (uint)this.zp1.Count ||
+                        (uint)index >= (uint)this.zp2.Count)
                     {
                         break;
                     }
@@ -2007,7 +2141,7 @@ internal partial class TrueTypeInterpreter
                     {
                         int pointIndex = this.stack.Pop();
                         int arg = this.stack.Pop();
-                        if ((uint)pointIndex >= (uint)this.zp0.Current.Length)
+                        if ((uint)pointIndex >= (uint)this.zp0.Count)
                         {
                             continue;
                         }
@@ -2035,8 +2169,7 @@ internal partial class TrueTypeInterpreter
                             amount *= 1 << (6 - this.state.DeltaShift);
 
                             // FreeType Ins_DELTAP: v40 backward compatibility gating.
-                            bool nativeClearType = (this.state.InstructionControl & InstructionControlFlags.NativeClearType) != 0;
-                            if (nativeClearType)
+                            if (this.IsMovementUnrestricted)
                             {
                                 this.MovePoint(this.zp0, pointIndex, F26Dot6ToFloat(amount));
                             }
@@ -2067,17 +2200,22 @@ internal partial class TrueTypeInterpreter
                 case OpCode.GETINFO:
                 {
                     // FreeType Ins_GETINFO.
-                    // Report v40 interpreter identity and ClearType capability flags.
+                    // Report the interpreter identity for the active mode. Standard mode reports
+                    // the v40 lean engine with its ClearType capability flags. Full mode reports
+                    // the v35 bi-level engine identity, matching FreeType when subpixel hinting
+                    // is disabled for a mono render target, so fonts take their classic full
+                    // grid fitting branches.
+                    bool full = this.hintingMode == HintingMode.Full;
                     int selector = this.stack.Pop();
                     int result = 0;
 
                     // Selector bit 0: interpreter version.
                     if ((selector & 0x1) != 0)
                     {
-                        result = 40;
+                        result = full ? 35 : 40;
                     }
 
-                    // Selector bits 1-2: rotation/stretching — always false in v40.
+                    // Selector bits 1-2: rotation/stretching — always false.
 
                     // Selector bit 3: variation glyph (FreeType Ins_GETINFO).
                     // Set result bit 10 when the font is a variable font instance.
@@ -2086,35 +2224,39 @@ internal partial class TrueTypeInterpreter
                         result |= 1 << 10;
                     }
 
-                    // Selector bit 5: grayscale rendering.
-                    // FreeType v40 sets grayscale = FALSE, so this bit is NOT set.
-
-                    // Selector bit 6: subpixel hinting is available (v40 default).
-                    if ((selector & 0x40) != 0)
+                    // Selector bit 5: grayscale rendering — never set. Standard mode matches
+                    // FreeType v40, which reports FALSE. Full mode reproduces the classic
+                    // bi-level engine identity so fonts apply their small size delta
+                    // exceptions rather than suppressing them for a gray target.
+                    if (!full)
                     {
-                        result |= 1 << 13;
-                    }
+                        // Selector bit 6: subpixel hinting is available (v40 default).
+                        if ((selector & 0x40) != 0)
+                        {
+                            result |= 1 << 13;
+                        }
 
-                    // Selector bit 10: subpixel positioned.
-                    if ((selector & 0x400) != 0)
-                    {
-                        result |= 1 << 17;
-                    }
+                        // Selector bit 10: subpixel positioned.
+                        if ((selector & 0x400) != 0)
+                        {
+                            result |= 1 << 17;
+                        }
 
-                    // Selector bit 11: symmetrical smoothing.
-                    if ((selector & 0x800) != 0)
-                    {
-                        result |= 1 << 18;
-                    }
+                        // Selector bit 11: symmetrical smoothing.
+                        if ((selector & 0x800) != 0)
+                        {
+                            result |= 1 << 18;
+                        }
 
-                    // Selector bit 12: ClearType hinting and grayscale rendering.
-                    // FreeType sets this whenever the render mode is not monochrome or LCD;
-                    // our rasterization is always symmetric grayscale, so it is always set.
-                    // ClearType-era prep programs branch on this to select grayscale-safe
-                    // hinting instead of LCD-specific pixel tweaks.
-                    if ((selector & 0x1000) != 0)
-                    {
-                        result |= 1 << 19;
+                        // Selector bit 12: ClearType hinting and grayscale rendering.
+                        // FreeType sets this whenever the render mode is not monochrome or LCD;
+                        // v40 rasterization is always symmetric grayscale, so it is always set.
+                        // ClearType-era prep programs branch on this to select grayscale-safe
+                        // hinting instead of LCD-specific pixel tweaks.
+                        if ((selector & 0x1000) != 0)
+                        {
+                            result |= 1 << 19;
+                        }
                     }
 
                     this.stack.Push(result);
@@ -2386,8 +2528,8 @@ internal partial class TrueTypeInterpreter
     {
         float cvt = this.ReadCvt();
         int pointIndex = this.stack.Pop();
-        if ((uint)pointIndex >= (uint)this.zp1.Current.Length ||
-            (uint)this.state.Rp0 >= (uint)this.zp0.Current.Length)
+        if ((uint)pointIndex >= (uint)this.zp1.Count ||
+            (uint)this.state.Rp0 >= (uint)this.zp0.Count)
         {
             // FreeType Fail label: still sets reference points.
             this.state.Rp1 = this.state.Rp0;
@@ -2475,8 +2617,8 @@ internal partial class TrueTypeInterpreter
     private void MoveDirectRelative(int flags)
     {
         int pointIndex = this.stack.Pop();
-        if ((uint)pointIndex >= (uint)this.zp1.Current.Length ||
-            (uint)this.state.Rp0 >= (uint)this.zp0.Current.Length)
+        if ((uint)pointIndex >= (uint)this.zp1.Count ||
+            (uint)this.state.Rp0 >= (uint)this.zp0.Count)
         {
             // FreeType Fail label: still sets reference points.
             this.state.Rp1 = this.state.Rp0;
@@ -2560,7 +2702,7 @@ internal partial class TrueTypeInterpreter
             point = this.state.Rp1;
         }
 
-        if ((uint)point >= (uint)zone.Current.Length)
+        if ((uint)point >= (uint)zone.Count)
         {
             displacement = default;
             return false;
@@ -2601,12 +2743,12 @@ internal partial class TrueTypeInterpreter
     {
         // X is always blocked in backward compat mode.
         // Y is blocked only when backward_compatibility == 0x7 (post-IUP).
-        bool nativeClearType = (this.state.InstructionControl & InstructionControlFlags.NativeClearType) != 0;
+        bool unrestricted = this.IsMovementUnrestricted;
         bool postIUP = this.iupXCalled && this.iupYCalled;
 
         if (this.state.Freedom.X != 0)
         {
-            if (nativeClearType)
+            if (unrestricted)
             {
                 float dx = distance * this.state.Freedom.X / this.fdotp;
                 zone.Current[index].Point.X += dx;
@@ -2617,7 +2759,7 @@ internal partial class TrueTypeInterpreter
 
         if (this.state.Freedom.Y != 0)
         {
-            if (nativeClearType || !postIUP)
+            if (unrestricted || !postIUP)
             {
                 float dy = distance * this.state.Freedom.Y / this.fdotp;
                 zone.Current[index].Point.Y += dy;
@@ -2641,12 +2783,12 @@ internal partial class TrueTypeInterpreter
     {
         // X is always blocked in compat mode.
         // Y is blocked only at backward_compatibility == 0x7 (post-IUP).
-        bool nativeClearType = (this.state.InstructionControl & InstructionControlFlags.NativeClearType) != 0;
+        bool unrestricted = this.IsMovementUnrestricted;
         bool postIUP = this.iupXCalled && this.iupYCalled;
 
         if (this.state.Freedom.X != 0)
         {
-            if (nativeClearType)
+            if (unrestricted)
             {
                 zone.Current[index].Point.X += dx;
             }
@@ -2659,7 +2801,7 @@ internal partial class TrueTypeInterpreter
 
         if (this.state.Freedom.Y != 0)
         {
-            if (nativeClearType || !postIUP)
+            if (unrestricted || !postIUP)
             {
                 zone.Current[index].Point.Y += dy;
             }
@@ -3365,6 +3507,9 @@ internal partial class TrueTypeInterpreter
         /// <summary>Per-point touch state tracking for IUP interpolation.</summary>
         public TouchState[] TouchState;
 
+        /// <summary>The number of live points; the backing arrays may be longer.</summary>
+        public int Count;
+
         /// <summary>Whether this is the twilight zone.</summary>
         public bool IsTwilight;
 
@@ -3379,23 +3524,25 @@ internal partial class TrueTypeInterpreter
             this.Current = new ControlPoint[maxTwilightPoints];
             this.Original = new ControlPoint[maxTwilightPoints];
             this.TouchState = new TouchState[maxTwilightPoints];
+            this.Count = maxTwilightPoints;
         }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="Zone"/> struct for the glyph zone,
-        /// copying the control points to create an original (unhinted) backup.
+        /// Initializes a new instance of the <see cref="Zone"/> struct for the glyph zone
+        /// as a view over interpreter owned buffers. The buffers may exceed the live point
+        /// count; every consumer bounds against <see cref="Count"/>.
         /// </summary>
-        /// <param name="controlPoints">The glyph's control points (used as current points; copied for originals).</param>
-        /// <param name="isTwilight">Whether this is the twilight zone.</param>
-        public Zone(ControlPoint[] controlPoints, bool isTwilight)
+        /// <param name="current">The buffer holding the points being hinted.</param>
+        /// <param name="original">The buffer holding the unhinted point copies.</param>
+        /// <param name="touchState">The per point touch state buffer.</param>
+        /// <param name="count">The number of live points.</param>
+        public Zone(ControlPoint[] current, ControlPoint[] original, TouchState[] touchState, int count)
         {
-            this.IsTwilight = isTwilight;
-            this.Current = controlPoints;
-
-            ControlPoint[] original = new ControlPoint[controlPoints.Length];
-            controlPoints.AsSpan().CopyTo(original);
+            this.IsTwilight = false;
+            this.Current = current;
             this.Original = original;
-            this.TouchState = new TouchState[controlPoints.Length];
+            this.TouchState = touchState;
+            this.Count = count;
         }
 
         /// <summary>

@@ -20,7 +20,8 @@ public readonly struct GlyphRendererParameters : IEquatable<GlyphRendererParamet
         float pointSize,
         float dpi,
         GlyphLayoutMode layoutMode,
-        int graphemeIndex)
+        int graphemeIndex,
+        HintingMode hintingMode)
     {
         // The upper-cased invariant name is computed once on the immutable description; doing it
         // here would allocate a string for every rendered glyph.
@@ -34,6 +35,7 @@ public readonly struct GlyphRendererParameters : IEquatable<GlyphRendererParamet
         this.TextRun = textRun;
         this.CodePoint = metrics.CodePoint;
         this.LayoutMode = layoutMode;
+        this.HintingMode = hintingMode;
     }
 
     /// <summary>
@@ -92,6 +94,12 @@ public readonly struct GlyphRendererParameters : IEquatable<GlyphRendererParamet
     public TextRun TextRun { get; }
 
     /// <summary>
+    /// Gets the hinting mode requested for the glyph. The mode shapes the emitted outline
+    /// so it participates in identity, allowing consumers to cache per mode.
+    /// </summary>
+    public HintingMode HintingMode { get; }
+
+    /// <summary>
     /// Compares two <see cref="GlyphRendererParameters"/> objects for equality.
     /// </summary>
     /// <param name="left">
@@ -133,6 +141,7 @@ public readonly struct GlyphRendererParameters : IEquatable<GlyphRendererParamet
         && other.TextRun.TextAttributes == this.TextRun.TextAttributes
         && other.TextRun.TextDecorations == this.TextRun.TextDecorations
         && other.LayoutMode == this.LayoutMode
+        && other.HintingMode == this.HintingMode
         && ((other.Font is null && this.Font is null)
         || (other.Font?.Equals(this.Font, StringComparison.OrdinalIgnoreCase) == true));
 
@@ -154,7 +163,8 @@ public readonly struct GlyphRendererParameters : IEquatable<GlyphRendererParamet
             this.Dpi,
             this.TextRun.TextAttributes,
             this.TextRun.TextDecorations,
-            this.LayoutMode);
+            this.LayoutMode,
+            this.HintingMode);
 
         int c = HashCode.Combine(
             this.CompositeGlyphId,

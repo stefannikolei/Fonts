@@ -69,6 +69,20 @@ internal struct GlyphVector
     public CompositeComponent[]? CompositeComponents { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether the outline has been grid fitted, either by
+    /// successful instruction execution or by geometric fitting. Only fitted outlines
+    /// qualify for whole pixel origin snapping at emit time.
+    /// </summary>
+    public bool IsHinted { get; set; }
+
+    /// <summary>
+    /// Gets or sets the hinted advance in whole device pixels, read back from the phantom
+    /// points after instruction execution. X holds the horizontal advance and Y the vertical
+    /// advance. Zero when the outline has not been hinted.
+    /// </summary>
+    public Vector2 HintedAdvance { get; set; }
+
+    /// <summary>
     /// Creates an empty glyph vector with no control points or contours.
     /// </summary>
     /// <param name="bounds">The optional bounds to assign to the empty glyph.</param>
@@ -104,7 +118,8 @@ internal struct GlyphVector
     /// <param name="pp2">The second phantom point.</param>
     /// <param name="pp3">The third phantom point.</param>
     /// <param name="pp4">The fourth phantom point.</param>
-    public static void Hint(
+    /// <returns><see langword="true"/> if hinting was successfully applied; otherwise, <see langword="false"/>.</returns>
+    public static bool Hint(
         HintingMode hintingMode,
         ref GlyphVector glyph,
         TrueTypeInterpreter interpreter,
@@ -115,27 +130,32 @@ internal struct GlyphVector
     {
         if (hintingMode == HintingMode.None)
         {
-            return;
+            return false;
         }
 
-        ControlPoint[] controlPoints = new ControlPoint[glyph.ControlPoints.Count + 4];
-        controlPoints[^4].Point = pp1;
-        controlPoints[^3].Point = pp2;
-        controlPoints[^2].Point = pp3;
-        controlPoints[^1].Point = pp4;
-
-        for (int i = 0; i < glyph.ControlPoints.Count; i++)
+        // The interpreter stages the outline and phantom points into its own reusable
+        // zone buffers, so hinting allocates nothing per glyph.
+        if (interpreter.TryHintGlyph(glyph.ControlPoints, pp1, pp2, pp3, pp4, glyph.EndPoints, glyph.Instructions, glyph.IsComposite))
         {
-            controlPoints[i] = glyph.ControlPoints[i];
-        }
-
-        if (interpreter.TryHintGlyph(controlPoints, glyph.EndPoints, glyph.Instructions, glyph.IsComposite))
-        {
-            for (int i = 0; i < glyph.ControlPoints.Count; i++)
+            ControlPoint[] hinted = interpreter.GlyphZonePoints;
+            int count = interpreter.GlyphZonePointCount;
+            for (int i = 0; i < count - 4; i++)
             {
-                glyph.ControlPoints[i] = controlPoints[i];
+                glyph.ControlPoints[i] = hinted[i];
             }
+
+            Vector2 hintedPP1 = hinted[count - 4].Point;
+            Vector2 hintedPP2 = hinted[count - 3].Point;
+            Vector2 hintedPP3 = hinted[count - 2].Point;
+            Vector2 hintedPP4 = hinted[count - 1].Point;
+
+            glyph.IsHinted = true;
+            glyph.HintedAdvance = new Vector2(MathF.Floor(hintedPP2.X - hintedPP1.X + 0.5F), MathF.Floor(hintedPP3.Y - hintedPP4.Y + 0.5F));
+
+            return true;
         }
+
+        return false;
     }
 
     /// <summary>
@@ -152,7 +172,9 @@ internal struct GlyphVector
         {
             CompositeComponents = src.CompositeComponents is not null
                 ? [.. src.CompositeComponents]
-                : null
+                : null,
+            IsHinted = src.IsHinted,
+            HintedAdvance = src.HintedAdvance
         };
     }
 

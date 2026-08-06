@@ -45,6 +45,16 @@ public class HintingTests
         { TestFonts.OpenSansFile, nameof(TestFonts.OpenSansFile) + "_Full", HintingMode.Full },
     };
 
+    public static TheoryData<string, HintingMode, LayoutMode> RendererOriginData { get; } = new()
+    {
+        { TestFonts.Tahoma, HintingMode.Full, LayoutMode.HorizontalTopBottom },
+        { TestFonts.Tahoma, HintingMode.Standard, LayoutMode.HorizontalTopBottom },
+        { TestFonts.Tahoma, HintingMode.Standard, LayoutMode.VerticalMixedLeftRight },
+        { TestFonts.PlantinStdRegularFile, HintingMode.Full, LayoutMode.HorizontalTopBottom },
+        { TestFonts.PlantinStdRegularFile, HintingMode.Full, LayoutMode.VerticalLeftRight },
+        { TestFonts.PlantinStdRegularFile, HintingMode.Standard, LayoutMode.VerticalMixedLeftRight },
+    };
+
     [Theory]
     [MemberData(nameof(HintingTestData))]
     public void Test_Hinting_Robustness(string path, string name, HintingMode hintingMode)
@@ -384,6 +394,55 @@ public class HintingTests
         Assert.Contains(synthetic, static p => !IsOnPixelGrid(p));
     }
 
+    // A renderer may return false from BeginGlyph and replay cached geometry using only the
+    // supplied bounds. The bounds must therefore carry exactly the same origin adjustment as
+    // fresh outline emission for both outline formats and every axis policy.
+    [Theory]
+    [MemberData(nameof(RendererOriginData))]
+    public void HintedRendererBounds_MoveByTheSameDeltaAsTheOutline(string fontPath, HintingMode hintingMode, LayoutMode layoutMode)
+    {
+        Vector2 firstOrigin = new(10.3F, 10.7F);
+        Vector2 secondOrigin = new(13.8F, 14.1F);
+
+        FontCollection collection = new();
+        FontFamily family = collection.Add(fontPath);
+        Font font = family.CreateFont(12);
+
+        GlyphRenderer first = RenderGlyphAtOrigin(font, "H", firstOrigin, hintingMode, layoutMode);
+        GlyphRenderer second = RenderGlyphAtOrigin(font, "H", secondOrigin, hintingMode, layoutMode);
+
+        FontRectangle firstBounds = Assert.Single(first.GlyphRects);
+        FontRectangle secondBounds = Assert.Single(second.GlyphRects);
+        Assert.Equal(first.ControlPoints.Count, second.ControlPoints.Count);
+        Assert.NotEmpty(first.ControlPoints);
+
+        Vector2 boundsDelta = secondBounds.Location - firstBounds.Location;
+        for (int i = 0; i < first.ControlPoints.Count; i++)
+        {
+            Vector2 outlineDelta = second.ControlPoints[i] - first.ControlPoints[i];
+            Assert.True(
+                Vector2.DistanceSquared(boundsDelta, outlineDelta) <= 1e-6F,
+                $"Expected bounds delta {boundsDelta} but outline point {i} moved by {outlineDelta}.");
+        }
+    }
+
+    // Upright vertical Full placement centres the rendered pixel columns, so a fitted CFF
+    // outline must expose the tight horizontal extent of the exact quadratics it will replay.
+    [Fact]
+    public void CffFullHinting_ProvidesFittedHorizontalInkExtent()
+    {
+        FontCollection collection = new();
+        FontFamily family = collection.Add(TestFonts.PlantinStdRegularFile);
+        Font font = family.CreateFont(12);
+
+        Assert.True(font.FontMetrics.TryGetGlyphMetrics(new CodePoint('H'), TextAttributes.None, TextDecorations.None, LayoutMode.VerticalLeftRight, ColorFontSupport.None, out FontGlyphMetrics metrics));
+
+        float scaledPPEM = metrics.GetScaledSize(12F, 72F, HintingMode.Full);
+        Assert.True(metrics.TryGetFittedOutlinePlacement(scaledPPEM, HintingMode.Full, true, out FontGlyphMetrics.FittedOutlinePlacement placement));
+        Assert.True(placement.HasInkExtent);
+        Assert.True(placement.MaxInkX > placement.MinInkX);
+    }
+
     // Full hinting accumulates whole pixel advances read back from the hinted phantom
     // points, so measured text width is integral and differs from the fractional design
     // advance sum that standard hinting preserves.
@@ -441,6 +500,20 @@ public class HintingTests
         GlyphRenderer renderer = new();
         TextRenderer.RenderTo(renderer, text, options);
         return renderer.ControlPoints;
+    }
+
+    private static GlyphRenderer RenderGlyphAtOrigin(Font font, string text, Vector2 origin, HintingMode hintingMode, LayoutMode layoutMode)
+    {
+        TextOptions options = new(font)
+        {
+            Origin = origin,
+            HintingMode = hintingMode,
+            LayoutMode = layoutMode,
+        };
+
+        GlyphRenderer renderer = new();
+        TextRenderer.RenderTo(renderer, text, options);
+        return renderer;
     }
 
     private static GlyphVector ScaleAndHint(StreamFontMetrics fontMetrics, TrueTypeGlyphMetrics metrics, Vector2 scale, float pixelSize, HintingMode mode)

@@ -23,6 +23,9 @@ internal sealed class CffOutline
     private readonly bool lockFixMapOk;
     private readonly CffHintRegion[] hintRegions;
     private readonly CffCounterMask[] counterMasks;
+    private bool hasFittedInkExtent;
+    private float fittedInkMinX;
+    private float fittedInkMaxX;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CffOutline"/> class.
@@ -50,10 +53,23 @@ internal sealed class CffOutline
     }
 
     /// <summary>
-    /// Gets or sets a value indicating whether the outline has been grid fitted. Only
+    /// Receives quadratic segments generated from a fitted CFF cubic.
+    /// </summary>
+    private interface IQuadraticConsumer
+    {
+        /// <summary>
+        /// Receives one quadratic segment in fitted outline coordinates.
+        /// </summary>
+        /// <param name="control">The off-curve quadratic control point.</param>
+        /// <param name="end">The on-curve segment end point.</param>
+        void QuadraticBezierTo(Vector2 control, Vector2 end);
+    }
+
+    /// <summary>
+    /// Gets a value indicating whether the outline has been grid fitted. Only
     /// fitted outlines qualify for whole pixel origin snapping at replay time.
     /// </summary>
-    public bool IsFitted { get; set; }
+    public bool IsFitted { get; private set; }
 
     /// <summary>
     /// Gets the index of the last point of each contour.
@@ -130,6 +146,73 @@ internal sealed class CffOutline
     ];
 
     /// <summary>
+    /// Marks the outline as fitted and records the exact horizontal extent of the quadratic
+    /// segments that replay will emit. The extent is computed once with the cached outline so
+    /// upright vertical placement does not traverse the path on every render.
+    /// </summary>
+    /// <param name="includeInkExtent">Whether full hinting can require the horizontal ink extent for upright vertical placement.</param>
+    public void MarkFitted(bool includeInkExtent)
+    {
+        this.IsFitted = true;
+        if (!includeInkExtent)
+        {
+            return;
+        }
+
+        CffOutlineVerb[] outlineVerbs = this.verbs;
+        Vector2[] outlinePoints = this.points;
+        int pointIndex = 0;
+        Vector2 current = default;
+        HorizontalExtentConsumer extent = default;
+
+        for (int i = 0; i < outlineVerbs.Length; i++)
+        {
+            switch (outlineVerbs[i])
+            {
+                case CffOutlineVerb.Move:
+                    current = outlinePoints[pointIndex++];
+                    break;
+
+                case CffOutlineVerb.Line:
+                    extent.IncludeLine(current.X, outlinePoints[pointIndex].X);
+                    current = outlinePoints[pointIndex++];
+                    break;
+
+                default:
+                    Vector2 control1 = outlinePoints[pointIndex];
+                    Vector2 control2 = outlinePoints[pointIndex + 1];
+                    Vector2 end = outlinePoints[pointIndex + 2];
+                    pointIndex += 3;
+
+                    // Use the same fixed-point subdivision routine as replay. Measuring the
+                    // source cubic instead could select a neighbouring pixel column when the
+                    // retained quadratic approximation crosses a half-pixel sample boundary.
+                    extent.BeginCurve(current.X);
+                    EmitAsQuadratics(ref extent, current, control1, control2, end);
+                    current = end;
+                    break;
+            }
+        }
+
+        this.hasFittedInkExtent = extent.HasExtent;
+        this.fittedInkMinX = extent.MinX;
+        this.fittedInkMaxX = extent.MaxX;
+    }
+
+    /// <summary>
+    /// Attempts to get the cached horizontal extent of the fitted, emitted outline.
+    /// </summary>
+    /// <param name="minX">The minimum fitted horizontal ink coordinate.</param>
+    /// <param name="maxX">The maximum fitted horizontal ink coordinate.</param>
+    /// <returns><see langword="true"/> when the outline contains drawable segments; otherwise, <see langword="false"/>.</returns>
+    public bool TryGetFittedInkExtentX(out float minX, out float maxX)
+    {
+        minX = this.fittedInkMinX;
+        maxX = this.fittedInkMaxX;
+        return this.hasFittedInkExtent;
+    }
+
+    /// <summary>
     /// Replays the outline into the given transforming renderer, reproducing the exact
     /// call sequence the streaming evaluation path produces, including the implicit
     /// figure handling inside the transforming renderer.
@@ -163,7 +246,9 @@ internal sealed class CffOutline
 
                     if (this.IsFitted)
                     {
-                        EmitAsQuadratics(ref target, current, control1, control2, end);
+                        RendererQuadraticConsumer consumer = new(target);
+                        EmitAsQuadratics(ref consumer, current, control1, control2, end);
+                        target = consumer.Target;
                     }
                     else
                     {
@@ -187,12 +272,14 @@ internal sealed class CffOutline
     /// difference, then evaluates every control point with signed 16.16 coordinates and
     /// signed 2.30 fractional arithmetic.
     /// </summary>
-    /// <param name="target">The renderer receiving the quadratics.</param>
+    /// <typeparam name="TConsumer">The consumer receiving the converted quadratic segments.</typeparam>
+    /// <param name="target">The consumer receiving the quadratics.</param>
     /// <param name="start">The point the cubic starts at.</param>
     /// <param name="control1">The first cubic control point.</param>
     /// <param name="control2">The second cubic control point.</param>
     /// <param name="end">The point the cubic ends at.</param>
-    private static void EmitAsQuadratics(ref TransformingGlyphRenderer target, Vector2 start, Vector2 control1, Vector2 control2, Vector2 end)
+    private static void EmitAsQuadratics<TConsumer>(ref TConsumer target, Vector2 start, Vector2 control1, Vector2 control2, Vector2 end)
+        where TConsumer : struct, IQuadraticConsumer
     {
         int startX = CffFixedPoint.FromSingle(start.X);
         int startY = CffFixedPoint.FromSingle(start.Y);
@@ -377,5 +464,125 @@ internal sealed class CffOutline
         }
 
         return (int)rounded;
+    }
+
+    /// <summary>
+    /// Adapts the transforming renderer to the allocation-free generic curve converter.
+    /// </summary>
+    private struct RendererQuadraticConsumer : IQuadraticConsumer
+    {
+        /// <summary>
+        /// Initializes a new instance of the <see cref="RendererQuadraticConsumer"/> struct.
+        /// </summary>
+        /// <param name="target">The transforming renderer receiving converted segments.</param>
+        public RendererQuadraticConsumer(TransformingGlyphRenderer target)
+            => this.Target = target;
+
+        /// <summary>
+        /// Gets the transforming renderer, including its updated open-figure state.
+        /// </summary>
+        public TransformingGlyphRenderer Target { get; private set; }
+
+        /// <inheritdoc/>
+        public void QuadraticBezierTo(Vector2 control, Vector2 end)
+        {
+            TransformingGlyphRenderer target = this.Target;
+            target.QuadraticBezierTo(control, end);
+            this.Target = target;
+        }
+    }
+
+    /// <summary>
+    /// Accumulates the tight horizontal extent of emitted quadratic segments without building
+    /// a second path or allocating a measurement renderer.
+    /// </summary>
+    private struct HorizontalExtentConsumer : IQuadraticConsumer
+    {
+        private float currentX;
+
+        /// <summary>
+        /// Gets a value indicating whether at least one drawable segment contributed an extent.
+        /// </summary>
+        public bool HasExtent { get; private set; }
+
+        /// <summary>
+        /// Gets the minimum horizontal ink coordinate.
+        /// </summary>
+        public float MinX { get; private set; }
+
+        /// <summary>
+        /// Gets the maximum horizontal ink coordinate.
+        /// </summary>
+        public float MaxX { get; private set; }
+
+        /// <summary>
+        /// Sets the start coordinate for the next converted cubic while retaining the extent
+        /// accumulated from preceding outline segments.
+        /// </summary>
+        /// <param name="startX">The fitted cubic's horizontal start coordinate.</param>
+        public void BeginCurve(float startX)
+            => this.currentX = startX;
+
+        /// <summary>
+        /// Includes a fitted line segment in the accumulated horizontal extent.
+        /// </summary>
+        /// <param name="startX">The horizontal coordinate at the start of the line.</param>
+        /// <param name="endX">The horizontal coordinate at the end of the line.</param>
+        public void IncludeLine(float startX, float endX)
+        {
+            this.Include(Math.Min(startX, endX));
+            this.Include(Math.Max(startX, endX));
+        }
+
+        /// <inheritdoc/>
+        public void QuadraticBezierTo(Vector2 control, Vector2 end)
+        {
+            float startX = this.currentX;
+            float endX = end.X;
+            this.Include(Math.Min(startX, endX));
+            this.Include(Math.Max(startX, endX));
+
+            float controlX = control.X;
+            if (controlX < Math.Min(startX, endX) || controlX > Math.Max(startX, endX))
+            {
+                // A quadratic reaches its horizontal stationary point at
+                // t = (start - control) / (start - 2 * control + end). Controls inside
+                // the endpoint interval cannot produce an interior horizontal extreme.
+                float denominator = startX - (2F * controlX) + endX;
+                if (denominator != 0F)
+                {
+                    float t = (startX - controlX) / denominator;
+                    if (t is > 0F and < 1F)
+                    {
+                        float oneMinusT = 1F - t;
+                        float extreme = (oneMinusT * oneMinusT * startX)
+                            + (2F * oneMinusT * t * controlX)
+                            + (t * t * endX);
+
+                        this.Include(extreme);
+                    }
+                }
+            }
+
+            this.currentX = endX;
+        }
+
+        /// <summary>
+        /// Includes one horizontal coordinate in the accumulated extent.
+        /// </summary>
+        /// <param name="x">The fitted horizontal coordinate.</param>
+        private void Include(float x)
+        {
+            if (!this.HasExtent)
+            {
+                this.MinX = x;
+                this.MaxX = x;
+                this.HasExtent = true;
+                return;
+            }
+
+            this.MinX = Math.Min(this.MinX, x);
+            this.MaxX = Math.Max(this.MaxX, x);
+        }
     }
 }

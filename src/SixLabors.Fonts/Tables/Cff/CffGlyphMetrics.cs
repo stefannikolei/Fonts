@@ -70,6 +70,29 @@ internal class CffGlyphMetrics : FontGlyphMetrics
         => this.glyphData = glyphData;
 
     /// <inheritdoc/>
+    internal override bool TryGetFittedOutlinePlacement(
+        float scaledPPEM,
+        HintingMode resolvedHintingMode,
+        bool includeInkExtent,
+        out FittedOutlinePlacement placement)
+    {
+        CffOutline outline = this.GetScaledOutline(scaledPPEM, resolvedHintingMode);
+        if (!outline.IsFitted)
+        {
+            placement = default;
+            return false;
+        }
+
+        Vector2 scale = this.GetOutlineScale(scaledPPEM);
+        float fittedMin = 0F;
+        float fittedMax = 0F;
+        bool hasFittedInk = includeInkExtent && outline.TryGetFittedInkExtentX(out fittedMin, out fittedMax);
+
+        placement = new FittedOutlinePlacement(scale, hasFittedInk, fittedMin, fittedMax);
+        return true;
+    }
+
+    /// <inheritdoc/>
     internal override void RenderOutlineTo(
         IGlyphRenderer renderer,
         Vector2 glyphOrigin,
@@ -87,33 +110,9 @@ internal class CffGlyphMetrics : FontGlyphMetrics
         // it through a unit scale transforming renderer, which reproduces the streaming
         // arithmetic exactly. Each mode shapes the outline differently: unhinted geometry,
         // vertical only fitting, or full grid fitting.
-        ConcurrentDictionary<ScaledOutlineKey, CffOutline> cache =
-            LazyInitializer.EnsureInitialized(ref this.scaledOutlineCache, static () => new());
-        CffOutline outline = cache.GetOrAdd(new ScaledOutlineKey(scaledPPEM, hintingMode), static (key, self) => self.CreateScaledOutline(key), this);
+        CffOutline outline = this.GetScaledOutline(scaledPPEM, hintingMode);
 
         Vector2 scaledOffset = (this.Offset + positionOffset) * scale;
-
-        // Snap the complete device translation only after offset, layout rotation and the
-        // device-space Y inversion have been composed. Adjusting the origin by the delta
-        // preserves the already fitted outline coordinates while routing CFF through the
-        // same per-mode axis policy as TrueType.
-        bool axisPreserving = transform.IsIdentity
-            || (mode == GlyphLayoutMode.VerticalRotated && this.GetObliqueSkew(textRun) == 0F);
-
-        if (axisPreserving && outline.IsFitted)
-        {
-            Vector2 composed = (Vector2.Transform(scaledOffset, transform) * new Vector2(1F, -1F)) + glyphOrigin;
-            Vector2 snapped = SnapComposedTranslation(
-                hintingMode,
-                mode,
-                composed,
-                glyphOrigin.X + (this.AdvanceWidth * scale.X * 0.5F),
-                false,
-                0F,
-                0F);
-
-            glyphOrigin += snapped - composed;
-        }
 
         float boldStrength = this.GetSyntheticBoldStrength(scaledPPEM, textRun);
         if (boldStrength > 0F)
@@ -156,6 +155,20 @@ internal class CffGlyphMetrics : FontGlyphMetrics
         }
 
         return scale;
+    }
+
+    /// <summary>
+    /// Gets the buffered CFF outline shaped for the specified size and hinting mode.
+    /// </summary>
+    /// <param name="scaledPPEM">The scaled pixels-per-em value used to build the outline.</param>
+    /// <param name="hintingMode">The resolved hinting mode shaping the outline.</param>
+    /// <returns>The cached outline.</returns>
+    private CffOutline GetScaledOutline(float scaledPPEM, HintingMode hintingMode)
+    {
+        ConcurrentDictionary<ScaledOutlineKey, CffOutline> cache =
+            LazyInitializer.EnsureInitialized(ref this.scaledOutlineCache, static () => new());
+
+        return cache.GetOrAdd(new ScaledOutlineKey(scaledPPEM, hintingMode), static (key, self) => self.CreateScaledOutline(key), this);
     }
 
     /// <summary>
@@ -257,7 +270,7 @@ internal class CffGlyphMetrics : FontGlyphMetrics
 
             if (HintMap.FitInPlace(outline.Points, outline.Verbs, outline.ContourEnds, outline.VerticalStems, outline.HorizontalStems, outline.InitialStemCount, outline.HintRegions, outline.CounterMasks, in options))
             {
-                outline.IsFitted = true;
+                outline.MarkFitted(key.HintingMode == HintingMode.Full);
                 return outline;
             }
         }

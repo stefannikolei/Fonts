@@ -91,6 +91,35 @@ public partial class TrueTypeGlyphMetrics : FontGlyphMetrics
     /// <inheritdoc/>
     internal override HintingMode ResolveHintingMode(HintingMode hintingMode) => this.GetHintingMode(hintingMode);
 
+    /// <inheritdoc/>
+    internal override bool TryGetFittedOutlinePlacement(
+        float scaledPPEM,
+        HintingMode resolvedHintingMode,
+        bool includeInkExtent,
+        out FittedOutlinePlacement placement)
+    {
+        GlyphVector scaledVector = this.GetScaledOutline(scaledPPEM, resolvedHintingMode);
+        if (!scaledVector.IsHinted)
+        {
+            placement = default;
+            return false;
+        }
+
+        Vector2 scale = new Vector2(scaledPPEM) / this.ScaleFactor;
+        float fittedMin = 0F;
+        float fittedMax = 0F;
+        bool hasFittedInk = false;
+        if (includeInkExtent)
+        {
+            IList<ControlPoint> controlPoints = scaledVector.ControlPoints;
+            hasFittedInk = controlPoints.Count > 0
+                && GetFittedInkExtentX(controlPoints, scaledVector.EndPoints, out fittedMin, out fittedMax);
+        }
+
+        placement = new FittedOutlinePlacement(scale, hasFittedInk, fittedMin, fittedMax);
+        return true;
+    }
+
     /// <summary>
     /// Returns the size to render/measure the glyph at. Under full hinting the em square is
     /// constrained to whole pixels, matching the classic rasterizers whose instruction
@@ -277,11 +306,8 @@ public partial class TrueTypeGlyphMetrics : FontGlyphMetrics
         float scaledPPEM,
         HintingMode hintingMode)
     {
-        ConcurrentDictionary<ScaledVectorKey, GlyphVector> cache =
-            LazyInitializer.EnsureInitialized(ref this.scaledVectorCache, static () => new());
         Vector2 scale = new Vector2(scaledPPEM) / this.ScaleFactor;
-        HintingMode resolvedMode = this.GetHintingMode(hintingMode);
-        GlyphVector scaledVector = cache.GetOrAdd(new ScaledVectorKey(scaledPPEM, resolvedMode), static (key, self) => self.CreateScaledVector(key), this);
+        GlyphVector scaledVector = this.GetScaledOutline(scaledPPEM, hintingMode);
 
         IList<ControlPoint> controlPoints = scaledVector.ControlPoints;
         IReadOnlyList<ushort> endPoints = scaledVector.EndPoints;
@@ -295,24 +321,6 @@ public partial class TrueTypeGlyphMetrics : FontGlyphMetrics
         emit *= outlineTransform;
         emit *= Matrix3x2.CreateScale(1F, -1F);
         emit.Translation += glyphOrigin;
-
-        // The one and only outline snap site: both hinting modes snap the composed emit
-        // translation here, after every term is summed, so their final positions come from
-        // identical arithmetic. Full hinting snaps both axes; standard hinting snaps the
-        // glyph's hinted vertical axis only, which the ninety degree rotation of mixed
-        // vertical layout maps onto device X. The grid survives the identity transform and
-        // the pure layout rotation; any oblique skew disables snapping.
-        bool axisPreserving = outlineTransform.IsIdentity
-            || (mode == GlyphLayoutMode.VerticalRotated && this.GetObliqueSkew(textRun) == 0F);
-
-        if (axisPreserving && resolvedMode != HintingMode.None)
-        {
-            float fittedMin = 0F;
-            float fittedMax = 0F;
-            bool hasFittedInk = resolvedMode == HintingMode.Full && mode == GlyphLayoutMode.Vertical && controlPoints.Count > 0 && GetFittedInkExtentX(controlPoints, endPoints, out fittedMin, out fittedMax);
-
-            emit.Translation = SnapComposedTranslation(resolvedMode, mode, emit.Translation, glyphOrigin.X + (this.AdvanceWidth * scale.X * 0.5F), hasFittedInk, fittedMin, fittedMax);
-        }
 
         float boldStrength = this.GetSyntheticBoldStrength(scaledPPEM, textRun);
         EmboldeningGlyphRenderer? emboldening = null;

@@ -53,6 +53,7 @@ internal class TableLoader
         this.Register(CvtTable.TableName, CvtTable.Load);
         this.Register(FpgmTable.TableName, FpgmTable.Load);
         this.Register(PrepTable.TableName, PrepTable.Load);
+        this.Register<HdmxTable>(HdmxTable.TableName, _ => null);
         this.Register(GlyphDefinitionTable.TableName, GlyphDefinitionTable.Load);
         this.Register(PostTable.TableName, PostTable.Load);
         this.Register(Cff1Table.TableName, Cff1Table.Load);

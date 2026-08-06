@@ -45,6 +45,14 @@ internal ref struct SimpleBinaryReader
     public byte ReadByte() => this.buffer[this.Position++];
 
     /// <summary>
+    /// Reads the byte at an absolute offset without moving the position, returning zero
+    /// past the end of the buffer.
+    /// </summary>
+    /// <param name="offset">The absolute offset to read.</param>
+    /// <returns>The byte value.</returns>
+    public readonly byte PeekAt(int offset) => (uint)offset < (uint)this.buffer.Length ? this.buffer[offset] : (byte)0;
+
+    /// <summary>
     /// Reads a big-endian 16-bit signed integer and advances the position by 2 bytes.
     /// </summary>
     /// <returns>The 16-bit signed integer value.</returns>

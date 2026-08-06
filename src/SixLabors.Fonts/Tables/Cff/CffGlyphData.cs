@@ -90,6 +90,12 @@ internal struct CffGlyphData
     public double[]? FontMatrix { get; set; }
 
     /// <summary>
+    /// Gets or sets the declarative hinting values from the owning Private DICT, or
+    /// <see langword="null"/> when the font carries none.
+    /// </summary>
+    public CffHintingValues? HintingValues { get; set; }
+
+    /// <summary>
     /// Computes the bounding box of this glyph by evaluating the charstring program.
     /// </summary>
     /// <returns>The <see cref="Bounds"/> of the glyph.</returns>
@@ -131,5 +137,52 @@ internal struct CffGlyphData
              this.vsIndex);
 
         engine.RenderTo(renderer, origin, scale, offset, transform);
+    }
+
+    /// <summary>
+    /// Evaluates the charstring once into a buffered outline in upright pixel space, Y up
+    /// with the baseline at zero, collecting the declared stem zones along the way.
+    /// Placement, synthetic oblique, rotation and origin apply at replay time, so one
+    /// buffered outline serves every render at the size.
+    /// </summary>
+    /// <param name="scale">The pixels per design unit scale, including the font matrix.</param>
+    /// <returns>The buffered <see cref="CffOutline"/>.</returns>
+    public readonly CffOutline BuildOutline(Vector2 scale)
+    {
+        CffOutlineBuilder builder = CffOutlineBuilder.Rent();
+        try
+        {
+            using CffEvaluationEngine engine = new(
+                this.charStrings,
+                this.globalSubrBuffers,
+                this.localSubrBuffers,
+                this.nominalWidthX,
+                this.version,
+                this.itemVariationStore,
+                this.FVar,
+                this.AVar,
+                this.vsIndex);
+
+            // The lists are per cache fill; they become the outline's retained stem arrays.
+            List<float> horizontal = [];
+            List<float> vertical = [];
+            List<CffHintRegion> regions = [];
+            List<CffCounterMask> counters = [];
+            engine.CollectStems(horizontal, vertical, regions, counters, builder);
+
+            // A negated Y scale composed with the streaming sink's Y flip captures points
+            // in Y up pixel space through sign exact arithmetic, so replaying them through
+            // a unit scale transforming renderer reproduces the streaming path bit for bit.
+            // Points are captured in character space, Y up. The hint map holds a
+            // character space and a device space coordinate per edge and converts between
+            // them, so scaling here would leave it nothing to convert.
+            engine.RenderTo(builder, Vector2.Zero, new Vector2(1F, -1F), Vector2.Zero, Matrix3x2.Identity);
+
+            return builder.ToOutline([.. vertical], [.. horizontal], engine.InitialStemCount, engine.LockFixMapOk, regions.ToArray(), counters.ToArray());
+        }
+        finally
+        {
+            builder.Release();
+        }
     }
 }

@@ -49,12 +49,31 @@ public partial class TrueTypeGlyphMetrics
         };
 
     /// <summary>
+    /// Caches the face name driven hinting override so the list scan runs once per metrics
+    /// instance rather than on every render. Resolution is deterministic for a given face
+    /// name so the benign publication race always stores the same value.
+    /// </summary>
+    private HintingModeOverride hintingModeOverride;
+
+    /// <summary>
+    /// Describes the font specific hinting override resolved from the compatibility lists.
+    /// </summary>
+    private enum HintingModeOverride
+    {
+        Unresolved,
+        NoOverride,
+        ForceNone,
+        ForceFull
+    }
+
+    /// <summary>
     /// Determines the effective hinting mode for the current font based on its name and the specified mode.
     /// </summary>
     /// <remarks>
     /// If the font name matches an entry in the internal 'NeverHint' list, hinting is disabled
-    /// regardless of the requested mode. If the font name matches an entry in the 'MustHintFonts' list, standard
-    /// hinting is enforced. Otherwise, the provided mode is used. This method ensures consistent rendering for certain
+    /// regardless of the requested mode. If the font name matches an entry in the 'MustHintFonts' list, full
+    /// hinting is enforced: those fonts depend on unrestricted instruction execution to produce legible output.
+    /// Otherwise, the provided mode is used. This method ensures consistent rendering for certain
     /// fonts that require special handling.
     /// </remarks>
     /// <param name="mode">The requested hinting mode to use if no font-specific override applies.</param>
@@ -64,7 +83,29 @@ public partial class TrueTypeGlyphMetrics
     /// </returns>
     private HintingMode GetHintingMode(HintingMode mode)
     {
-        ReadOnlySpan<char> faceName = SkipPdfFontRandomTag(this.FontMetrics.Description.FontNameInvariantCulture);
+        HintingModeOverride resolved = this.hintingModeOverride;
+        if (resolved == HintingModeOverride.Unresolved)
+        {
+            resolved = ResolveHintingModeOverride(this.FontMetrics.Description.FontNameInvariantCulture);
+            this.hintingModeOverride = resolved;
+        }
+
+        return resolved switch
+        {
+            HintingModeOverride.ForceNone => HintingMode.None,
+            HintingModeOverride.ForceFull => HintingMode.Full,
+            _ => mode,
+        };
+    }
+
+    /// <summary>
+    /// Resolves the compatibility list override for the given face name.
+    /// </summary>
+    /// <param name="name">The invariant culture face name.</param>
+    /// <returns>The <see cref="HintingModeOverride"/> for the face.</returns>
+    private static HintingModeOverride ResolveHintingModeOverride(string name)
+    {
+        ReadOnlySpan<char> faceName = SkipPdfFontRandomTag(name);
 
         // We use partial matching here since some platforms/face collections may include additional style or
         // foundry-specific information in the face name.
@@ -72,7 +113,7 @@ public partial class TrueTypeGlyphMetrics
         {
             if (faceName.Contains(needle, StringComparison.Ordinal))
             {
-                return HintingMode.None;
+                return HintingModeOverride.ForceNone;
             }
         }
 
@@ -80,11 +121,11 @@ public partial class TrueTypeGlyphMetrics
         {
             if (faceName.Contains(needle, StringComparison.Ordinal))
             {
-                return HintingMode.Standard;
+                return HintingModeOverride.ForceFull;
             }
         }
 
-        return mode;
+        return HintingModeOverride.NoOverride;
     }
 
     /// <summary>

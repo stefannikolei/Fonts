@@ -15,11 +15,13 @@ internal class CffPrivateDictionary
     /// <param name="localSubrRawBuffers">The local subroutine byte buffers.</param>
     /// <param name="defaultWidthX">The default glyph width.</param>
     /// <param name="nominalWidthX">The nominal width bias.</param>
-    public CffPrivateDictionary(byte[][]? localSubrRawBuffers, int defaultWidthX, int nominalWidthX)
+    /// <param name="hintingValues">The declarative hinting values carried by the Private DICT.</param>
+    public CffPrivateDictionary(byte[][]? localSubrRawBuffers, int defaultWidthX, int nominalWidthX, CffHintingValues hintingValues)
     {
         this.LocalSubrRawBuffers = localSubrRawBuffers;
         this.DefaultWidthX = defaultWidthX;
         this.NominalWidthX = nominalWidthX;
+        this.HintingValues = hintingValues;
     }
 
     /// <summary>
@@ -36,4 +38,9 @@ internal class CffPrivateDictionary
     /// Gets or sets the nominal width used as a bias for charstring width values.
     /// </summary>
     public int NominalWidthX { get; set; }
+
+    /// <summary>
+    /// Gets the declarative hinting values carried by the Private DICT.
+    /// </summary>
+    public CffHintingValues HintingValues { get; }
 }

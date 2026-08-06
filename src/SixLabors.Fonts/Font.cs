@@ -488,7 +488,7 @@ public sealed class Font
             }
         }
 
-        this.Family.TryGetMetrics(defaultStyle, out metrics);
+        _ = this.Family.TryGetMetrics(defaultStyle, out metrics);
         return metrics;
     }
 }

@@ -26,6 +26,14 @@ internal ref struct CffEvaluationEngine
     private static readonly Random Random = new();
     private float? width;
     private int nStems;
+    private List<float>? horizontalStemEdges;
+    private List<float>? verticalStemEdges;
+    private List<CffHintRegion>? hintRegions;
+    private List<CffCounterMask>? counterMasks;
+    private CffOutlineBuilder? pointSink;
+    private int initialStemCount;
+    private bool initialHintsActivated;
+    private bool lockFixMapOk;
     private float x;
     private float y;
     private RefStack<float> stack;
@@ -79,6 +87,9 @@ internal ref struct CffEvaluationEngine
         this.y = 0;
         this.width = null;
         this.nStems = 0;
+        this.initialStemCount = 0;
+        this.initialHintsActivated = false;
+        this.lockFixMapOk = true;
         this.stack = new(50);
         this.isDisposed = false;
         this.version = version;
@@ -96,6 +107,18 @@ internal ref struct CffEvaluationEngine
 
         this.vsIndex = vsIndex;
     }
+
+    /// <summary>
+    /// Gets the number of stems that become active together at the first movement operator.
+    /// Later declarations do not change this count.
+    /// </summary>
+    public int InitialStemCount => this.initialStemCount;
+
+    /// <summary>
+    /// Gets a value indicating whether GDI permits its post-lock overlap fixup for this
+    /// charstring. Hint-substitution operators disable that fixup for the whole glyph.
+    /// </summary>
+    public bool LockFixMapOk => this.lockFixMapOk;
 
     /// <summary>
     /// Computes the bounding box of the glyph by evaluating the charstring program.
@@ -173,11 +196,29 @@ internal ref struct CffEvaluationEngine
                 switch (oneByteOperator)
                 {
                     case Type2Operator1.Hstem:
-                    case Type2Operator1.Vstem:
+
+                        this.ParseStems(this.horizontalStemEdges);
+                        break;
+
                     case Type2Operator1.Hstemhm:
+
+                        // GDI clears lockFixMapOk whenever hstemhm is executed, including
+                        // from a subroutine, before consuming the same stem operands.
+                        this.lockFixMapOk = false;
+                        this.ParseStems(this.horizontalStemEdges);
+                        break;
+
+                    case Type2Operator1.Vstem:
+
+                        this.ParseStems(this.verticalStemEdges);
+                        break;
+
                     case Type2Operator1.Vstemhm:
 
-                        this.ParseStems();
+                        // vstemhm has the same glyph-wide effect as hstemhm in the native
+                        // interpreter; plain vstem leaves the post-lock fixup enabled.
+                        this.lockFixMapOk = false;
+                        this.ParseStems(this.verticalStemEdges);
                         break;
 
                     case Type2Operator1.Vmoveto:
@@ -188,6 +229,7 @@ internal ref struct CffEvaluationEngine
                         }
 
                         this.y += this.stack.Shift();
+                        this.ActivateInitialHints();
                         this.transforming.MoveTo(new Vector2(this.x, this.y));
 
                         this.stack.Clear();
@@ -327,11 +369,73 @@ internal ref struct CffEvaluationEngine
 
                     case Type2Operator1.Hintmask:
                     case Type2Operator1.Cntrmask:
+                    {
+                        // Operands pending when a mask operator arrives are implicit
+                        // vertical stems whose vstem operator was elided.
+                        this.ParseStems(this.verticalStemEdges);
 
-                        this.ParseStems();
-                        reader.Position += (this.nStems + 7) >> 3;
+                        if (oneByteOperator == Type2Operator1.Hintmask && this.initialHintsActivated)
+                        {
+                            // GDI permits an initial pre-path hintmask, but a hintmask
+                            // encountered after the first movement disables map fixup.
+                            this.lockFixMapOk = false;
+                        }
+
+                        int maskBytes = (this.nStems + 7) >> 3;
+
+                        // A hintmask states which of the declared stems are live for the
+                        // points that follow. Recording it against the current point count
+                        // lets the fitter build one map per region rather than one map for
+                        // the whole glyph, which is what makes crowded glyphs fit.
+                        if (this.hintRegions is not null && this.pointSink is not null)
+                        {
+                            uint first = 0;
+                            uint second = 0;
+                            uint third = 0;
+                            for (int maskByte = 0; maskByte < maskBytes; maskByte++)
+                            {
+                                byte value = reader.PeekAt(reader.Position + maskByte);
+                                for (int bit = 0; bit < 8; bit++)
+                                {
+                                    int stem = (maskByte * 8) + bit;
+                                    if ((value & (0x80 >> bit)) == 0)
+                                    {
+                                        continue;
+                                    }
+
+                                    // Type 2 mask bytes are most-significant-bit first, while the
+                                    // fixed words retain declaration index as the bit index.
+                                    if (stem < 32)
+                                    {
+                                        first |= 1U << stem;
+                                    }
+                                    else if (stem < 64)
+                                    {
+                                        second |= 1U << (stem - 32);
+                                    }
+                                    else if (stem < 96)
+                                    {
+                                        third |= 1U << (stem - 64);
+                                    }
+                                }
+                            }
+
+                            CffHintMask mask = new(first, second, third);
+
+                            if (oneByteOperator == Type2Operator1.Hintmask)
+                            {
+                                this.hintRegions.Add(new CffHintRegion(this.pointSink.PointCount, mask, this.nStems));
+                            }
+                            else
+                            {
+                                this.counterMasks?.Add(new CffCounterMask(mask, this.nStems, this.counterMasks.Count));
+                            }
+                        }
+
+                        reader.Position += maskBytes;
 
                         break;
+                    }
 
                     case Type2Operator1.Rmoveto:
 
@@ -342,6 +446,7 @@ internal ref struct CffEvaluationEngine
 
                         this.x += this.stack.Shift();
                         this.y += this.stack.Shift();
+                        this.ActivateInitialHints();
                         this.transforming.MoveTo(new Vector2(this.x, this.y));
 
                         this.stack.Clear();
@@ -355,6 +460,7 @@ internal ref struct CffEvaluationEngine
                         }
 
                         this.x += this.stack.Shift();
+                        this.ActivateInitialHints();
                         this.transforming.MoveTo(new Vector2(this.x, this.y));
 
                         this.stack.Clear();
@@ -827,14 +933,65 @@ internal ref struct CffEvaluationEngine
     }
 
     /// <summary>
-    /// Parses stem hint operators, consuming width if present and counting hint pairs.
+    /// Directs the engine to collect declared stem zones into the given lists during
+    /// evaluation. Stem edges are recorded in charstring units as low and high pairs;
+    /// ghost stems keep their negative widths so consumers can recognize edge hints.
+    /// When not enabled, stem operators are consumed exactly as before at no cost.
+    /// </summary>
+    /// <param name="horizontal">Receives the horizontal stem zone edge pairs, in Y coordinates.</param>
+    /// <param name="vertical">Receives the vertical stem zone edge pairs, in X coordinates.</param>
+    /// <param name="regions">Receives the hint mask regions, each tagged with the point it starts at.</param>
+    /// <param name="counters">Receives cntrmask events in declaration order, including the stem count at each operator.</param>
+    /// <param name="sink">The outline builder whose point count tags each region.</param>
+    public void CollectStems(List<float> horizontal, List<float> vertical, List<CffHintRegion> regions, List<CffCounterMask> counters, CffOutlineBuilder sink)
+    {
+        this.horizontalStemEdges = horizontal;
+        this.verticalStemEdges = vertical;
+        this.hintRegions = regions;
+        this.counterMasks = counters;
+        this.pointSink = sink;
+    }
+
+    /// <summary>
+    /// Captures the implicit initial hint activation at the first movement operator.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void ParseStems()
+    private void ActivateInitialHints()
+    {
+        if (!this.initialHintsActivated)
+        {
+            // GDI activates every stem declared when the first movement starts. Keeping
+            // this count separate from later explicit masks preserves later declarations.
+            this.initialStemCount = this.nStems;
+            this.initialHintsActivated = true;
+        }
+    }
+
+    /// <summary>
+    /// Parses stem hint operators, consuming width if present and counting hint pairs.
+    /// Operands encode each stem's low edge relative to the previous stem's high edge
+    /// followed by its width, so absolute zones accumulate across the operand run.
+    /// </summary>
+    /// <param name="target">Receives decoded absolute edge pairs, or <see langword="null"/> when collection is disabled.</param>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void ParseStems(List<float>? target)
     {
         if (this.stack.Length % 2 != 0)
         {
             this.CheckWidth();
+        }
+
+        if (target is not null)
+        {
+            float running = 0F;
+            for (int i = 0; i + 1 < this.stack.Length; i += 2)
+            {
+                float low = running + this.stack[i];
+                float high = low + this.stack[i + 1];
+                target.Add(low);
+                target.Add(high);
+                running = high;
+            }
         }
 
         this.nStems += this.stack.Length >> 1;
@@ -858,6 +1015,9 @@ internal ref struct CffEvaluationEngine
         this.y = 0;
         this.width = null;
         this.nStems = 0;
+        this.initialStemCount = 0;
+        this.initialHintsActivated = false;
+        this.lockFixMapOk = true;
         this.stack.Clear();
         this.trans.Clear();
     }

@@ -157,10 +157,10 @@ public class GlyphTests
     }
 
     [Theory]
-    [InlineData(false, false, 1238)]
-    [InlineData(false, true, 1238)]
-    [InlineData(true, false, 1238)]
-    [InlineData(true, true, 1238)]
+    [InlineData(false, false, 719)]
+    [InlineData(false, true, 719)]
+    [InlineData(true, false, 719)]
+    [InlineData(true, true, 719)]
     public void RenderWoffGlyphs_IsEqualToTtfGlyphs(bool applyKerning, bool applyHinting, int expectedControlPoint)
     {
         Font fontTtf = TestFonts.GetFont(TestFonts.OpenSansFile, 12);
@@ -215,10 +215,10 @@ public class GlyphTests
     }
 
     [Theory]
-    [InlineData(false, false, 1238)]
-    [InlineData(false, true, 1238)]
-    [InlineData(true, false, 1238)]
-    [InlineData(true, true, 1238)]
+    [InlineData(false, false, 719)]
+    [InlineData(false, true, 719)]
+    [InlineData(true, false, 719)]
+    [InlineData(true, true, 719)]
     public void RenderWoff2Glyphs_IsEqualToTtfGlyphs(bool applyKerning, bool applyHinting, int expectedControlPoints)
     {
         Font fontTtf = TestFonts.GetFont(TestFonts.OpenSansFile, 12);

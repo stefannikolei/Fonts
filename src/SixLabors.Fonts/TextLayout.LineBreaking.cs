@@ -95,7 +95,29 @@ internal static partial class TextLayout
                 shapedText.LayoutMode,
                 options.ColorFontSupport);
 
-            glyphStorage[i] = new(glyphMetrics, position.AdvanceWidth, position.AdvanceHeight, position.Offset, run.TextRun);
+            // Full hinting substitutes whole pixel hinted advances on the flow axis only, so
+            // the pen accumulates on the pixel grid exactly as the classic rasterizer's does
+            // while cross axis inputs, such as the width vertical layout centres upright
+            // glyphs with, keep their shaped values. Rotated glyphs in mixed vertical lines
+            // flow by their width; upright vertical flow keeps its shaped fractional advances so standard and full hinting stack identically, with the emit snap landing both on the same pixels. Shaping advance
+            // adjustments such as pair kerning are dropped with the fractional advance: the
+            // classic pipeline never applied them, and folding a sub-pixel kern into a whole
+            // pixel pen shifts a glyph a full pixel off the reference. The metrics resolve
+            // the effective mode themselves so fonts forced onto full hinting by the
+            // compatibility lists receive matching advances under any requested mode.
+            ushort advanceWidth = position.AdvanceWidth;
+            ushort advanceHeight = position.AdvanceHeight;
+            float rawScaledPPEM = options.Dpi * run.Font.Size;
+            bool flowsByWidth = isHorizontalLayout
+                || (isVerticalMixedLayout && CodePoint.GetVerticalOrientationType(info.CodePoint) is VerticalOrientationType.Rotate or VerticalOrientationType.TransformRotate);
+
+            if (flowsByWidth && glyphMetrics.TryGetHintedAdvanceWidth(run.Font.Size, options.Dpi, options.HintingMode, out float hintedAdvancePx))
+            {
+                float hintedUnits = hintedAdvancePx * glyphMetrics.UnitsPerEm * 72F / rawScaledPPEM;
+                advanceWidth = (ushort)Math.Clamp(MathF.Floor(hintedUnits + 0.5F), 0F, ushort.MaxValue);
+            }
+
+            glyphStorage[i] = new(glyphMetrics, advanceWidth, advanceHeight, position.Offset, run.TextRun);
         }
 
         // Word-boundary segments are prepared with the logical line, while grapheme
@@ -633,7 +655,7 @@ internal static partial class TextLayout
         TextOptions options)
     {
         FontGlyphMetrics anchorMetric = anchor.Metrics;
-        anchorMetric.FontMetrics.TryGetGlyphId(markerCodePoint, out ushort markerGlyphId);
+        _ = anchorMetric.FontMetrics.TryGetGlyphId(markerCodePoint, out ushort markerGlyphId);
 
         FontGlyphMetrics markerMetric = anchorMetric.FontMetrics.GetGlyphMetrics(
             markerCodePoint,

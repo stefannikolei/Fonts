@@ -495,18 +495,45 @@ public abstract class FontGlyphMetrics
         glyphOrigin *= dpi;
         decorationOrigin *= dpi;
         layoutAdvance *= dpi;
-        float scaledPPEM = this.GetScaledSize(pointSize, dpi);
+        float scaledPPEM = this.GetScaledSize(pointSize, dpi, hintingMode);
+        bool whitespace = UnicodeUtility.ShouldRenderWhiteSpaceOnly(this.CodePoint);
+
+        // Fitted outlines and decorations share one device lattice, but their translations are
+        // composed differently. The format-specific outline origin is resolved below with its
+        // scaled metric and positioning offsets included. Decorations never flow through outline
+        // emission, so their independent origin rounds here with the same per-mode axis policy:
+        // full hinting on both axes, standard hinting on the glyph's hinted axis only, which a
+        // rotated vertical glyph maps onto device X.
+        HintingMode resolvedHinting = this.ResolveHintingMode(hintingMode);
+        if (resolvedHinting == HintingMode.Full)
+        {
+            decorationOrigin = new Vector2(MathF.Floor(decorationOrigin.X + 0.5F), MathF.Floor(decorationOrigin.Y + 0.5F));
+        }
+        else if (resolvedHinting == HintingMode.Standard)
+        {
+            decorationOrigin = mode == GlyphLayoutMode.VerticalRotated
+                ? new Vector2(MathF.Floor(decorationOrigin.X + 0.5F), decorationOrigin.Y)
+                : new Vector2(decorationOrigin.X, MathF.Floor(decorationOrigin.Y + 0.5F));
+        }
+
+        // BeginGlyph may satisfy the glyph from a renderer-owned cache and decline outline
+        // emission. Resolve the format-specific grid translation before that decision so the
+        // reported metric bounds and a freshly emitted outline share one placement. Renderers
+        // can then cache solely from the supplied bounds without reproducing hinting rules.
+        if (!whitespace)
+        {
+            glyphOrigin = this.ResolveOutlineOrigin(glyphOrigin, mode, textRun, positionOffset, scaledPPEM, resolvedHinting);
+        }
 
         Matrix3x2 rotation = GetRotationMatrix(mode);
         FontRectangle box = this.GetBoundingBox(mode, glyphOrigin, scaledPPEM, textRun, positionOffset, positionedAdvance);
-        GlyphRendererParameters parameters = new(this, textRun, pointSize, dpi, mode, graphemeIndex);
+        GlyphRendererParameters parameters = new(this, textRun, pointSize, dpi, mode, graphemeIndex, hintingMode);
 
         if (!renderer.BeginGlyph(in box, in parameters))
         {
             return;
         }
 
-        bool whitespace = UnicodeUtility.ShouldRenderWhiteSpaceOnly(this.CodePoint);
         bool isVerticalLayout = mode is GlyphLayoutMode.Vertical or GlyphLayoutMode.VerticalRotated;
 
         // Decoration geometry depends only on font metrics and scale, so it is computed
@@ -562,7 +589,7 @@ public abstract class FontGlyphMetrics
         {
             if (!whitespace)
             {
-                this.RenderOutlineTo(outlineTarget, glyphOrigin, mode, textRun, positionOffset, positionedAdvance, scaledPPEM, hintingMode);
+                this.RenderOutlineTo(outlineTarget, glyphOrigin, mode, textRun, positionOffset, positionedAdvance, scaledPPEM, resolvedHinting);
             }
 
             renderer.EndGlyph();
@@ -909,8 +936,9 @@ public abstract class FontGlyphMetrics
     /// </summary>
     /// <param name="pointSize">The font size in pt units.</param>
     /// <param name="dpi">The DPI (Dots Per Inch) to render/measure the glyph at</param>
+    /// <param name="hintingMode">The hinting mode, which may constrain the size to whole pixels.</param>
     /// <returns>The <see cref="float"/>.</returns>
-    internal float GetScaledSize(float pointSize, float dpi)
+    internal virtual float GetScaledSize(float pointSize, float dpi, HintingMode hintingMode)
     {
         float scaledPPEM = dpi * pointSize;
         bool forcePPEMToInt = (this.FontMetrics.HeadFlags & HeadTable.HeadFlags.ForcePPEMToInt) != 0;
@@ -921,6 +949,162 @@ public abstract class FontGlyphMetrics
         }
 
         return scaledPPEM;
+    }
+
+    /// <summary>
+    /// Attempts to compute the whole pixel advance width for the glyph under full hinting.
+    /// Outline formats that grid fit under <see cref="HintingMode.Full"/> override this so
+    /// layout can accumulate whole pixel advances matching the fitted outlines. The base
+    /// implementation never applies: glyphs without fitted outlines keep their shaped
+    /// fractional advances. Implementations must not execute hinting or touch outline
+    /// caches, as this runs on the layout hot path.
+    /// </summary>
+    /// <param name="pointSize">The font size in pt units.</param>
+    /// <param name="dpi">The DPI (Dots Per Inch) to render/measure the glyph at</param>
+    /// <param name="hintingMode">The requested hinting mode.</param>
+    /// <param name="advancePx">The advance width in whole device pixels.</param>
+    /// <returns><see langword="true"/> if a hinted advance applies; otherwise, <see langword="false"/>.</returns>
+    public virtual bool TryGetHintedAdvanceWidth(float pointSize, float dpi, HintingMode hintingMode, out float advancePx)
+    {
+        advancePx = 0F;
+        return false;
+    }
+
+    /// <summary>
+    /// Resolves the hinting mode that will actually shape this glyph's outline. Fonts forced onto
+    /// full hinting by the compatibility lists resolve to it under any requested mode.
+    /// </summary>
+    /// <param name="hintingMode">The requested hinting mode.</param>
+    /// <returns>The resolved <see cref="HintingMode"/>.</returns>
+    internal virtual HintingMode ResolveHintingMode(HintingMode hintingMode) => hintingMode;
+
+    /// <summary>
+    /// Resolves the device-space glyph origin used by both renderer-visible bounds and outline
+    /// emission. The complete translation is snapped only after the format confirms that its
+    /// cached outline was fitted, so a renderer-owned cache observes the same placement as a
+    /// freshly emitted outline.
+    /// </summary>
+    /// <param name="glyphOrigin">The unsnapped glyph origin in device pixels.</param>
+    /// <param name="mode">The glyph layout mode.</param>
+    /// <param name="textRun">The text run providing synthetic outline transforms.</param>
+    /// <param name="positionOffset">The positioned placement offset in font design units.</param>
+    /// <param name="scaledPPEM">The scaled pixels-per-em value used to shape the outline.</param>
+    /// <param name="resolvedHintingMode">The hinting mode resolved for the current font.</param>
+    /// <returns>The glyph origin used for renderer bounds and outline emission.</returns>
+    internal virtual Vector2 ResolveOutlineOrigin(
+        Vector2 glyphOrigin,
+        GlyphLayoutMode mode,
+        TextRun? textRun,
+        Vector2 positionOffset,
+        float scaledPPEM,
+        HintingMode resolvedHintingMode)
+    {
+        Matrix3x2 outlineTransform = this.GetOutlineTransform(mode, textRun);
+        bool axisPreserving = outlineTransform.IsIdentity
+            || (mode == GlyphLayoutMode.VerticalRotated && this.GetObliqueSkew(textRun) == 0F);
+
+        if (!axisPreserving || resolvedHintingMode == HintingMode.None)
+        {
+            return glyphOrigin;
+        }
+
+        // Only upright vertical full hinting centres fitted pixel columns on the advance box.
+        // Every other placement needs the fitted state and scale but not the curve extent, so
+        // formats can avoid inspecting their cached point arrays for those common cases.
+        bool includeInkExtent = resolvedHintingMode == HintingMode.Full && mode == GlyphLayoutMode.Vertical;
+        if (!this.TryGetFittedOutlinePlacement(scaledPPEM, resolvedHintingMode, includeInkExtent, out FittedOutlinePlacement placement))
+        {
+            return glyphOrigin;
+        }
+
+        Vector2 scaledOffset = (this.Offset + positionOffset) * placement.Scale;
+        Vector2 composed = (Vector2.Transform(scaledOffset, outlineTransform) * YInverter) + glyphOrigin;
+        Vector2 snapped = SnapComposedTranslation(
+            resolvedHintingMode,
+            mode,
+            composed,
+            glyphOrigin.X + (this.AdvanceWidth * placement.Scale.X * 0.5F),
+            placement.HasInkExtent,
+            placement.MinInkX,
+            placement.MaxInkX);
+
+        // Cached fitted points remain untranslated and shareable. Moving only the origin by
+        // the snap delta makes metric bounds and emitted geometry reconstruct the same final
+        // device translation whether BeginGlyph requests the outline or satisfies a cache hit.
+        return glyphOrigin + snapped - composed;
+    }
+
+    /// <summary>
+    /// Attempts to obtain the fitted outline data required by the shared placement algorithm.
+    /// Formats without grid-fitted outlines retain the unsnapped origin through the default
+    /// implementation.
+    /// </summary>
+    /// <param name="scaledPPEM">The scaled pixels-per-em value used to shape the outline.</param>
+    /// <param name="resolvedHintingMode">The hinting mode resolved for the current font.</param>
+    /// <param name="includeInkExtent">Whether upright vertical centring requires horizontal ink extents.</param>
+    /// <param name="placement">The scale and optional fitted horizontal ink extent.</param>
+    /// <returns><see langword="true"/> when the outline was fitted; otherwise, <see langword="false"/>.</returns>
+    internal virtual bool TryGetFittedOutlinePlacement(
+        float scaledPPEM,
+        HintingMode resolvedHintingMode,
+        bool includeInkExtent,
+        out FittedOutlinePlacement placement)
+    {
+        placement = default;
+        return false;
+    }
+
+    /// <summary>
+    /// Snaps a composed outline translation onto the pixel grid with the per-mode axis policy
+    /// every outline format shares. Full hinting snaps both axes, first centring an upright
+    /// vertical glyph's fitted ink on its design advance box; standard hinting snaps the
+    /// glyph's hinted vertical axis only, which rotated vertical glyphs map onto device X.
+    /// Formats resolve their own composed translations and fitted ink extents, then route
+    /// them through this single policy so both modes and both formats land identically.
+    /// </summary>
+    /// <param name="resolvedMode">The resolved hinting mode shaping the outline.</param>
+    /// <param name="mode">The glyph layout mode.</param>
+    /// <param name="composed">The composed device translation with every term summed.</param>
+    /// <param name="boxCentreX">The centre of the design advance box, derived from the glyph origin alone so it stays constant down a vertical column.</param>
+    /// <param name="hasFittedInk">Whether fitted ink extents are available for centring.</param>
+    /// <param name="fittedMinX">The fitted outline's minimum ink X coordinate.</param>
+    /// <param name="fittedMaxX">The fitted outline's maximum ink X coordinate.</param>
+    /// <returns>The snapped translation.</returns>
+    internal static Vector2 SnapComposedTranslation(HintingMode resolvedMode, GlyphLayoutMode mode, Vector2 composed, float boxCentreX, bool hasFittedInk, float fittedMinX, float fittedMaxX)
+    {
+        if (resolvedMode == HintingMode.Full)
+        {
+            float x = composed.X;
+            if (mode == GlyphLayoutMode.Vertical && hasFittedInk)
+            {
+                // Vertical layout centres the design advance box on the column, so the box
+                // centre is the column axis itself. It must exclude the per glyph shaped
+                // offsets folded into the composed translation: they vary glyph to glyph, and
+                // an axis that moves with them scatters equal width glyphs across neighbouring
+                // pixels. What the eye centres is the rendered pixel columns, so the ink width
+                // is the count of pixel centres the fitted extent covers under centre sample
+                // scan conversion, not the rounded geometric extent: the two disagree whenever
+                // the extent's fractional phase straddles the samples. An integer translation
+                // then lands the first ink column on the floored target, keeping that phase,
+                // and flooring the half width difference without a rounding bias puts the odd
+                // pixel of an odd width glyph in the extra padding on the right, the classic
+                // rasterizer's tie direction.
+                float firstColumn = MathF.Ceiling(fittedMinX - 0.5F);
+                float inkColumns = MathF.Max(1F, MathF.Ceiling(fittedMaxX - 0.5F) - firstColumn);
+                x = MathF.Floor(boxCentreX - (inkColumns * 0.5F)) - firstColumn;
+            }
+
+            return new Vector2(MathF.Floor(x + 0.5F), MathF.Floor(composed.Y + 0.5F));
+        }
+
+        if (resolvedMode == HintingMode.Standard)
+        {
+            return mode == GlyphLayoutMode.VerticalRotated
+                ? new Vector2(MathF.Floor(composed.X + 0.5F), composed.Y)
+                : new Vector2(composed.X, MathF.Floor(composed.Y + 0.5F));
+        }
+
+        return composed;
     }
 
     /// <summary>
@@ -954,6 +1138,50 @@ public abstract class FontGlyphMetrics
         Matrix3x2 transform = CreateObliqueMatrix(this.GetObliqueSkew(textRun));
         transform *= GetRotationMatrix(mode);
         return transform;
+    }
+
+    /// <summary>
+    /// Describes the format-specific fitted outline data needed to place the outline on the
+    /// device grid. The outline scale composes metric offsets in the same coordinate space as
+    /// the cached fitted points. Horizontal ink extents are supplied only when upright vertical
+    /// full hinting needs to centre the rendered pixel columns on the advance box.
+    /// </summary>
+    internal readonly struct FittedOutlinePlacement
+    {
+        /// <summary>
+        /// Initializes a new instance of the <see cref="FittedOutlinePlacement"/> struct.
+        /// </summary>
+        /// <param name="scale">The number of device pixels per design unit on each axis.</param>
+        /// <param name="hasInkExtent">Whether the fitted outline produced a horizontal ink extent.</param>
+        /// <param name="minInkX">The fitted outline's minimum horizontal ink coordinate.</param>
+        /// <param name="maxInkX">The fitted outline's maximum horizontal ink coordinate.</param>
+        public FittedOutlinePlacement(Vector2 scale, bool hasInkExtent, float minInkX, float maxInkX)
+        {
+            this.Scale = scale;
+            this.HasInkExtent = hasInkExtent;
+            this.MinInkX = minInkX;
+            this.MaxInkX = maxInkX;
+        }
+
+        /// <summary>
+        /// Gets the number of device pixels per design unit on each axis.
+        /// </summary>
+        public Vector2 Scale { get; }
+
+        /// <summary>
+        /// Gets a value indicating whether the fitted outline produced a horizontal ink extent.
+        /// </summary>
+        public bool HasInkExtent { get; }
+
+        /// <summary>
+        /// Gets the fitted outline's minimum horizontal ink coordinate.
+        /// </summary>
+        public float MinInkX { get; }
+
+        /// <summary>
+        /// Gets the fitted outline's maximum horizontal ink coordinate.
+        /// </summary>
+        public float MaxInkX { get; }
     }
 
     /// <summary>

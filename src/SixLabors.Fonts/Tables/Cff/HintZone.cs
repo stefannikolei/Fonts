@@ -1,7 +1,7 @@
 // Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
-namespace SixLabors.Fonts.Tables.TrueType.Hinting;
+namespace SixLabors.Fonts.Tables.Cff;
 
 /// <summary>
 /// One alignment zone from a font's declarative hinting values, in design units. A bottom

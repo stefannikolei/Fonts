@@ -20,6 +20,13 @@ internal enum TrueTypeHintingResult
     Failed,
 
     /// <summary>
+    /// The font's control value program inhibited grid fitting at this size. This is a
+    /// deliberate instruction from the font that its outlines render better untouched,
+    /// not a failure, so no geometric fitting substitutes for it.
+    /// </summary>
+    Inhibited,
+
+    /// <summary>
     /// Instructions were applied and touched outline points on the Y axis only.
     /// </summary>
     AppliedY,

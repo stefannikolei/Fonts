@@ -12,6 +12,14 @@ namespace SixLabors.Fonts.Tests;
 
 public class HintingTests
 {
+    // The layout tests below render one pangram through every layout mode. Reading a rotated
+    // column against the horizontal baseline, or one hinting mode against another, is only
+    // meaningful when the text, the size and the resolution are identical across all of them,
+    // so all four share these values and none of them carries its own.
+    private const string LayoutPangram = "The quick brown fox jumps over the lazy dog.";
+    private const float LayoutFontSize = 10F;
+    private const float LayoutDpi = 72F;
+
     public static TheoryData<string, string, HintingMode> HintingTestData { get; } = new()
     {
         // Arial and Tahoma are legacy TrueType fonts whose bytecode was written
@@ -102,6 +110,110 @@ public class HintingTests
 
         TextLayoutTestUtilities.TestLayout(
             "Lorem ipsum dolor sit amet",
+            options,
+            properties: hintingMode);
+    }
+
+    // The horizontal baseline for every layout comparison. Rotated glyphs in a mixed vertical
+    // line must accumulate the same advances this test does, so its output is the reference a
+    // rotated column is read against.
+    [Theory]
+    [InlineData(HintingMode.None)]
+    [InlineData(HintingMode.Standard)]
+    [InlineData(HintingMode.Full)]
+    public void Hinting_HorizontalLayout(HintingMode hintingMode)
+    {
+        FontCollection collection = new();
+        FontFamily family = collection.Add(TestFonts.Tahoma);
+        Font font = family.CreateFont(LayoutFontSize);
+
+        TextOptions options = new(font)
+        {
+            Dpi = LayoutDpi,
+            HintingMode = hintingMode,
+        };
+
+        TextLayoutTestUtilities.TestLayout(
+            LayoutPangram,
+            options,
+            properties: hintingMode);
+    }
+
+    // Upright vertical layout keeps its shaped fractional advance heights in every hinting
+    // mode, so a column stacks on identical positions under standard and full hinting. Full
+    // hinting adds the cross axis centring that lands each glyph's ink on whole pixel columns.
+    [Theory]
+    [InlineData(HintingMode.None)]
+    [InlineData(HintingMode.Standard)]
+    [InlineData(HintingMode.Full)]
+    public void Hinting_VerticalLayout(HintingMode hintingMode)
+    {
+        FontCollection collection = new();
+        FontFamily family = collection.Add(TestFonts.Tahoma);
+        Font font = family.CreateFont(LayoutFontSize);
+
+        TextOptions options = new(font)
+        {
+            Dpi = LayoutDpi,
+            LayoutMode = LayoutMode.VerticalLeftRight,
+            HintingMode = hintingMode,
+        };
+
+        TextLayoutTestUtilities.TestLayout(
+            LayoutPangram,
+            options,
+            properties: hintingMode);
+    }
+
+    // Mixed vertical layout rotates Latin glyphs, mapping their hinted vertical axis onto
+    // device X. Standard hinting must snap that axis and full hinting both, so the rotated
+    // pen accumulates whole pixel hinted widths along the vertical baseline.
+    [Theory]
+    [InlineData(HintingMode.None)]
+    [InlineData(HintingMode.Standard)]
+    [InlineData(HintingMode.Full)]
+    public void Hinting_VerticalMixedLayout(HintingMode hintingMode)
+    {
+        FontCollection collection = new();
+        FontFamily family = collection.Add(TestFonts.Tahoma);
+        Font font = family.CreateFont(LayoutFontSize);
+
+        TextOptions options = new(font)
+        {
+            Dpi = LayoutDpi,
+            LayoutMode = LayoutMode.VerticalMixedLeftRight,
+            HintingMode = hintingMode,
+        };
+
+        TextLayoutTestUtilities.TestLayout(
+            LayoutPangram,
+            options,
+            properties: hintingMode);
+    }
+
+    // A fractional origin exercises the render-time origin snapping: standard hinting snaps
+    // the hinted axis only (the baseline), full hinting snaps both axes, and neither may let
+    // the fraction resample the grid fitted outline. The spacing rhythm across the pangram
+    // also locks the whole pixel advance substitution, including the dropped pair kerns.
+    [Theory]
+    [InlineData(HintingMode.None)]
+    [InlineData(HintingMode.Standard)]
+    [InlineData(HintingMode.Full)]
+    public void Hinting_FractionalOrigin(HintingMode hintingMode)
+    {
+        FontCollection collection = new();
+        FontFamily family = collection.Add(TestFonts.Tahoma);
+        Font font = family.CreateFont(LayoutFontSize);
+
+        TextOptions options = new(font)
+        {
+            Dpi = LayoutDpi,
+            Origin = new Vector2(10.4F, 10.6F),
+            HintingMode = hintingMode,
+        };
+
+        TextLayoutTestUtilities.TestLayout(
+            LayoutPangram,
             options,
             properties: hintingMode);
     }
@@ -333,9 +445,10 @@ public class HintingTests
 
     private static GlyphVector ScaleAndHint(StreamFontMetrics fontMetrics, TrueTypeGlyphMetrics metrics, Vector2 scale, float pixelSize, HintingMode mode)
     {
-        GlyphVector clone = GlyphVector.DeepClone(metrics.GetOutline());
+        GlyphVector outline = metrics.GetOutline();
+        GlyphVector clone = GlyphVector.DeepClone(outline);
         GlyphVector.TransformInPlace(ref clone, Matrix3x2.CreateScale(scale));
-        fontMetrics.ApplyTrueTypeHinting(mode, metrics, ref clone, scale, pixelSize);
+        fontMetrics.ApplyTrueTypeHinting(mode, metrics, ref clone, in outline, scale, pixelSize);
         return clone;
     }
 }

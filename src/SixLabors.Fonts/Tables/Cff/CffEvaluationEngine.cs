@@ -26,9 +26,14 @@ internal ref struct CffEvaluationEngine
     private static readonly Random Random = new();
     private float? width;
     private int nStems;
-    private bool counterMaskSeen;
     private List<float>? horizontalStemEdges;
     private List<float>? verticalStemEdges;
+    private List<CffHintRegion>? hintRegions;
+    private List<CffCounterMask>? counterMasks;
+    private CffOutlineBuilder? pointSink;
+    private int initialStemCount;
+    private bool initialHintsActivated;
+    private bool lockFixMapOk;
     private float x;
     private float y;
     private RefStack<float> stack;
@@ -82,6 +87,9 @@ internal ref struct CffEvaluationEngine
         this.y = 0;
         this.width = null;
         this.nStems = 0;
+        this.initialStemCount = 0;
+        this.initialHintsActivated = false;
+        this.lockFixMapOk = true;
         this.stack = new(50);
         this.isDisposed = false;
         this.version = version;
@@ -101,16 +109,16 @@ internal ref struct CffEvaluationEngine
     }
 
     /// <summary>
-    /// Gets the number of horizontal stems named by the glyph's first counter mask.
-    /// Populated during evaluation when stem collection is enabled.
+    /// Gets the number of stems that become active together at the first movement operator.
+    /// Later declarations do not change this count.
     /// </summary>
-    public int HorizontalCounterStems { get; private set; }
+    public int InitialStemCount => this.initialStemCount;
 
     /// <summary>
-    /// Gets the number of vertical stems named by the glyph's first counter mask.
-    /// Populated during evaluation when stem collection is enabled.
+    /// Gets a value indicating whether GDI permits its post-lock overlap fixup for this
+    /// charstring. Hint-substitution operators disable that fixup for the whole glyph.
     /// </summary>
-    public int VerticalCounterStems { get; private set; }
+    public bool LockFixMapOk => this.lockFixMapOk;
 
     /// <summary>
     /// Computes the bounding box of the glyph by evaluating the charstring program.
@@ -188,14 +196,28 @@ internal ref struct CffEvaluationEngine
                 switch (oneByteOperator)
                 {
                     case Type2Operator1.Hstem:
-                    case Type2Operator1.Hstemhm:
 
                         this.ParseStems(this.horizontalStemEdges);
                         break;
 
+                    case Type2Operator1.Hstemhm:
+
+                        // GDI clears lockFixMapOk whenever hstemhm is executed, including
+                        // from a subroutine, before consuming the same stem operands.
+                        this.lockFixMapOk = false;
+                        this.ParseStems(this.horizontalStemEdges);
+                        break;
+
                     case Type2Operator1.Vstem:
+
+                        this.ParseStems(this.verticalStemEdges);
+                        break;
+
                     case Type2Operator1.Vstemhm:
 
+                        // vstemhm has the same glyph-wide effect as hstemhm in the native
+                        // interpreter; plain vstem leaves the post-lock fixup enabled.
+                        this.lockFixMapOk = false;
                         this.ParseStems(this.verticalStemEdges);
                         break;
 
@@ -207,6 +229,7 @@ internal ref struct CffEvaluationEngine
                         }
 
                         this.y += this.stack.Shift();
+                        this.ActivateInitialHints();
                         this.transforming.MoveTo(new Vector2(this.x, this.y));
 
                         this.stack.Clear();
@@ -346,46 +369,73 @@ internal ref struct CffEvaluationEngine
 
                     case Type2Operator1.Hintmask:
                     case Type2Operator1.Cntrmask:
-
+                    {
                         // Operands pending when a mask operator arrives are implicit
                         // vertical stems whose vstem operator was elided.
                         this.ParseStems(this.verticalStemEdges);
 
-                        // The first counter mask names the stems participating in counter
-                        // control, in declaration order with horizontal stems first. The
-                        // per axis counts tell the grid fitter which axes carry equalized
-                        // counters, the treatment multi stem glyphs were authored for.
-                        if (oneByteOperator == Type2Operator1.Cntrmask && this.horizontalStemEdges is not null && !this.counterMaskSeen)
+                        if (oneByteOperator == Type2Operator1.Hintmask && this.initialHintsActivated)
                         {
-                            this.counterMaskSeen = true;
-                            int horizontalStemCount = this.horizontalStemEdges.Count >> 1;
-                            int stemIndex = 0;
-                            int maskBytes = (this.nStems + 7) >> 3;
-                            for (int i = 0; i < maskBytes; i++)
+                            // GDI permits an initial pre-path hintmask, but a hintmask
+                            // encountered after the first movement disables map fixup.
+                            this.lockFixMapOk = false;
+                        }
+
+                        int maskBytes = (this.nStems + 7) >> 3;
+
+                        // A hintmask states which of the declared stems are live for the
+                        // points that follow. Recording it against the current point count
+                        // lets the fitter build one map per region rather than one map for
+                        // the whole glyph, which is what makes crowded glyphs fit.
+                        if (this.hintRegions is not null && this.pointSink is not null)
+                        {
+                            uint first = 0;
+                            uint second = 0;
+                            uint third = 0;
+                            for (int maskByte = 0; maskByte < maskBytes; maskByte++)
                             {
-                                byte mask = reader.ReadByte();
-                                for (int bit = 7; bit >= 0 && stemIndex < this.nStems; bit--, stemIndex++)
+                                byte value = reader.PeekAt(reader.Position + maskByte);
+                                for (int bit = 0; bit < 8; bit++)
                                 {
-                                    if ((mask & (1 << bit)) != 0)
+                                    int stem = (maskByte * 8) + bit;
+                                    if ((value & (0x80 >> bit)) == 0)
                                     {
-                                        if (stemIndex < horizontalStemCount)
-                                        {
-                                            this.HorizontalCounterStems++;
-                                        }
-                                        else
-                                        {
-                                            this.VerticalCounterStems++;
-                                        }
+                                        continue;
+                                    }
+
+                                    // Type 2 mask bytes are most-significant-bit first, while the
+                                    // fixed words retain declaration index as the bit index.
+                                    if (stem < 32)
+                                    {
+                                        first |= 1U << stem;
+                                    }
+                                    else if (stem < 64)
+                                    {
+                                        second |= 1U << (stem - 32);
+                                    }
+                                    else if (stem < 96)
+                                    {
+                                        third |= 1U << (stem - 64);
                                     }
                                 }
                             }
-                        }
-                        else
-                        {
-                            reader.Position += (this.nStems + 7) >> 3;
+
+                            CffHintMask mask = new(first, second, third);
+
+                            if (oneByteOperator == Type2Operator1.Hintmask)
+                            {
+                                this.hintRegions.Add(new CffHintRegion(this.pointSink.PointCount, mask, this.nStems));
+                            }
+                            else
+                            {
+                                this.counterMasks?.Add(new CffCounterMask(mask, this.nStems, this.counterMasks.Count));
+                            }
                         }
 
+                        reader.Position += maskBytes;
+
                         break;
+                    }
 
                     case Type2Operator1.Rmoveto:
 
@@ -396,6 +446,7 @@ internal ref struct CffEvaluationEngine
 
                         this.x += this.stack.Shift();
                         this.y += this.stack.Shift();
+                        this.ActivateInitialHints();
                         this.transforming.MoveTo(new Vector2(this.x, this.y));
 
                         this.stack.Clear();
@@ -409,6 +460,7 @@ internal ref struct CffEvaluationEngine
                         }
 
                         this.x += this.stack.Shift();
+                        this.ActivateInitialHints();
                         this.transforming.MoveTo(new Vector2(this.x, this.y));
 
                         this.stack.Clear();
@@ -888,10 +940,31 @@ internal ref struct CffEvaluationEngine
     /// </summary>
     /// <param name="horizontal">Receives the horizontal stem zone edge pairs, in Y coordinates.</param>
     /// <param name="vertical">Receives the vertical stem zone edge pairs, in X coordinates.</param>
-    public void CollectStems(List<float> horizontal, List<float> vertical)
+    /// <param name="regions">Receives the hint mask regions, each tagged with the point it starts at.</param>
+    /// <param name="counters">Receives cntrmask events in declaration order, including the stem count at each operator.</param>
+    /// <param name="sink">The outline builder whose point count tags each region.</param>
+    public void CollectStems(List<float> horizontal, List<float> vertical, List<CffHintRegion> regions, List<CffCounterMask> counters, CffOutlineBuilder sink)
     {
         this.horizontalStemEdges = horizontal;
         this.verticalStemEdges = vertical;
+        this.hintRegions = regions;
+        this.counterMasks = counters;
+        this.pointSink = sink;
+    }
+
+    /// <summary>
+    /// Captures the implicit initial hint activation at the first movement operator.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void ActivateInitialHints()
+    {
+        if (!this.initialHintsActivated)
+        {
+            // GDI activates every stem declared when the first movement starts. Keeping
+            // this count separate from later explicit masks preserves later declarations.
+            this.initialStemCount = this.nStems;
+            this.initialHintsActivated = true;
+        }
     }
 
     /// <summary>
@@ -942,9 +1015,9 @@ internal ref struct CffEvaluationEngine
         this.y = 0;
         this.width = null;
         this.nStems = 0;
-        this.counterMaskSeen = false;
-        this.HorizontalCounterStems = 0;
-        this.VerticalCounterStems = 0;
+        this.initialStemCount = 0;
+        this.initialHintsActivated = false;
+        this.lockFixMapOk = true;
         this.stack.Clear();
         this.trans.Clear();
     }

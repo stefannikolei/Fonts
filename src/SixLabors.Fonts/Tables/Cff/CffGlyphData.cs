@@ -166,45 +166,23 @@ internal struct CffGlyphData
             // The lists are per cache fill; they become the outline's retained stem arrays.
             List<float> horizontal = [];
             List<float> vertical = [];
-            engine.CollectStems(horizontal, vertical);
+            List<CffHintRegion> regions = [];
+            List<CffCounterMask> counters = [];
+            engine.CollectStems(horizontal, vertical, regions, counters, builder);
 
             // A negated Y scale composed with the streaming sink's Y flip captures points
             // in Y up pixel space through sign exact arithmetic, so replaying them through
             // a unit scale transforming renderer reproduces the streaming path bit for bit.
-            engine.RenderTo(builder, Vector2.Zero, new Vector2(scale.X, -scale.Y), Vector2.Zero, Matrix3x2.Identity);
-            CffOutline outline = builder.ToOutline(ScaleStems(vertical, scale.X), ScaleStems(horizontal, scale.Y));
+            // Points are captured in character space, Y up. The hint map holds a
+            // character space and a device space coordinate per edge and converts between
+            // them, so scaling here would leave it nothing to convert.
+            engine.RenderTo(builder, Vector2.Zero, new Vector2(1F, -1F), Vector2.Zero, Matrix3x2.Identity);
 
-            // A counter mask covering three or more stems, and all of them, marks the
-            // axis for counter equalization: the glyph was authored for even stem rhythm.
-            outline.EqualizeVerticalCounters = engine.VerticalCounterStems >= 3 && engine.VerticalCounterStems == vertical.Count >> 1;
-            outline.EqualizeHorizontalCounters = engine.HorizontalCounterStems >= 3 && engine.HorizontalCounterStems == horizontal.Count >> 1;
-            return outline;
+            return builder.ToOutline([.. vertical], [.. horizontal], engine.InitialStemCount, engine.LockFixMapOk, regions.ToArray(), counters.ToArray());
         }
         finally
         {
             builder.Release();
         }
-    }
-
-    /// <summary>
-    /// Scales collected stem edges from charstring units into pixel space.
-    /// </summary>
-    /// <param name="edges">The collected edge pairs.</param>
-    /// <param name="scale">The pixels per design unit scale for the stem axis.</param>
-    /// <returns>The scaled edge pairs.</returns>
-    private static float[] ScaleStems(List<float> edges, float scale)
-    {
-        if (edges.Count == 0)
-        {
-            return [];
-        }
-
-        float[] scaled = new float[edges.Count];
-        for (int i = 0; i < scaled.Length; i++)
-        {
-            scaled[i] = edges[i] * scale;
-        }
-
-        return scaled;
     }
 }

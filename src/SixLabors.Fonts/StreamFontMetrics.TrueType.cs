@@ -83,7 +83,7 @@ internal partial class StreamFontMetrics
         return interpreter;
     }
 
-    internal TrueTypeHintingResult ApplyTrueTypeHinting(HintingMode hintingMode, FontGlyphMetrics metrics, ref GlyphVector glyphVector, Vector2 scaleXY, float pixelSize)
+    internal TrueTypeHintingResult ApplyTrueTypeHinting(HintingMode hintingMode, FontGlyphMetrics metrics, ref GlyphVector glyphVector, in GlyphVector unscaled, Vector2 scaleXY, float pixelSize)
     {
         if (hintingMode == HintingMode.None || this.outlineType != OutlineType.TrueType)
         {
@@ -124,7 +124,7 @@ internal partial class StreamFontMetrics
             // Provide normalized axis coordinates for the GETVARIATION opcode.
             interpreter.SetNormalizedAxisCoordinates(this.GlyphVariationProcessor?.NormalizedCoordinates);
 
-            interpreter.SetControlValueTable(cvtValues, hintingScaleFactor, pixelSize, prep?.Instructions, hintingMode);
+            interpreter.SetControlValueTable(cvtValues, hintingScaleFactor, pixelSize, this.UnitsPerEm, prep?.Instructions, hintingMode);
 
             // Phantom points are passed unrounded: their original positions must keep the
             // true fractional metrics because instructions measure signed distances against
@@ -137,13 +137,24 @@ internal partial class StreamFontMetrics
             Vector2 pp3 = new(0, bounds.Max.Y + (metrics.TopSideBearing * scaleXY.Y));
             Vector2 pp4 = new(0, pp3.Y - (metrics.AdvanceHeight * scaleXY.Y));
 
-            if (!GlyphVector.Hint(hintingMode, ref glyphVector, interpreter, pp1, pp2, pp3, pp4))
+            // The same four phantom points in font units, which IP interpolates from.
+            Bounds unscaledBounds = unscaled.Bounds;
+            Vector2 unscaledPp1 = new(unscaledBounds.Min.X - metrics.LeftSideBearing, 0);
+            Vector2 unscaledPp2 = new(unscaledPp1.X + metrics.AdvanceWidth, 0);
+            Vector2 unscaledPp3 = new(0, unscaledBounds.Max.Y + metrics.TopSideBearing);
+            Vector2 unscaledPp4 = new(0, unscaledPp3.Y - metrics.AdvanceHeight);
+
+            if (!GlyphVector.Hint(hintingMode, ref glyphVector, in unscaled, interpreter, pp1, pp2, pp3, pp4, unscaledPp1, unscaledPp2, unscaledPp3, unscaledPp4))
             {
-                // The fault must be read before the interpreter returns to the pool. A
-                // faulted program leaves the glyph unhinted by design; the exception is
-                // retained so diagnostics can identify which instruction stream failed.
+                // The fault, inhibition and dropout state must be read before the interpreter
+                // returns to the pool. A faulted program leaves the glyph unhinted by design;
+                // the exception is retained so diagnostics can identify which instruction
+                // stream failed. Inhibition is reported separately because it is the font's own
+                // decision rather than an error, and callers must honor it. The dropout request
+                // survives either outcome, since an unhinted glyph still carries sub pixel
+                // features that the rasterizer must be told to preserve.
                 this.LastHintingFault = interpreter.LastError;
-                return TrueTypeHintingResult.Failed;
+                return interpreter.LastRunInhibited ? TrueTypeHintingResult.Inhibited : TrueTypeHintingResult.Failed;
             }
 
             // The touch flags must be read before the interpreter returns to the pool.

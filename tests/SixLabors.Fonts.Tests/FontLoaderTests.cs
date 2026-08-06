@@ -50,7 +50,7 @@ public class FontLoaderTests
         GlyphRenderer r = new();
         glyph.Value.RenderTo(r, 0, Vector2.Zero, Vector2.Zero, new Vector2(-1F), GlyphLayoutMode.Horizontal, new TextOptions(font));
 
-        Assert.Equal(37, r.ControlPoints.Count);
+        Assert.Equal(23, r.ControlPoints.Count);
         Assert.Single(r.GlyphKeys);
         Assert.Single(r.GlyphRects);
     }
@@ -64,7 +64,7 @@ public class FontLoaderTests
         GlyphRenderer r = new();
         glyph.Value.RenderTo(r, 0, Vector2.Zero, Vector2.Zero, new Vector2(-1F), GlyphLayoutMode.Horizontal, new TextOptions(font));
 
-        Assert.Equal(37, r.ControlPoints.Count);
+        Assert.Equal(23, r.ControlPoints.Count);
         Assert.Single(r.GlyphKeys);
         Assert.Single(r.GlyphRects);
     }
@@ -96,7 +96,7 @@ public class FontLoaderTests
         GlyphRenderer r = new();
         glyph.Value.RenderTo(r, 0, Vector2.Zero, Vector2.Zero, new Vector2(-1F), GlyphLayoutMode.Horizontal, new TextOptions(font));
 
-        Assert.Equal(37, r.ControlPoints.Count);
+        Assert.Equal(23, r.ControlPoints.Count);
         Assert.Single(r.GlyphKeys);
         Assert.Single(r.GlyphRects);
     }

@@ -497,6 +497,29 @@ public abstract class FontGlyphMetrics
         layoutAdvance *= dpi;
         float scaledPPEM = this.GetScaledSize(pointSize, dpi, hintingMode);
 
+        // Full hinting renders on the classic integer pen: every glyph origin is a whole device
+        // pixel before any outline or decoration geometry is derived from it. This is the single
+        // point where layout units become device pixels, so quantizing here gives every glyph on
+        // a line the same pixel lattice. Rounding origins later, per glyph or per cached replay,
+        // cannot do that: independent roundings disagree by a pixel and open or close the gaps
+        // the fitted advances guarantee.
+        // Outline snapping is owned entirely by the emit-level composed-translation snap in
+        // each format's renderer, one site with every translation term summed. Only the
+        // decoration origin, which never flows through outline emission, rounds here with the
+        // same per-mode axis rules: full hinting on both axes, standard hinting on the glyph's
+        // hinted axis only, which rotated vertical glyphs map onto device X.
+        HintingMode resolvedHinting = this.ResolveHintingMode(hintingMode);
+        if (resolvedHinting == HintingMode.Full)
+        {
+            decorationOrigin = new Vector2(MathF.Floor(decorationOrigin.X + 0.5F), MathF.Floor(decorationOrigin.Y + 0.5F));
+        }
+        else if (resolvedHinting == HintingMode.Standard)
+        {
+            decorationOrigin = mode == GlyphLayoutMode.VerticalRotated
+                ? new Vector2(MathF.Floor(decorationOrigin.X + 0.5F), decorationOrigin.Y)
+                : new Vector2(decorationOrigin.X, MathF.Floor(decorationOrigin.Y + 0.5F));
+        }
+
         Matrix3x2 rotation = GetRotationMatrix(mode);
         FontRectangle box = this.GetBoundingBox(mode, glyphOrigin, scaledPPEM, textRun, positionOffset, positionedAdvance);
         GlyphRendererParameters parameters = new(this, textRun, pointSize, dpi, mode, graphemeIndex, hintingMode);
@@ -937,10 +960,71 @@ public abstract class FontGlyphMetrics
     /// <param name="hintingMode">The requested hinting mode.</param>
     /// <param name="advancePx">The advance width in whole device pixels.</param>
     /// <returns><see langword="true"/> if a hinted advance applies; otherwise, <see langword="false"/>.</returns>
-    internal virtual bool TryGetHintedAdvanceWidth(float pointSize, float dpi, HintingMode hintingMode, out float advancePx)
+    public virtual bool TryGetHintedAdvanceWidth(float pointSize, float dpi, HintingMode hintingMode, out float advancePx)
     {
         advancePx = 0F;
         return false;
+    }
+
+    /// <summary>
+    /// Resolves the hinting mode that will actually shape this glyph's outline. Fonts forced onto
+    /// full hinting by the compatibility lists resolve to it under any requested mode.
+    /// </summary>
+    /// <param name="hintingMode">The requested hinting mode.</param>
+    /// <returns>The resolved <see cref="HintingMode"/>.</returns>
+    internal virtual HintingMode ResolveHintingMode(HintingMode hintingMode) => hintingMode;
+
+    /// <summary>
+    /// Snaps a composed outline translation onto the pixel grid with the per-mode axis policy
+    /// every outline format shares. Full hinting snaps both axes, first centring an upright
+    /// vertical glyph's fitted ink on its design advance box; standard hinting snaps the
+    /// glyph's hinted vertical axis only, which rotated vertical glyphs map onto device X.
+    /// Formats resolve their own composed translations and fitted ink extents, then route
+    /// them through this single policy so both modes and both formats land identically.
+    /// </summary>
+    /// <param name="resolvedMode">The resolved hinting mode shaping the outline.</param>
+    /// <param name="mode">The glyph layout mode.</param>
+    /// <param name="composed">The composed device translation with every term summed.</param>
+    /// <param name="boxCentreX">The centre of the design advance box, derived from the glyph origin alone so it stays constant down a vertical column.</param>
+    /// <param name="hasFittedInk">Whether fitted ink extents are available for centring.</param>
+    /// <param name="fittedMinX">The fitted outline's minimum ink X coordinate.</param>
+    /// <param name="fittedMaxX">The fitted outline's maximum ink X coordinate.</param>
+    /// <returns>The snapped translation.</returns>
+    internal static Vector2 SnapComposedTranslation(HintingMode resolvedMode, GlyphLayoutMode mode, Vector2 composed, float boxCentreX, bool hasFittedInk, float fittedMinX, float fittedMaxX)
+    {
+        if (resolvedMode == HintingMode.Full)
+        {
+            float x = composed.X;
+            if (mode == GlyphLayoutMode.Vertical && hasFittedInk)
+            {
+                // Vertical layout centres the design advance box on the column, so the box
+                // centre is the column axis itself. It must exclude the per glyph shaped
+                // offsets folded into the composed translation: they vary glyph to glyph, and
+                // an axis that moves with them scatters equal width glyphs across neighbouring
+                // pixels. What the eye centres is the rendered pixel columns, so the ink width
+                // is the count of pixel centres the fitted extent covers under centre sample
+                // scan conversion, not the rounded geometric extent: the two disagree whenever
+                // the extent's fractional phase straddles the samples. An integer translation
+                // then lands the first ink column on the floored target, keeping that phase,
+                // and flooring the half width difference without a rounding bias puts the odd
+                // pixel of an odd width glyph in the extra padding on the right, the classic
+                // rasterizer's tie direction.
+                float firstColumn = MathF.Ceiling(fittedMinX - 0.5F);
+                float inkColumns = MathF.Max(1F, MathF.Ceiling(fittedMaxX - 0.5F) - firstColumn);
+                x = MathF.Floor(boxCentreX - (inkColumns * 0.5F)) - firstColumn;
+            }
+
+            return new Vector2(MathF.Floor(x + 0.5F), MathF.Floor(composed.Y + 0.5F));
+        }
+
+        if (resolvedMode == HintingMode.Standard)
+        {
+            return mode == GlyphLayoutMode.VerticalRotated
+                ? new Vector2(MathF.Floor(composed.X + 0.5F), composed.Y)
+                : new Vector2(composed.X, MathF.Floor(composed.Y + 0.5F));
+        }
+
+        return composed;
     }
 
     /// <summary>

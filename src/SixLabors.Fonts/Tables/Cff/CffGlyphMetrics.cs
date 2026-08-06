@@ -4,7 +4,6 @@
 using System.Collections.Concurrent;
 using System.Numerics;
 using SixLabors.Fonts.Rendering;
-using SixLabors.Fonts.Tables.TrueType.Hinting;
 using SixLabors.Fonts.Unicode;
 
 namespace SixLabors.Fonts.Tables.Cff;
@@ -94,15 +93,25 @@ internal class CffGlyphMetrics : FontGlyphMetrics
 
         Vector2 scaledOffset = (this.Offset + positionOffset) * scale;
 
-        // Full hinting aligns the outline to the pixel grid in glyph space; adjusting the
-        // origin so the composed translation lands on whole pixels preserves that grid in
-        // device space. The adjustment mirrors the exact per point arithmetic of the
-        // transforming renderer, so replay stays sign exact. Snapping only applies to
-        // upright, untransformed renders where the grid survives.
-        if (hintingMode == HintingMode.Full && outline.IsFitted && transform.IsIdentity)
+        // Snap the complete device translation only after offset, layout rotation and the
+        // device-space Y inversion have been composed. Adjusting the origin by the delta
+        // preserves the already fitted outline coordinates while routing CFF through the
+        // same per-mode axis policy as TrueType.
+        bool axisPreserving = transform.IsIdentity
+            || (mode == GlyphLayoutMode.VerticalRotated && this.GetObliqueSkew(textRun) == 0F);
+
+        if (axisPreserving && outline.IsFitted)
         {
-            Vector2 composed = (scaledOffset * new Vector2(1F, -1F)) + glyphOrigin;
-            Vector2 snapped = new(MathF.Floor(composed.X + 0.5F), MathF.Floor(composed.Y + 0.5F));
+            Vector2 composed = (Vector2.Transform(scaledOffset, transform) * new Vector2(1F, -1F)) + glyphOrigin;
+            Vector2 snapped = SnapComposedTranslation(
+                hintingMode,
+                mode,
+                composed,
+                glyphOrigin.X + (this.AdvanceWidth * scale.X * 0.5F),
+                false,
+                0F,
+                0F);
+
             glyphOrigin += snapped - composed;
         }
 
@@ -180,7 +189,7 @@ internal class CffGlyphMetrics : FontGlyphMetrics
     /// <param name="hintingMode">The requested hinting mode.</param>
     /// <param name="advancePx">The advance width in whole device pixels.</param>
     /// <returns><see langword="true"/> if a hinted advance applies; otherwise, <see langword="false"/>.</returns>
-    internal override bool TryGetHintedAdvanceWidth(float pointSize, float dpi, HintingMode hintingMode, out float advancePx)
+    public override bool TryGetHintedAdvanceWidth(float pointSize, float dpi, HintingMode hintingMode, out float advancePx)
     {
         advancePx = 0F;
         if (hintingMode != HintingMode.Full)
@@ -205,27 +214,6 @@ internal class CffGlyphMetrics : FontGlyphMetrics
     }
 
     /// <summary>
-    /// Gets the buffered outline for the given size and mode, building and caching it on
-    /// first use. Exposed for diagnostics and tests.
-    /// </summary>
-    /// <param name="scaledPPEM">The scaled size to build the outline for.</param>
-    /// <param name="hintingMode">The hinting mode shaping the outline.</param>
-    /// <returns>The buffered <see cref="CffOutline"/>.</returns>
-    internal CffOutline GetScaledOutline(float scaledPPEM, HintingMode hintingMode)
-    {
-        ConcurrentDictionary<ScaledOutlineKey, CffOutline> cache =
-            LazyInitializer.EnsureInitialized(ref this.scaledOutlineCache, static () => new());
-        return cache.GetOrAdd(new ScaledOutlineKey(scaledPPEM, hintingMode), static (key, self) => self.CreateScaledOutline(key), this);
-    }
-
-    /// <summary>
-    /// Gets the declarative hinting values from the owning Private DICT, or
-    /// <see langword="null"/> when the font carries none. Exposed for diagnostics and tests.
-    /// </summary>
-    /// <returns>The <see cref="CffHintingValues"/>.</returns>
-    internal CffHintingValues? GetHintingValues() => this.glyphData.HintingValues;
-
-    /// <summary>
     /// Builds the buffered outline cached per pixel size and hinting mode, aligning the
     /// mode semantics with the TrueType interpreter: unhinted geometry stays untouched,
     /// standard hinting fits the vertical axis only from the declared horizontal stem
@@ -239,16 +227,46 @@ internal class CffGlyphMetrics : FontGlyphMetrics
         Vector2 scale = this.GetOutlineScale(key.ScaledPPEM);
         CffOutline outline = this.glyphData.BuildOutline(scale);
 
-        float pixelSize = key.ScaledPPEM / 72F;
-        if (key.HintingMode != HintingMode.None && pixelSize <= GlyphGridFitter.MaxFitPixelsPerEm)
+        if (key.HintingMode != HintingMode.None)
         {
-            GridFitAxisMode fitX = key.HintingMode == HintingMode.Full ? GridFitAxisMode.Full : GridFitAxisMode.None;
-            CffHintingValues? hintingValues = this.glyphData.HintingValues;
-            GridFitOptions options = new(pixelSize, fitX, GridFitAxisMode.Full, [], [], hintingValues?.Zones ?? [], hintingValues?.BlueFuzz ?? 1F, scale.Y);
-            if (GlyphGridFitter.FitInPlace(outline.Points, outline.ContourEnds, outline.VerticalStems, outline.HorizontalStems, outline.EqualizeVerticalCounters, outline.EqualizeHorizontalCounters, in options))
+            // Standard hinting fits the vertical axis only, matching the instruction driven
+            // formats where a font may hint one axis; full hinting fits both.
+            CffHintingValues hintingValues = this.glyphData.HintingValues ?? CffHintingValues.Empty;
+
+            // The native fitter stores the font transform in signed 16.16 before it maps
+            // stems or outline points. Quantizing once here keeps every downstream map
+            // operation on the same device scale.
+            float fixedHorizontalScale = CffFixedPoint.ToSingle(CffFixedPoint.FromSingle(scale.X));
+            float fixedVerticalScale = CffFixedPoint.ToSingle(CffFixedPoint.FromSingle(scale.Y));
+
+            HintMapOptions options = new(
+                key.HintingMode == HintingMode.Full,
+                true,
+                hintingValues.Zones,
+                hintingValues.FamilyZones,
+                hintingValues.BlueFuzz,
+                hintingValues.AdjustedBlueScale,
+                hintingValues.BlueShift,
+                hintingValues.ExpansionFactorFixed,
+                hintingValues.VerticalStemWidths,
+                hintingValues.HorizontalStemWidths,
+                CffFixedPoint.FromSingle(key.ScaledPPEM / 72F),
+                outline.LockFixMapOk,
+                fixedHorizontalScale,
+                fixedVerticalScale);
+
+            if (HintMap.FitInPlace(outline.Points, outline.Verbs, outline.ContourEnds, outline.VerticalStems, outline.HorizontalStems, outline.InitialStemCount, outline.HintRegions, outline.CounterMasks, in options))
             {
                 outline.IsFitted = true;
+                return outline;
             }
+        }
+
+        // Nothing fitted, so the character space points still need the plain scale.
+        Vector2[] points = outline.Points;
+        for (int i = 0; i < points.Length; i++)
+        {
+            points[i] *= scale;
         }
 
         return outline;

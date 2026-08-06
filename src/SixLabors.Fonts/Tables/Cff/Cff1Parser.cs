@@ -185,7 +185,6 @@ internal class Cff1Parser : CffParserBase
             {
                 default:
 #if DEBUG
-                    System.Diagnostics.Debug.WriteLine("topdic:" + entry.Operator.Name);
 #endif
                     break;
                 case "XUID":
@@ -670,6 +669,7 @@ internal class Cff1Parser : CffParserBase
         float blueScale = 0.039625F;
         float blueShift = 7F;
         float blueFuzz = 1F;
+        float expansionFactor = 0.06F;
         float stdHW = 0F;
         float stdVW = 0F;
         float[] stemSnapH = [];
@@ -725,6 +725,10 @@ internal class Cff1Parser : CffParserBase
                         blueFuzz = (float)dicEntry.Operands[0].RealNumValue;
                         break;
 
+                    case "ExpansionFactor":
+                        expansionFactor = (float)dicEntry.Operands[0].RealNumValue;
+                        break;
+
                     case "StdHW":
                         stdHW = (float)dicEntry.Operands[0].RealNumValue;
                         break;
@@ -748,7 +752,7 @@ internal class Cff1Parser : CffParserBase
             }
         }
 
-        CffHintingValues hintingValues = new(blueValues, otherBlues, familyBlues, familyOtherBlues, blueScale, blueShift, blueFuzz, stdHW, stdVW, stemSnapH, stemSnapV, languageGroup);
+        CffHintingValues hintingValues = new(blueValues, otherBlues, familyBlues, familyOtherBlues, blueScale, blueShift, blueFuzz, expansionFactor, stdHW, stdVW, stemSnapH, stemSnapV, languageGroup);
         return new CffPrivateDictionary(localSubrRawBuffers, defaultWidthX, nominalWidthX, hintingValues);
     }
 

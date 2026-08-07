@@ -214,14 +214,14 @@ public class Issues_462
     {
         public List<(GlyphColor Color, float Opacity)> SolidLayers { get; } = [];
 
-        public override void BeginLayer(Paint paint, FillRule fillRule, ClipQuad? clipBounds)
+        public override void BeginLayer(Paint paint, FillRule fillRule)
         {
             if (paint is SolidPaint solidPaint)
             {
                 this.SolidLayers.Add((solidPaint.Color, solidPaint.Opacity));
             }
 
-            base.BeginLayer(paint, fillRule, clipBounds);
+            base.BeginLayer(paint, fillRule);
         }
     }
 }

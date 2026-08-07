@@ -44,13 +44,25 @@ public interface IGlyphRenderer
     /// </summary>
     /// <param name="paint">The paint definition.</param>
     /// <param name="fillRule">The fill rule to use when rasterizing this layer.</param>
-    /// <param name="clipBounds">The optional clip bounds to apply when rasterizing this layer.</param>
-    public void BeginLayer(Paint? paint, FillRule fillRule, ClipQuad? clipBounds);
+    public void BeginLayer(Paint? paint, FillRule fillRule);
 
     /// <summary>
     /// Ends the current painted layer.
     /// </summary>
     public void EndLayer();
+
+    /// <summary>
+    /// Begins an isolated group. Layers and nested groups painted before the matching
+    /// <see cref="EndGroup"/> compose as one unit.
+    /// </summary>
+    /// <param name="mode">The mode used to blend the finished group onto the content below it within its parent.</param>
+    public void BeginGroup(CompositeMode mode);
+
+    /// <summary>
+    /// Ends the current group and blends it onto the content below it within its parent, using
+    /// the mode given to <see cref="BeginGroup"/>.
+    /// </summary>
+    public void EndGroup();
 
     /// <summary>
     /// Begins the figure.

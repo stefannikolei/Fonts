@@ -11,13 +11,13 @@ public class ColorGlyphRenderer : GlyphRenderer
 {
     public List<GlyphColor> Colors { get; } = [];
 
-    public override void BeginLayer(Paint paint, FillRule fillRule, ClipQuad? clipBounds)
+    public override void BeginLayer(Paint paint, FillRule fillRule)
     {
         if (paint is SolidPaint solidPaint)
         {
             this.Colors.Add(solidPaint.Color);
         }
 
-        base.BeginLayer(paint, fillRule, clipBounds);
+        base.BeginLayer(paint, fillRule);
     }
 }

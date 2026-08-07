@@ -11,7 +11,8 @@ namespace SixLabors.Fonts.Tables.General.Colr;
 
 /// <summary>
 /// Supplies painted glyphs for COLR v1 fonts.
-/// Flattens paint graphs into a linear <see cref="PaintedLayer"/> stream and emits a <see cref="PaintedCanvasMetadata"/>.
+/// Flattens paint graphs into a linear <see cref="PaintedLayer"/> stream while preserving composite-group boundaries,
+/// and emits a <see cref="PaintedCanvasMetadata"/>.
 /// </summary>
 internal sealed class ColrV1GlyphSource : ColrGlyphSourceBase
 {
@@ -41,38 +42,76 @@ internal sealed class ColrV1GlyphSource : ColrGlyphSourceBase
     {
         (PaintedGlyph Glyph, PaintedCanvasMetadata Canvas) result = this.cachedGlyphs.GetOrAdd(glyphId, _ =>
         {
-            if (this.Colr.TryGetColrV1Layers(glyphId, this.processor, out List<ResolvedGlyphLayer>? resolved))
+            if (this.Colr.TryGetColrV1Layers(
+                glyphId,
+                this.processor,
+                out List<ResolvedGlyphLayer>? resolved,
+                out List<PaintedCompositeCommand>? resolvedCompositeCommands,
+                out Bounds? clipBounds))
             {
                 List<PaintedLayer> layers = new(resolved.Count);
+                List<PaintedCompositeCommand> compositeCommands = new(resolvedCompositeCommands.Count);
+                int compositeCommandIndex = 0;
+
                 for (int i = 0; i < resolved.Count; i++)
                 {
-                    ResolvedGlyphLayer rl = resolved[i];
-                    GlyphVector? gv = this.GlyphLoader(rl.GlyphId);
-                    if (gv is null || !gv.Value.HasValue())
+                    // Invalid or empty glyph outlines are omitted below. Remap each command to the
+                    // next emitted painted layer so group transitions retain their original order.
+                    while (compositeCommandIndex < resolvedCompositeCommands.Count
+                        && resolvedCompositeCommands[compositeCommandIndex].LayerIndex == i)
                     {
-                        continue;
+                        PaintedCompositeCommand command = resolvedCompositeCommands[compositeCommandIndex++];
+                        compositeCommands.Add(new(layers.Count, command.Kind, command.Mode));
                     }
 
-                    // Build geometry once for this layer.
-                    List<PathCommand> path = BuildPath(gv.Value);
+                    ResolvedGlyphLayer rl = resolved[i];
+                    List<PathCommand> path;
 
-                    // Flatten paint graph: accumulate wrapper transforms; attach composite mode to leaves.
+                    if (rl.GlyphId.HasValue)
+                    {
+                        GlyphVector? gv = this.GlyphLoader(rl.GlyphId.Value);
+                        if (gv is null || !gv.Value.HasValue())
+                        {
+                            continue;
+                        }
+
+                        // Build geometry once for this layer.
+                        path = BuildPath(gv.Value);
+                    }
+                    else
+                    {
+                        // The paint owns no outline. The empty stream tells the streaming layer
+                        // to emit the clip bounds or glyph bounds as the figure.
+                        path = [];
+                    }
+
+                    // Composite modes belong to the group commands; ordinary leaf application is SrcOver.
                     List<Rendering.Paint> leafPaints = [];
-                    FlattenPaint(rl.Paint, rl.PaintTransform, rl.CompositeMode, this.Cpal, this.Colr, this.processor, leafPaints);
+                    FlattenPaint(rl.Paint, rl.PaintTransform, CompositeMode.SrcOver, this.Cpal, this.Colr, this.processor, leafPaints);
 
                     // Emit one layer per leaf paint.
-                    Bounds? clip = rl.ClipBox;
                     for (int p = 0; p < leafPaints.Count; p++)
                     {
                         Rendering.Paint leaf = leafPaints[p];
-                        layers.Add(new PaintedLayer(leaf, FillRule.NonZero, rl.GlyphTransform, clip, path));
+                        layers.Add(new PaintedLayer(leaf, FillRule.NonZero, rl.GlyphTransform, path));
                     }
+                }
+
+                // Commands after the last resolved layer close any still-active nested groups.
+                while (compositeCommandIndex < resolvedCompositeCommands.Count)
+                {
+                    PaintedCompositeCommand command = resolvedCompositeCommands[compositeCommandIndex++];
+                    compositeCommands.Add(new(layers.Count, command.Kind, command.Mode));
                 }
 
                 if (layers.Count > 0)
                 {
                     // Canvas viewBox in Y-up; renderer downstream decides orientation via flag.
-                    PaintedGlyph glyph = new(layers);
+                    PaintedGlyph glyph = new(
+                        layers,
+                        compositeCommands.Count > 0 ? compositeCommands : null,
+                        clipBounds);
+
                     PaintedCanvasMetadata canvas = new(FontRectangle.Empty, isYDown: false, rootTransform: Matrix3x2.Identity);
                     return (glyph, canvas);
                 }

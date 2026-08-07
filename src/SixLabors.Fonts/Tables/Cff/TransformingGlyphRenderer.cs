@@ -143,9 +143,15 @@ internal struct TransformingGlyphRenderer : IGlyphRenderer
         => (Vector2.Transform((point * this.scale) + this.offset, this.transform) * YInverter) + this.origin;
 
     /// <inheritdoc/>
-    public readonly void BeginLayer(Paint? paint, FillRule fillRule, ClipQuad? clipBounds)
-        => this.renderer.BeginLayer(paint, fillRule, clipBounds);
+    public readonly void BeginLayer(Paint? paint, FillRule fillRule)
+        => this.renderer.BeginLayer(paint, fillRule);
 
     /// <inheritdoc/>
     public readonly void EndLayer() => this.renderer.EndLayer();
+
+    /// <inheritdoc/>
+    public readonly void BeginGroup(CompositeMode mode) => this.renderer.BeginGroup(mode);
+
+    /// <inheritdoc/>
+    public readonly void EndGroup() => this.renderer.EndGroup();
 }

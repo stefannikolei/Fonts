@@ -17,19 +17,16 @@ internal readonly struct PaintedLayer
     /// <param name="paint">The paint definition.</param>
     /// <param name="fillRule">The fill rule.</param>
     /// <param name="transform">The transform applied to all path coordinates.</param>
-    /// <param name="clipBounds">An optional clip bounds to apply when rasterizing this layer.</param>
     /// <param name="path">The path command stream for this layer.</param>
     public PaintedLayer(
         Paint? paint,
         FillRule fillRule,
         Matrix3x2 transform,
-        Bounds? clipBounds,
         IReadOnlyList<PathCommand> path)
     {
         this.Paint = paint;
         this.FillRule = fillRule;
         this.Transform = transform;
-        this.ClipBounds = clipBounds;
         this.Path = path;
     }
 
@@ -48,10 +45,12 @@ internal readonly struct PaintedLayer
     /// </summary>
     public Matrix3x2 Transform { get; }
 
-    public Bounds? ClipBounds { get; }
-
     /// <summary>
-    /// Gets the path stream for this layer.
+    /// Gets the path stream for this layer. An empty stream means that the paint owns no
+    /// outline; sources skip empty outlines before a layer is built, so only such paints
+    /// produce empty streams. The streaming layer then emits the clip bounds, or the glyph
+    /// bounds when no clip exists, as the figure. The paint's transform still applies to the
+    /// paint; that figure ignores it.
     /// </summary>
     public IReadOnlyList<PathCommand> Path { get; }
 }

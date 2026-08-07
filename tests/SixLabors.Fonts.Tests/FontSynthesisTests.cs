@@ -482,7 +482,8 @@ public class FontSynthesisTests
         // Exercise the non-outline pass-through surface.
         sut.BeginText(default);
         Assert.True(sut.BeginGlyph(default, default));
-        sut.BeginLayer(null, default, null);
+        sut.BeginGroup(CompositeMode.SoftLight);
+        sut.BeginLayer(null, default);
 
         // A triangular contour covering every segment kind plus an arc (treated as a line).
         sut.BeginFigure();
@@ -500,12 +501,15 @@ public class FontSynthesisTests
         _ = sut.EnabledDecorations();
         sut.SetDecoration(TextDecorations.Underline, default, default, 1F, ReadOnlyMemory<float>.Empty);
         sut.EndLayer();
+        sut.EndGroup();
         sut.EndGlyph();
         sut.EndText();
 
         Assert.True(inner.BeganText);
         Assert.True(inner.BeganGlyph);
         Assert.True(inner.BeganLayer);
+        Assert.Equal(CompositeMode.SoftLight, inner.CompositeMode);
+        Assert.True(inner.EndedGroup);
         Assert.True(inner.EndedLayer);
         Assert.True(inner.EndedGlyph);
         Assert.True(inner.EndedText);
@@ -566,6 +570,16 @@ public class FontSynthesisTests
 
         public bool EndedLayer { get; private set; }
 
+        /// <summary>
+        /// Gets the captured group mode, or <see langword="null"/> when no group began.
+        /// </summary>
+        public CompositeMode? CompositeMode { get; private set; }
+
+        /// <summary>
+        /// Gets a value indicating whether the group ended.
+        /// </summary>
+        public bool EndedGroup { get; private set; }
+
         public bool QueriedDecorations { get; private set; }
 
         public bool SetDecorationCalled { get; private set; }
@@ -586,9 +600,15 @@ public class FontSynthesisTests
 
         public void EndGlyph() => this.EndedGlyph = true;
 
-        public void BeginLayer(Paint paint, FillRule fillRule, ClipQuad? clipBounds) => this.BeganLayer = true;
+        public void BeginLayer(Paint paint, FillRule fillRule) => this.BeganLayer = true;
 
         public void EndLayer() => this.EndedLayer = true;
+
+        /// <inheritdoc/>
+        public void BeginGroup(CompositeMode mode) => this.CompositeMode = mode;
+
+        /// <inheritdoc/>
+        public void EndGroup() => this.EndedGroup = true;
 
         public void BeginFigure() => this.current = [];
 

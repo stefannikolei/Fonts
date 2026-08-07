@@ -60,7 +60,7 @@ internal sealed class ColrV0GlyphSource : ColrGlyphSourceBase
                     {
                         // Unlike COLR v1, COLR v0 leaves have no transform so we can reuse the same path.
                         Rendering.Paint leaf = leafPaints[p];
-                        layers.Add(new PaintedLayer(leaf, FillRule.NonZero, leaf.Transform, null, path));
+                        layers.Add(new PaintedLayer(leaf, FillRule.NonZero, leaf.Transform, path));
                     }
                 }
 

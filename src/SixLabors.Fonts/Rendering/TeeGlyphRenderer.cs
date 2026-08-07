@@ -74,11 +74,17 @@ internal sealed class TeeGlyphRenderer : IGlyphRenderer
     public void EndGlyph() => this.primary.EndGlyph();
 
     /// <inheritdoc/>
-    public void BeginLayer(Paint? paint, FillRule fillRule, ClipQuad? clipBounds)
-        => this.primary.BeginLayer(paint, fillRule, clipBounds);
+    public void BeginLayer(Paint? paint, FillRule fillRule)
+        => this.primary.BeginLayer(paint, fillRule);
 
     /// <inheritdoc/>
     public void EndLayer() => this.primary.EndLayer();
+
+    /// <inheritdoc/>
+    public void BeginGroup(CompositeMode mode) => this.primary.BeginGroup(mode);
+
+    /// <inheritdoc/>
+    public void EndGroup() => this.primary.EndGroup();
 
     /// <inheritdoc/>
     public void BeginFigure()

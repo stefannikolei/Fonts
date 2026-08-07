@@ -78,7 +78,7 @@ internal class CffBoundsFinder : IGlyphRenderer
     }
 
     /// <inheritdoc/>
-    public void BeginLayer(Paint? paint, FillRule fillRule, ClipQuad? clipBounds)
+    public void BeginLayer(Paint? paint, FillRule fillRule)
     {
         // Do nothing.
     }
@@ -87,6 +87,18 @@ internal class CffBoundsFinder : IGlyphRenderer
     public void EndLayer()
     {
         // Do nothing.
+    }
+
+    /// <inheritdoc/>
+    public void BeginGroup(CompositeMode mode)
+    {
+        // CFF outlines do not contain painted groups.
+    }
+
+    /// <inheritdoc/>
+    public void EndGroup()
+    {
+        // CFF outlines do not contain painted groups.
     }
 
     /// <inheritdoc/>

@@ -11,12 +11,26 @@ namespace SixLabors.Fonts.Rendering;
 internal readonly struct PaintedGlyph
 {
     /// <summary>
-    /// Initializes a new instance of the <see cref="PaintedGlyph"/> struct.
+    /// Initializes a new instance of the <see cref="PaintedGlyph"/> struct with no groups and no
+    /// clip bounds.
     /// </summary>
     /// <param name="layers">The painted layers.</param>
     public PaintedGlyph(List<PaintedLayer> layers)
+        : this(layers, null, null)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PaintedGlyph"/> struct.
+    /// </summary>
+    /// <param name="layers">The painted layers.</param>
+    /// <param name="compositeCommands">The optional group command stream.</param>
+    /// <param name="clipBounds">The optional clip bounds in the source design grid.</param>
+    public PaintedGlyph(List<PaintedLayer> layers, List<PaintedCompositeCommand>? compositeCommands, Bounds? clipBounds)
     {
         this.Layers = layers;
+        this.CompositeCommands = compositeCommands;
+        this.ClipBounds = clipBounds;
         this.Bounds = CalculateBounds(layers);
     }
 
@@ -24,6 +38,19 @@ internal readonly struct PaintedGlyph
     /// Gets the layers for this glyph.
     /// </summary>
     public IReadOnlyList<PaintedLayer> Layers { get; }
+
+    /// <summary>
+    /// Gets the group commands interleaved with <see cref="Layers"/>, or <see langword="null"/>
+    /// when the glyph has no isolated groups.
+    /// </summary>
+    public IReadOnlyList<PaintedCompositeCommand>? CompositeCommands { get; }
+
+    /// <summary>
+    /// Gets the optional clip bounds for the glyph, as axis-aligned bounds in the source design
+    /// grid. Clip bounds sit outside the paint graph, so only the root design-to-device
+    /// transform applies to them.
+    /// </summary>
+    public Bounds? ClipBounds { get; }
 
     /// <summary>
     /// Gets the cached bounds of all painted geometry after applying each layer transform.
@@ -40,6 +67,11 @@ internal readonly struct PaintedGlyph
     /// </summary>
     public static PaintedGlyph Empty => new([]);
 
+    /// <summary>
+    /// Calculates the bounds of all painted geometry after applying each layer transform.
+    /// </summary>
+    /// <param name="layers">The painted layers.</param>
+    /// <returns>The calculated bounds.</returns>
     private static Bounds CalculateBounds(List<PaintedLayer> layers)
     {
         Vector2 min = new(float.MaxValue);
@@ -85,6 +117,9 @@ internal readonly struct PaintedGlyph
         return hasPoint ? new Bounds(min, max) : Bounds.Empty;
     }
 
+    /// <summary>
+    /// Includes a transformed point in the accumulated bounds.
+    /// </summary>
     private static void Include(
         Vector2 point,
         Matrix3x2 transform,
@@ -98,6 +133,9 @@ internal readonly struct PaintedGlyph
         hasPoint = true;
     }
 
+    /// <summary>
+    /// Includes a conservative transformed arc bound in the accumulated bounds.
+    /// </summary>
     private static void IncludeArc(
         Vector2 start,
         PathCommand command,

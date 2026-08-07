@@ -88,12 +88,22 @@ internal sealed class CffOutlineBuilder : IGlyphRenderer
     }
 
     /// <inheritdoc/>
-    public void BeginLayer(Paint? paint, FillRule fillRule, ClipQuad? clipBounds)
+    public void BeginLayer(Paint? paint, FillRule fillRule)
     {
     }
 
     /// <inheritdoc/>
     public void EndLayer()
+    {
+    }
+
+    /// <inheritdoc/>
+    public void BeginGroup(CompositeMode mode)
+    {
+    }
+
+    /// <inheritdoc/>
+    public void EndGroup()
     {
     }
 

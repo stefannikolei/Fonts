@@ -57,6 +57,18 @@ public class TextRun
     public IReadOnlyList<Tag>? FeatureTags { get; set; }
 
     /// <summary>
+    /// Gets or sets the color font support options for this run, or <see langword="null"/>
+    /// to use those supplied by the owning text options.
+    /// </summary>
+    public ColorFontSupport? ColorFontSupport { get; set; }
+
+    /// <summary>
+    /// Gets or sets the color palette selection used to resolve COLR glyph colors for this run,
+    /// or <see langword="null"/> to use the palette supplied by the owning text options.
+    /// </summary>
+    public FontPalette? FontPalette { get; set; }
+
+    /// <summary>
     /// Gets or sets the text attributes applied to this run.
     /// </summary>
     public TextAttributes TextAttributes { get; set; }

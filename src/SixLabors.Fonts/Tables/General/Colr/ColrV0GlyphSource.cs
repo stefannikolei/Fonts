@@ -24,9 +24,10 @@ internal sealed class ColrV0GlyphSource : ColrGlyphSourceBase
     /// </summary>
     /// <param name="colr">The COLR table.</param>
     /// <param name="cpal">The CPAL table, or null if not present.</param>
+    /// <param name="palette">The palette selection, or null for the font's default palette.</param>
     /// <param name="glyphLoader">Delegate that loads a glyph outline for the given glyph id.</param>
-    public ColrV0GlyphSource(ColrTable colr, CpalTable? cpal, Func<ushort, GlyphVector?> glyphLoader)
-        : base(colr, cpal, glyphLoader)
+    public ColrV0GlyphSource(ColrTable colr, CpalTable? cpal, FontPalette? palette, Func<ushort, GlyphVector?> glyphLoader)
+        : base(colr, cpal, palette, glyphLoader)
     {
     }
 
@@ -53,7 +54,7 @@ internal sealed class ColrV0GlyphSource : ColrGlyphSourceBase
                     // Flatten paint graph: attach composite mode to leaves.
                     List<Rendering.Paint> leafPaints = [];
                     PaintSolid paint = new() { PaletteIndex = rl.PaletteIndex, Alpha = 1, Format = 2 };
-                    FlattenPaint(paint, Matrix3x2.Identity, CompositeMode.SrcOver, this.Cpal, this.Colr, null, leafPaints);
+                    FlattenPaint(paint, Matrix3x2.Identity, CompositeMode.SrcOver, this.PaletteColors, this.Colr, null, leafPaints);
 
                     // Emit one layer per leaf paint.
                     for (int p = 0; p < leafPaints.Count; p++)

@@ -1,6 +1,8 @@
 // Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
+using System.Collections.Concurrent;
+
 namespace SixLabors.Fonts.Tables.General;
 
 /// <summary>
@@ -16,6 +18,11 @@ internal class CpalTable : Table
     internal const string TableName = "CPAL";
 
     /// <summary>
+    /// The number of palette entries in each palette.
+    /// </summary>
+    private readonly ushort paletteEntryCount;
+
+    /// <summary>
     /// The offsets into the palette entries array for each palette.
     /// </summary>
     private readonly ushort[] paletteOffsets;
@@ -26,12 +33,29 @@ internal class CpalTable : Table
     private readonly GlyphColor[] paletteEntries;
 
     /// <summary>
+    /// The effective colors of the default palette, built on first use and shared by every
+    /// glyph source that renders with the default selection. The unsynchronized build race
+    /// is benign: both threads produce identical content.
+    /// </summary>
+    private GlyphColor[]? defaultPaletteColors;
+
+    /// <summary>
+    /// The effective colors per custom palette selection, created on the first custom
+    /// selection. Keyed by the value equality of <see cref="FontPalette"/> so each selection
+    /// in use materializes once per font; a lost creation race rebuilds into the surviving
+    /// dictionary.
+    /// </summary>
+    private ConcurrentDictionary<FontPalette, GlyphColor[]>? selectedPaletteColors;
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="CpalTable"/> class.
     /// </summary>
+    /// <param name="paletteEntryCount">The number of palette entries in each palette.</param>
     /// <param name="paletteOffsets">The index of each palette's first color record.</param>
     /// <param name="paletteEntries">The combined color records for all palettes.</param>
-    public CpalTable(ushort[] paletteOffsets, GlyphColor[] paletteEntries)
+    public CpalTable(ushort paletteEntryCount, ushort[] paletteOffsets, GlyphColor[] paletteEntries)
     {
+        this.paletteEntryCount = paletteEntryCount;
         this.paletteEntries = paletteEntries;
         this.paletteOffsets = paletteOffsets;
     }
@@ -44,6 +68,63 @@ internal class CpalTable : Table
     /// <returns>The <see cref="GlyphColor"/>.</returns>
     public GlyphColor GetGlyphColor(int paletteIndex, int paletteEntryIndex)
         => this.paletteEntries[this.paletteOffsets[paletteIndex] + paletteEntryIndex];
+
+    /// <summary>
+    /// Gets the effective color array for the given palette selection: the colors of the
+    /// selected palette with the selection's overrides applied in order.
+    /// A palette index outside the range defined by the font selects the default palette (index 0)
+    /// and overrides still apply, matching the CSS <c>font-palette</c> behavior. Overrides whose
+    /// entry index lies outside the palette entry range are ignored.
+    /// The returned array is cached per distinct selection and shared across every glyph
+    /// source in the font; callers must treat it as read-only.
+    /// </summary>
+    /// <param name="palette">The palette selection, or <see langword="null"/> for the default palette.</param>
+    /// <returns>The effective palette colors.</returns>
+    public GlyphColor[] GetPaletteColors(FontPalette? palette)
+    {
+        // The common case shares one array per font: no selection, and the explicit default
+        // selection, both resolve to palette 0 with no overrides.
+        if (palette is null || (palette.Index == 0 && palette.Overrides.Count == 0))
+        {
+            return this.defaultPaletteColors ??= this.BuildPaletteColors(null);
+        }
+
+        ConcurrentDictionary<FontPalette, GlyphColor[]> cache = this.selectedPaletteColors ??= new();
+        return cache.GetOrAdd(palette, static (key, table) => table.BuildPaletteColors(key), this);
+    }
+
+    /// <summary>
+    /// Builds the effective color array for the given palette selection. Runs once per
+    /// distinct selection; <see cref="GetPaletteColors"/> caches and shares the result.
+    /// </summary>
+    /// <param name="palette">The palette selection, or <see langword="null"/> for the default palette.</param>
+    /// <returns>The effective palette colors.</returns>
+    private GlyphColor[] BuildPaletteColors(FontPalette? palette)
+    {
+        int paletteIndex = 0;
+        if (palette is not null && palette.Index < this.paletteOffsets.Length)
+        {
+            paletteIndex = palette.Index;
+        }
+
+        GlyphColor[] colors = new GlyphColor[this.paletteEntryCount];
+        Array.Copy(this.paletteEntries, this.paletteOffsets[paletteIndex], colors, 0, colors.Length);
+
+        if (palette is not null)
+        {
+            IReadOnlyList<FontPaletteOverride> overrides = palette.Overrides;
+            for (int i = 0; i < overrides.Count; i++)
+            {
+                FontPaletteOverride paletteOverride = overrides[i];
+                if (paletteOverride.Index < colors.Length)
+                {
+                    colors[paletteOverride.Index] = paletteOverride.Color;
+                }
+            }
+        }
+
+        return colors;
+    }
 
     /// <summary>
     /// Loads the <see cref="CpalTable"/> from the specified font reader.
@@ -114,6 +195,6 @@ internal class CpalTable : Table
             palettes[n] = new GlyphColor(red, green, blue, alpha);
         }
 
-        return new CpalTable(colorRecordIndices, palettes);
+        return new CpalTable(numPaletteEntries, colorRecordIndices, palettes);
     }
 }

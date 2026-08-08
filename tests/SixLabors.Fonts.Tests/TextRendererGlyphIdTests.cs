@@ -24,6 +24,7 @@ public class TextRendererGlyphIdTests
             TextDecorations.None,
             LayoutMode.HorizontalTopBottom,
             ColorFontSupport.None,
+            null,
             out FontGlyphMetrics codePointMetrics));
 
         Assert.True(font.FontMetrics.TryGetGlyphMetrics(
@@ -32,6 +33,7 @@ public class TextRendererGlyphIdTests
             TextDecorations.None,
             LayoutMode.HorizontalTopBottom,
             ColorFontSupport.None,
+            null,
             out FontGlyphMetrics glyphIdMetrics));
 
         Assert.Equal(codePointMetrics.GlyphId, glyphIdMetrics.GlyphId);

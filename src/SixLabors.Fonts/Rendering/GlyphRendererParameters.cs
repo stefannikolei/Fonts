@@ -37,6 +37,7 @@ public readonly struct GlyphRendererParameters : IEquatable<GlyphRendererParamet
         this.LayoutMode = layoutMode;
         this.HintingMode = hintingMode;
         this.ClipBounds = clipBounds;
+        this.FontPalette = metrics.FontPalette;
     }
 
     /// <summary>
@@ -101,6 +102,14 @@ public readonly struct GlyphRendererParameters : IEquatable<GlyphRendererParamet
     public HintingMode HintingMode { get; }
 
     /// <summary>
+    /// Gets the color palette selection the glyph's colors were resolved with, or
+    /// <see langword="null"/> when the glyph resolves no palette colors. The selection
+    /// changes the emitted layer paints so it participates in identity, allowing
+    /// consumers to cache per palette variant.
+    /// </summary>
+    public FontPalette? FontPalette { get; }
+
+    /// <summary>
     /// Gets the clip bounds for the glyph, or <see langword="null"/> when the font defines
     /// none. The renderer restricts every operation the glyph emits to these bounds.
     /// The transform carries the glyph's placement, so the value is excluded from equality:
@@ -151,6 +160,7 @@ public readonly struct GlyphRendererParameters : IEquatable<GlyphRendererParamet
         && other.TextRun.TextDecorations == this.TextRun.TextDecorations
         && other.LayoutMode == this.LayoutMode
         && other.HintingMode == this.HintingMode
+        && Equals(other.FontPalette, this.FontPalette)
         && ((other.Font is null && this.Font is null)
         || (other.Font?.Equals(this.Font, StringComparison.OrdinalIgnoreCase) == true));
 
@@ -177,7 +187,8 @@ public readonly struct GlyphRendererParameters : IEquatable<GlyphRendererParamet
 
         int c = HashCode.Combine(
             this.CompositeGlyphId,
-            this.GraphemeIndex);
+            this.GraphemeIndex,
+            this.FontPalette);
 
         return HashCode.Combine(a, b, c);
     }

@@ -174,8 +174,9 @@ internal sealed class FileFontMetrics : FontMetrics
         TextDecorations textDecorations,
         LayoutMode layoutMode,
         ColorFontSupport support,
+        FontPalette? palette,
         [NotNullWhen(true)] out FontGlyphMetrics? metrics)
-          => this.fontMetrics.Value.TryGetGlyphMetrics(codePoint, textAttributes, textDecorations, layoutMode, support, out metrics);
+          => this.fontMetrics.Value.TryGetGlyphMetrics(codePoint, textAttributes, textDecorations, layoutMode, support, palette, out metrics);
 
     /// <inheritdoc />
     public override bool TryGetGlyphMetrics(
@@ -184,8 +185,9 @@ internal sealed class FileFontMetrics : FontMetrics
         TextDecorations textDecorations,
         LayoutMode layoutMode,
         ColorFontSupport support,
+        FontPalette? palette,
         [NotNullWhen(true)] out FontGlyphMetrics? metrics)
-        => this.fontMetrics.Value.TryGetGlyphMetrics(glyphId, textAttributes, textDecorations, layoutMode, support, out metrics);
+        => this.fontMetrics.Value.TryGetGlyphMetrics(glyphId, textAttributes, textDecorations, layoutMode, support, palette, out metrics);
 
     /// <inheritdoc />
     internal override FontGlyphMetrics GetGlyphMetrics(
@@ -194,8 +196,9 @@ internal sealed class FileFontMetrics : FontMetrics
         TextAttributes textAttributes,
         TextDecorations textDecorations,
         LayoutMode layoutMode,
-        ColorFontSupport support)
-        => this.fontMetrics.Value.GetGlyphMetrics(codePoint, glyphId, textAttributes, textDecorations, layoutMode, support);
+        ColorFontSupport support,
+        FontPalette? palette)
+        => this.fontMetrics.Value.GetGlyphMetrics(codePoint, glyphId, textAttributes, textDecorations, layoutMode, support, palette);
 
     /// <inheritdoc />
     public override ReadOnlyMemory<CodePoint> GetAvailableCodePoints()

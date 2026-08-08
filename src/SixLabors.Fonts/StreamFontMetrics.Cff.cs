@@ -108,9 +108,8 @@ internal partial class StreamFontMetrics
         TextDecorations textDecorations,
         ColorFontSupport colorSupport,
         bool isVerticalLayout,
-        ushort paletteIndex = 0)
+        FontPalette? palette)
     {
-        // TODO: When do we require and how do we use the palette index?
         CompactFontTables tables = this.compactFontTables!;
         ICffTable cff = tables.Cff;
         HorizontalMetricsTable htmx = tables.Htmx;
@@ -167,6 +166,7 @@ internal partial class StreamFontMetrics
                 glyphId,
                 codePoint,
                 this.GetOrCreateSvgGlyphSource(svg),
+                null,
                 bounds,
                 advanceWidth,
                 advancedHeight,

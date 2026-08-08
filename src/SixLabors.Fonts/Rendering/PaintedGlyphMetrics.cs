@@ -22,6 +22,7 @@ public sealed class PaintedGlyphMetrics : FontGlyphMetrics
     /// <param name="glyphId">The glyph identifier.</param>
     /// <param name="codePoint">The code point.</param>
     /// <param name="source">The painted glyph source.</param>
+    /// <param name="palette">The color palette selection the source resolves colors with, or null for the font's default palette.</param>
     /// <param name="bounds">The design-space bounds for the glyph.</param>
     /// <param name="advanceWidth">The advance width.</param>
     /// <param name="advanceHeight">The advance height.</param>
@@ -35,6 +36,7 @@ public sealed class PaintedGlyphMetrics : FontGlyphMetrics
         ushort glyphId,
         CodePoint codePoint,
         IPaintedGlyphSource source,
+        FontPalette? palette,
         Bounds bounds,
         ushort advanceWidth,
         ushort advanceHeight,
@@ -56,7 +58,17 @@ public sealed class PaintedGlyphMetrics : FontGlyphMetrics
               textAttributes,
               textDecorations,
               GlyphType.Painted)
-        => this.source = source;
+    {
+        this.source = source;
+        this.FontPalette = palette;
+    }
+
+    /// <summary>
+    /// Gets the color palette selection the glyph's colors were resolved with, or
+    /// <see langword="null"/> for the font's default palette. Participates in renderer
+    /// cache identity through <see cref="GlyphRendererParameters"/>.
+    /// </summary>
+    internal override FontPalette? FontPalette { get; }
 
     /// <inheritdoc/>
     internal override Bounds GetDesignBounds()

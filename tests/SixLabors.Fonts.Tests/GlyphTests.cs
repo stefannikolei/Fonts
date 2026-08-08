@@ -123,6 +123,24 @@ public class GlyphTests
     }
 
     [Fact]
+    public void RenderColrGlyphTextRunColorFontSupportOverridesOptions()
+    {
+        Font font = TestFonts.GetFont(TestFonts.TwemojiMozillaFile, 12);
+
+        // The run disables color for the first emoji only; the second keeps the
+        // options value and contributes the three COLR v0 layer colors.
+        ColorGlyphRenderer renderer = new();
+        TextRenderer.RenderTo(renderer, "😀😀", new TextOptions(font)
+        {
+            ColorFontSupport = ColorFontSupport.ColrV0,
+            TextRuns = [new TextRun { Start = 0, End = 1, ColorFontSupport = ColorFontSupport.None }]
+        });
+
+        Assert.Equal(2, renderer.GlyphKeys.Count);
+        Assert.Equal(3, renderer.Colors.Count);
+    }
+
+    [Fact]
     public void RenderColrGlyphWithVariationSelector()
     {
         Font font = TestFonts.GetFont(TestFonts.TwemojiMozillaFile, 72);

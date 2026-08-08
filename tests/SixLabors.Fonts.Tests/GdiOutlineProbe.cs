@@ -56,7 +56,7 @@ public class GdiOutlineProbe
 
             foreach (char c in chars)
             {
-                font.FontMetrics.TryGetGlyphMetrics(new SixLabors.Fonts.Unicode.CodePoint(c), TextAttributes.None, TextDecorations.None, LayoutMode.HorizontalTopBottom, ColorFontSupport.None, out FontGlyphMetrics? metrics);
+                font.FontMetrics.TryGetGlyphMetrics(new SixLabors.Fonts.Unicode.CodePoint(c), TextAttributes.None, TextDecorations.None, LayoutMode.HorizontalTopBottom, ColorFontSupport.None, null, out FontGlyphMetrics? metrics);
                 if (metrics is not TrueTypeGlyphMetrics tt)
                 {
                     continue;

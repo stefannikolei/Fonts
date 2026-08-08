@@ -366,12 +366,38 @@ public sealed class Font
         LayoutMode layoutMode,
         ColorFontSupport support,
         [NotNullWhen(true)] out Glyph? glyph)
+        => this.TryGetGlyph(codePoint, textAttributes, textDecorations, layoutMode, support, null, out glyph);
+
+    /// <summary>
+    /// Gets the glyph for the given codepoint.
+    /// </summary>
+    /// <param name="codePoint">The code point of the character.</param>
+    /// <param name="textAttributes">The text attributes to apply to the glyphs.</param>
+    /// <param name="textDecorations">The text decorations to apply to the glyphs.</param>
+    /// <param name="layoutMode">The layout mode to apply to the glyphs.</param>
+    /// <param name="support">Options for enabling color font support during layout and rendering.</param>
+    /// <param name="palette">The color palette selection for color fonts, or <see langword="null"/> for the font's default palette.</param>
+    /// <param name="glyph">
+    /// When this method returns, contains the glyph for the given codepoint, attributes, and color support if the glyph
+    /// is found; otherwise the default value. This parameter is passed uninitialized.
+    /// </param>
+    /// <returns>
+    /// <see langword="true"/> if the face contains glyphs for the specified codepoint; otherwise, <see langword="false"/>.
+    /// </returns>
+    public bool TryGetGlyph(
+        CodePoint codePoint,
+        TextAttributes textAttributes,
+        TextDecorations textDecorations,
+        LayoutMode layoutMode,
+        ColorFontSupport support,
+        FontPalette? palette,
+        [NotNullWhen(true)] out Glyph? glyph)
     {
         FontMetrics fontMetrics = this.FontMetrics;
         if (fontMetrics.TryGetGlyphId(codePoint, out ushort glyphId))
         {
             TextRun textRun = new() { Start = 0, End = 1, Font = this, TextAttributes = textAttributes, TextDecorations = textDecorations };
-            FontGlyphMetrics metrics = fontMetrics.GetGlyphMetrics(codePoint, glyphId, textAttributes, textDecorations, layoutMode, support);
+            FontGlyphMetrics metrics = fontMetrics.GetGlyphMetrics(codePoint, glyphId, textAttributes, textDecorations, layoutMode, support, palette);
 
             glyph = new(metrics, this.Size, textRun, Vector2.Zero, new Vector2(metrics.AdvanceWidth, metrics.AdvanceHeight));
             return true;

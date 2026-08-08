@@ -833,6 +833,7 @@ public static class TextMeasurer
                 options.TextDecorations,
                 options.LayoutMode,
                 options.ColorFontSupport,
+                options.FontPalette,
                 out metrics)
             || FontGlyphMetrics.ShouldSkipGlyphRendering(metrics.CodePoint))
         {

@@ -1223,7 +1223,6 @@ public class TextLayoutTests
         Assert.Throws<ArgumentException>(() => TextMeasurer.MeasureAdvance(text, options));
     }
 
-#if SUPPORTS_DRAWING
     [Theory]
     [InlineData(TextPlaceholderAlignment.Baseline)]
     [InlineData(TextPlaceholderAlignment.AboveBaseline)]
@@ -1256,7 +1255,6 @@ public class TextLayoutTests
             ]
         };
 
-        IReadOnlyList<GlyphPathCollection> glyphs = TextBuilder.GenerateGlyphs(text, options);
         TextMetrics metrics = TextMeasurer.Measure(text, options);
 
         LineMetrics line = metrics.LineMetrics[0];
@@ -1284,6 +1282,10 @@ public class TextLayoutTests
             180,
             image => image.Mutate(x => x.Paint(canvas =>
             {
+                // Must stay inside the deferred action so the test is a no-op when
+                // SUPPORTS_DRAWING is off.
+                IReadOnlyList<GlyphPathCollection> glyphs = TextBuilder.GenerateGlyphs(text, options);
+
                 RectanglePolygon lineBox = new(
                     0,
                     line.Start.Y,
@@ -1330,9 +1332,7 @@ public class TextLayoutTests
         // also exposes one object-replacement glyph at the insertion point.
         Assert.Equal(1, CountGlyphs(metrics.GetGlyphMetrics().Span, CodePoint.ObjectReplacementChar));
     }
-#endif
 
-#if SUPPORTS_DRAWING
     [Theory]
     [InlineData(TextPlaceholderAlignment.Baseline)]
     [InlineData(TextPlaceholderAlignment.AboveBaseline)]
@@ -1365,7 +1365,6 @@ public class TextLayoutTests
             ]
         };
 
-        IReadOnlyList<GlyphPathCollection> glyphs = TextBuilder.GenerateGlyphs(text, options);
         TextMetrics metrics = TextMeasurer.Measure(text, options);
 
         LineMetrics line = metrics.LineMetrics[0];
@@ -1392,6 +1391,10 @@ public class TextLayoutTests
             260,
             image => image.Mutate(x => x.Paint(canvas =>
             {
+                // Must stay inside the deferred action so the test is a no-op when
+                // SUPPORTS_DRAWING is off.
+                IReadOnlyList<GlyphPathCollection> glyphs = TextBuilder.GenerateGlyphs(text, options);
+
                 RectanglePolygon lineBox = new(
                     0,
                     line.Start.Y,
@@ -1438,7 +1441,6 @@ public class TextLayoutTests
         // The oversized visual still represents one atomic inline object.
         Assert.Equal(1, CountGlyphs(metrics.GetGlyphMetrics().Span, CodePoint.ObjectReplacementChar));
     }
-#endif
 
     /// <summary>
     /// Verifies that mixed vertical page orientation does not disable Arabic joining substitutions.

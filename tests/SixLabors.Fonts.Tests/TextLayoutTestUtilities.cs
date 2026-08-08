@@ -192,6 +192,7 @@ internal static class TextLayoutTestUtilities
             DecorationPositioningMode = options.DecorationPositioningMode,
             Tracking = options.Tracking,
             ColorFontSupport = options.ColorFontSupport,
+            FontPalette = options.FontPalette,
             FeatureTags = new List<Tag>(options.FeatureTags),
             Culture = options.Culture,
         };
@@ -212,6 +213,8 @@ internal static class TextLayoutTestUtilities
                     FeatureTags = run.FeatureTags is null ? null : new List<Tag>(run.FeatureTags),
                     TextAttributes = run.TextAttributes,
                     TextDecorations = run.TextDecorations,
+                    ColorFontSupport = run.ColorFontSupport,
+                    FontPalette = run.FontPalette,
                 };
 
                 if (customDecorations && run.TextDecorations != TextDecorations.None)

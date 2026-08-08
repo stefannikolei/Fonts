@@ -106,6 +106,7 @@ public class FontWeightTests
             TextDecorations.None,
             LayoutMode.HorizontalTopBottom,
             ColorFontSupport.None,
+            null,
             out FontGlyphMetrics metrics));
 
         float strength = metrics.GetSyntheticBoldStrength(pointSize * 72F, textRun);
@@ -147,6 +148,7 @@ public class FontWeightTests
             TextDecorations.None,
             LayoutMode.HorizontalTopBottom,
             ColorFontSupport.ColrV0,
+            null,
             out FontGlyphMetrics metrics));
 
         Assert.Equal(GlyphType.Painted, metrics.GlyphType);
@@ -178,6 +180,7 @@ public class FontWeightTests
             TextDecorations.None,
             LayoutMode.HorizontalTopBottom,
             ColorFontSupport.None,
+            null,
             out FontGlyphMetrics metrics));
 
         Assert.False(metrics.ShouldSynthesizeBold(textRun));
@@ -216,6 +219,7 @@ public class FontWeightTests
             TextDecorations.None,
             LayoutMode.HorizontalTopBottom,
             ColorFontSupport.None,
+            null,
             out FontGlyphMetrics metrics));
 
         Assert.False(metrics.ShouldSynthesizeBold(textRun));

@@ -111,6 +111,7 @@ public class TextRenderer
             options.TextDecorations,
             options.LayoutMode,
             options.ColorFontSupport,
+            options.FontPalette,
             out FontGlyphMetrics? metrics))
         {
             return;

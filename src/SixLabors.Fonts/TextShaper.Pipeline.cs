@@ -641,6 +641,7 @@ public static partial class TextShaper
         CodePoint space = new(0x0020);
         LayoutMode layoutMode = shaped.TextOptions.LayoutMode;
         ColorFontSupport colorFontSupport = shaped.TextOptions.ColorFontSupport;
+        FontPalette? fontPalette = shaped.TextOptions.FontPalette;
         bool isVertical = layoutMode.IsVertical();
         Font? invisibleFont = null;
         ushort invisible = 0;
@@ -686,7 +687,7 @@ public static partial class TextShaper
             // The projection reads the glyph id and default advance from the
             // metrics entry, so the invisible glyph's metrics replace it.
             TextRun textRun = shaped.TextRuns[data.TextRunIndex];
-            entry.Metrics = font.FontMetrics.GetGlyphMetrics(space, invisible, textRun.TextAttributes, textRun.TextDecorations, layoutMode, colorFontSupport);
+            entry.Metrics = font.FontMetrics.GetGlyphMetrics(space, invisible, textRun.TextAttributes, textRun.TextDecorations, layoutMode, textRun.ColorFontSupport ?? colorFontSupport, textRun.FontPalette ?? fontPalette);
             shaped.SetGlyphId(i, invisible);
             data.IsHidden = true;
         }

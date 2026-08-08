@@ -60,6 +60,7 @@ public class TextOptions
         this.KerningMode = options.KerningMode;
         this.Tracking = options.Tracking;
         this.ColorFontSupport = options.ColorFontSupport;
+        this.FontPalette = options.FontPalette;
         this.FeatureTags = new List<Tag>(options.FeatureTags);
         this.Culture = options.Culture;
         this.TextRuns = new List<TextRun>(options.TextRuns);
@@ -296,7 +297,21 @@ public class TextOptions
     /// <summary>
     /// Gets or sets the color font support options.
     /// </summary>
+    /// <remarks>
+    /// A text run with a non-null <see cref="TextRun.ColorFontSupport"/> value
+    /// replaces this value over that run.
+    /// </remarks>
     public ColorFontSupport ColorFontSupport { get; set; } = ColorFontSupport.ColrV1 | ColorFontSupport.ColrV0 | ColorFontSupport.Svg;
+
+    /// <summary>
+    /// Gets or sets the color palette selection used to resolve COLR glyph colors, or
+    /// <see langword="null"/> to use the font's default palette.
+    /// </summary>
+    /// <remarks>
+    /// A text run with a non-null <see cref="TextRun.FontPalette"/> value
+    /// replaces this value over that run.
+    /// </remarks>
+    public FontPalette? FontPalette { get; set; }
 
     /// <summary>
     /// Gets or sets the collection of additional feature tags to apply during glyph shaping.

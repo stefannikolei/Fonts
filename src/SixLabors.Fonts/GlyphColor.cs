@@ -11,7 +11,14 @@ namespace SixLabors.Fonts;
 /// </summary>
 public readonly partial struct GlyphColor : IEquatable<GlyphColor>
 {
-    internal GlyphColor(byte red, byte green, byte blue, byte alpha)
+    /// <summary>
+    /// Initializes a new instance of the <see cref="GlyphColor"/> struct.
+    /// </summary>
+    /// <param name="red">The red component.</param>
+    /// <param name="green">The green component.</param>
+    /// <param name="blue">The blue component.</param>
+    /// <param name="alpha">The alpha component.</param>
+    public GlyphColor(byte red, byte green, byte blue, byte alpha)
     {
         this.R = red;
         this.G = green;

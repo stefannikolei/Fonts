@@ -76,6 +76,13 @@ internal sealed class ShapingBuffer
     private FontMetrics? metricsCacheOwner;
 
     /// <summary>
+    /// The palette selection the cache entries belong to. The palette is a reference the
+    /// packed tag cannot encode, and a pooled buffer can be reset with new options while
+    /// keeping the same font, so a selection change clears the cache before use.
+    /// </summary>
+    private FontPalette? metricsCachePalette;
+
+    /// <summary>
     /// The bit offset of the encoded following codepoint in a glyph id cache entry.
     /// </summary>
     private const int GlyphIdCacheNextShift = 21;
@@ -529,6 +536,7 @@ internal sealed class ShapingBuffer
         FontMetrics fontMetrics = font.FontMetrics;
         LayoutMode layoutMode = this.TextOptions.LayoutMode;
         ColorFontSupport colorFontSupport = this.TextOptions.ColorFontSupport;
+        FontPalette? fontPalette = this.TextOptions.FontPalette;
 
         uint verticalMask = ShapePlanFeatures.VerticalFeatureMask;
 
@@ -544,7 +552,7 @@ internal sealed class ShapingBuffer
             bool isVertical = AdvancedTypographicUtils.IsVerticalGlyph(codePoint, layoutMode)
                 || (slot.AppliedFeatureMask & verticalMask) != 0;
 
-            FontGlyphMetrics glyphMetrics = this.GetGlyphMetrics(fontMetrics, codePoint, slot.GlyphId, textAttributes, textDecorations, layoutMode, colorFontSupport);
+            FontGlyphMetrics glyphMetrics = this.GetGlyphMetrics(fontMetrics, codePoint, slot.GlyphId, textAttributes, textDecorations, layoutMode, textRun.ColorFontSupport ?? colorFontSupport, textRun.FontPalette ?? fontPalette);
 
             if (glyphMetrics.GlyphType == GlyphType.Fallback && !CodePoint.IsControl(codePoint))
             {
@@ -1538,6 +1546,7 @@ internal sealed class ShapingBuffer
         FontMetrics fontMetrics = font.FontMetrics;
         LayoutMode layoutMode = this.TextOptions.LayoutMode;
         ColorFontSupport colorFontSupport = this.TextOptions.ColorFontSupport;
+        FontPalette? fontPalette = this.TextOptions.FontPalette;
 
         // The hide-ignorables stage runs against this buffer, so the workspace's
         // knowledge of default ignorables must travel with its records.
@@ -1582,7 +1591,7 @@ internal sealed class ShapingBuffer
             bool isVertical = AdvancedTypographicUtils.IsVerticalGlyph(codePoint, layoutMode)
                 || (source.AppliedFeatureMask & verticalMask) != 0;
 
-            FontGlyphMetrics glyphMetrics = this.GetGlyphMetrics(fontMetrics, codePoint, id, textAttributes, textDecorations, layoutMode, colorFontSupport);
+            FontGlyphMetrics glyphMetrics = this.GetGlyphMetrics(fontMetrics, codePoint, id, textAttributes, textDecorations, layoutMode, sourceRun.ColorFontSupport ?? colorFontSupport, sourceRun.FontPalette ?? fontPalette);
 
             if (glyphMetrics.GlyphType == GlyphType.Fallback && !CodePoint.IsControl(codePoint))
             {
@@ -1623,6 +1632,7 @@ internal sealed class ShapingBuffer
         FontMetrics fontMetrics = font.FontMetrics;
         LayoutMode layoutMode = this.TextOptions.LayoutMode;
         ColorFontSupport colorFontSupport = this.TextOptions.ColorFontSupport;
+        FontPalette? fontPalette = this.TextOptions.FontPalette;
         bool hasFallBacks = false;
 
         // The hide-ignorables stage runs against this buffer, so the workspace's
@@ -1699,7 +1709,8 @@ internal sealed class ShapingBuffer
                     shapeRun.TextAttributes,
                     shapeRun.TextDecorations,
                     layoutMode,
-                    colorFontSupport);
+                    shapeRun.ColorFontSupport ?? colorFontSupport,
+                    shapeRun.FontPalette ?? fontPalette);
 
                 if (glyphMetrics.GlyphType == GlyphType.Fallback && !CodePoint.IsControl(shape.CodePoint))
                 {
@@ -1757,7 +1768,8 @@ internal sealed class ShapingBuffer
                     shapeRun.TextAttributes,
                     shapeRun.TextDecorations,
                     layoutMode,
-                    colorFontSupport);
+                    shapeRun.ColorFontSupport ?? colorFontSupport,
+                    shapeRun.FontPalette ?? fontPalette);
 
                 bool isVertical = AdvancedTypographicUtils.IsVerticalGlyph(codePoint, layoutMode)
                     || (shape.AppliedFeatureMask & verticalMask) != 0;
@@ -1931,6 +1943,7 @@ internal sealed class ShapingBuffer
     /// <param name="textDecorations">The text decorations applied to the glyph.</param>
     /// <param name="layoutMode">The layout mode.</param>
     /// <param name="colorFontSupport">The color font support level.</param>
+    /// <param name="palette">The color palette selection, or null for the font's default palette.</param>
     /// <returns>The resolved <see cref="FontGlyphMetrics"/>.</returns>
     private FontGlyphMetrics GetGlyphMetrics(
         FontMetrics fontMetrics,
@@ -1939,12 +1952,14 @@ internal sealed class ShapingBuffer
         TextAttributes textAttributes,
         TextDecorations textDecorations,
         LayoutMode layoutMode,
-        ColorFontSupport colorFontSupport)
+        ColorFontSupport colorFontSupport,
+        FontPalette? palette)
     {
-        if (!ReferenceEquals(this.metricsCacheOwner, fontMetrics))
+        if (!ReferenceEquals(this.metricsCacheOwner, fontMetrics) || !ReferenceEquals(this.metricsCachePalette, palette))
         {
             Array.Clear(this.metricsCacheTags);
             this.metricsCacheOwner = fontMetrics;
+            this.metricsCachePalette = palette;
         }
 
         bool isVertical = AdvancedTypographicUtils.IsVerticalGlyph(codePoint, layoutMode);
@@ -1961,7 +1976,7 @@ internal sealed class ShapingBuffer
             return this.metricsCacheValues[slot]!;
         }
 
-        FontGlyphMetrics glyphMetrics = fontMetrics.GetGlyphMetrics(codePoint, glyphId, textAttributes, textDecorations, layoutMode, colorFontSupport);
+        FontGlyphMetrics glyphMetrics = fontMetrics.GetGlyphMetrics(codePoint, glyphId, textAttributes, textDecorations, layoutMode, colorFontSupport, palette);
         this.metricsCacheTags[slot] = tag;
         this.metricsCacheValues[slot] = glyphMetrics;
         return glyphMetrics;

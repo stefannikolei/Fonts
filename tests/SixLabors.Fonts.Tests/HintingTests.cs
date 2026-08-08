@@ -335,7 +335,7 @@ public class HintingTests
         FontFamily family = collection.Add(TestFonts.Arial);
         Font font = family.CreateFont(12);
 
-        Assert.True(font.FontMetrics.TryGetGlyphMetrics(new CodePoint('H'), TextAttributes.None, TextDecorations.None, LayoutMode.HorizontalTopBottom, ColorFontSupport.None, out FontGlyphMetrics metrics));
+        Assert.True(font.FontMetrics.TryGetGlyphMetrics(new CodePoint('H'), TextAttributes.None, TextDecorations.None, LayoutMode.HorizontalTopBottom, ColorFontSupport.None, null, out FontGlyphMetrics metrics));
 
         TrueTypeGlyphMetrics ttMetrics = Assert.IsType<TrueTypeGlyphMetrics>(metrics);
         StreamFontMetrics streamMetrics = Assert.IsType<StreamFontMetrics>(ttMetrics.FontMetrics);
@@ -435,7 +435,7 @@ public class HintingTests
         FontFamily family = collection.Add(TestFonts.PlantinStdRegularFile);
         Font font = family.CreateFont(12);
 
-        Assert.True(font.FontMetrics.TryGetGlyphMetrics(new CodePoint('H'), TextAttributes.None, TextDecorations.None, LayoutMode.VerticalLeftRight, ColorFontSupport.None, out FontGlyphMetrics metrics));
+        Assert.True(font.FontMetrics.TryGetGlyphMetrics(new CodePoint('H'), TextAttributes.None, TextDecorations.None, LayoutMode.VerticalLeftRight, ColorFontSupport.None, null, out FontGlyphMetrics metrics));
 
         float scaledPPEM = metrics.GetScaledSize(12F, 72F, HintingMode.Full);
         Assert.True(metrics.TryGetFittedOutlinePlacement(scaledPPEM, HintingMode.Full, true, out FontGlyphMetrics.FittedOutlinePlacement placement));

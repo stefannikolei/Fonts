@@ -19,11 +19,12 @@ internal abstract class ColrGlyphSourceBase : IPaintedGlyphSource
     /// </summary>
     /// <param name="colr">The COLR table.</param>
     /// <param name="cpal">The CPAL table, or null if not present.</param>
+    /// <param name="palette">The palette selection, or null for the font's default palette.</param>
     /// <param name="glyphLoader">Delegate that loads a glyph outline for the given glyph id.</param>
-    public ColrGlyphSourceBase(ColrTable colr, CpalTable? cpal, Func<ushort, GlyphVector?> glyphLoader)
+    public ColrGlyphSourceBase(ColrTable colr, CpalTable? cpal, FontPalette? palette, Func<ushort, GlyphVector?> glyphLoader)
     {
         this.Colr = colr;
-        this.Cpal = cpal;
+        this.PaletteColors = cpal?.GetPaletteColors(palette);
         this.GlyphLoader = glyphLoader;
     }
 
@@ -33,9 +34,11 @@ internal abstract class ColrGlyphSourceBase : IPaintedGlyphSource
     protected ColrTable Colr { get; }
 
     /// <summary>
-    /// Gets the CPAL table, or null if not present.
+    /// Gets the effective palette colors resolved from the CPAL table and the palette
+    /// selection, or null when the font has no CPAL table. The array is owned and shared
+    /// by the CPAL table across glyph sources and must never be mutated.
     /// </summary>
-    protected CpalTable? Cpal { get; }
+    protected GlyphColor[]? PaletteColors { get; }
 
     /// <summary>
     /// Gets the glyph loader delegate.
@@ -56,7 +59,7 @@ internal abstract class ColrGlyphSourceBase : IPaintedGlyphSource
     /// <param name="node">The COLR paint node.</param>
     /// <param name="transform">The affine matrix in document space.</param>
     /// <param name="mode">The active composite mode to apply to leaf paints, or null for default.</param>
-    /// <param name="cpal">Optional CPAL palette for color resolution.</param>
+    /// <param name="palette">Optional effective palette colors for color resolution.</param>
     /// <param name="colr">The COLR table for variation delta resolution.</param>
     /// <param name="processor">The glyph variation processor, or null for non-variable fonts.</param>
     /// <param name="outLeaves">Collector for emitted leaf paints.</param>
@@ -64,7 +67,7 @@ internal abstract class ColrGlyphSourceBase : IPaintedGlyphSource
         Paint node,
         Matrix3x2 transform,
         CompositeMode mode,
-        CpalTable? cpal,
+        GlyphColor[]? palette,
         ColrTable colr,
         GlyphVariationProcessor? processor,
         List<Rendering.Paint> outLeaves)
@@ -89,7 +92,7 @@ internal abstract class ColrGlyphSourceBase : IPaintedGlyphSource
                     return;
                 }
 
-                GlyphColor color = ResolveColor(cpal, ps.PaletteIndex, ps.Alpha);
+                GlyphColor color = ResolveColor(palette, ps.PaletteIndex, ps.Alpha);
                 outLeaves.Add(new SolidPaint
                 {
                     Color = color,
@@ -116,7 +119,7 @@ internal abstract class ColrGlyphSourceBase : IPaintedGlyphSource
                     return;
                 }
 
-                GlyphColor color = ResolveColor(cpal, pvs.PaletteIndex, alpha);
+                GlyphColor color = ResolveColor(palette, pvs.PaletteIndex, alpha);
                 outLeaves.Add(new SolidPaint
                 {
                     Color = color,
@@ -129,7 +132,7 @@ internal abstract class ColrGlyphSourceBase : IPaintedGlyphSource
 
             case PaintLinearGradient pl:
             {
-                GradientStop[] stops = ResolveStops(pl.ColorLine, cpal);
+                GradientStop[] stops = ResolveStops(pl.ColorLine, palette);
                 outLeaves.Add(new LinearGradientPaint
                 {
                     Units = GradientUnits.UserSpaceOnUse,
@@ -148,7 +151,7 @@ internal abstract class ColrGlyphSourceBase : IPaintedGlyphSource
             case PaintVarLinearGradient vpl:
             {
                 uint vib = vpl.VarIndexBase;
-                GradientStop[] stops = ResolveStops(vpl.ColorLine, cpal, colr, processor);
+                GradientStop[] stops = ResolveStops(vpl.ColorLine, palette, colr, processor);
                 outLeaves.Add(new LinearGradientPaint
                 {
                     Units = GradientUnits.UserSpaceOnUse,
@@ -166,7 +169,7 @@ internal abstract class ColrGlyphSourceBase : IPaintedGlyphSource
 
             case PaintRadialGradient pr:
             {
-                GradientStop[] stops = ResolveStops(pr.ColorLine, cpal);
+                GradientStop[] stops = ResolveStops(pr.ColorLine, palette);
                 outLeaves.Add(new RadialGradientPaint
                 {
                     Units = GradientUnits.UserSpaceOnUse,
@@ -186,7 +189,7 @@ internal abstract class ColrGlyphSourceBase : IPaintedGlyphSource
             case PaintVarRadialGradient vpr:
             {
                 uint vib = vpr.VarIndexBase;
-                GradientStop[] stops = ResolveStops(vpr.ColorLine, cpal, colr, processor);
+                GradientStop[] stops = ResolveStops(vpr.ColorLine, palette, colr, processor);
                 outLeaves.Add(new RadialGradientPaint
                 {
                     Units = GradientUnits.UserSpaceOnUse,
@@ -205,7 +208,7 @@ internal abstract class ColrGlyphSourceBase : IPaintedGlyphSource
 
             case PaintSweepGradient sw:
             {
-                GradientStop[] stops = ResolveStops(sw.ColorLine, cpal);
+                GradientStop[] stops = ResolveStops(sw.ColorLine, palette);
                 outLeaves.Add(new SweepGradientPaint
                 {
                     Units = GradientUnits.UserSpaceOnUse,
@@ -226,7 +229,7 @@ internal abstract class ColrGlyphSourceBase : IPaintedGlyphSource
             case PaintVarSweepGradient vsw:
             {
                 uint vib = vsw.VarIndexBase;
-                GradientStop[] stops = ResolveStops(vsw.ColorLine, cpal, colr, processor);
+                GradientStop[] stops = ResolveStops(vsw.ColorLine, palette, colr, processor);
                 float startAngle = vsw.StartAngle + colr.ResolveDelta(processor, vib + 2u);
                 float endAngle = vsw.EndAngle + colr.ResolveDelta(processor, vib + 3u);
                 outLeaves.Add(new SweepGradientPaint
@@ -356,10 +359,10 @@ internal abstract class ColrGlyphSourceBase : IPaintedGlyphSource
     /// 0xFFFF palette indices are treated as transparent here (foreground color handled by text color elsewhere).
     /// </summary>
     /// <param name="line">The color line.</param>
-    /// <param name="cpal">The CPAL table, or null if not present.</param>
+    /// <param name="palette">The effective palette colors, or null if the font has no CPAL table.</param>
     /// <returns>The resolved gradient stops.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static GradientStop[] ResolveStops(ColorLine line, CpalTable? cpal)
+    private static GradientStop[] ResolveStops(ColorLine line, GlyphColor[]? palette)
     {
         ColorStop[] src = line.Stops;
         GradientStop[] stops = new GradientStop[src.Length];
@@ -370,7 +373,7 @@ internal abstract class ColrGlyphSourceBase : IPaintedGlyphSource
 
             GlyphColor c = s.PaletteIndex == 0xFFFF
                 ? new GlyphColor(0, 0, 0, 0) // transparent placeholder; renderer can blend with foreground
-                : ResolveColor(cpal, s.PaletteIndex, s.Alpha);
+                : ResolveColor(palette, s.PaletteIndex, s.Alpha);
 
             float offset = Math.Clamp(s.StopOffset, 0F, 1F);
 
@@ -386,12 +389,12 @@ internal abstract class ColrGlyphSourceBase : IPaintedGlyphSource
     /// 0xFFFF palette indices are treated as transparent here (foreground color handled by text color elsewhere).
     /// </summary>
     /// <param name="line">The variable color line.</param>
-    /// <param name="cpal">The CPAL table, or null if not present.</param>
+    /// <param name="palette">The effective palette colors, or null if the font has no CPAL table.</param>
     /// <param name="colr">The COLR table for delta resolution.</param>
     /// <param name="processor">The glyph variation processor, or null.</param>
     /// <returns>The resolved gradient stops.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static GradientStop[] ResolveStops(VarColorLine line, CpalTable? cpal, ColrTable colr, GlyphVariationProcessor? processor)
+    private static GradientStop[] ResolveStops(VarColorLine line, GlyphColor[]? palette, ColrTable colr, GlyphVariationProcessor? processor)
     {
         VarColorStop[] src = line.Stops;
         GradientStop[] stops = new GradientStop[src.Length];
@@ -406,7 +409,7 @@ internal abstract class ColrGlyphSourceBase : IPaintedGlyphSource
 
             GlyphColor c = s.PaletteIndex == 0xFFFF
                 ? new GlyphColor(0, 0, 0, 0) // transparent placeholder; renderer can blend with foreground
-                : ResolveColor(cpal, s.PaletteIndex, alpha);
+                : ResolveColor(palette, s.PaletteIndex, alpha);
 
             float offset = Math.Clamp(stopOffset, 0F, 1F);
 
@@ -417,17 +420,20 @@ internal abstract class ColrGlyphSourceBase : IPaintedGlyphSource
     }
 
     /// <summary>
-    /// Resolves a CPAL palette entry with an alpha multiplier.
+    /// Resolves an entry of the effective palette with an alpha multiplier.
     /// </summary>
-    /// <param name="cpal">The CPAL table, or null if not present.</param>
+    /// <param name="palette">The effective palette colors, or null if the font has no CPAL table.</param>
     /// <param name="paletteEntryIndex">The palette entry index.</param>
     /// <param name="alphaMul">The alpha multiplier.</param>
     /// <returns>The resolved color.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static GlyphColor ResolveColor(CpalTable? cpal, int paletteEntryIndex, float alphaMul)
+    private static GlyphColor ResolveColor(GlyphColor[]? palette, int paletteEntryIndex, float alphaMul)
     {
-        // Palette index 0 selection. If you later expose palette selection, thread it here.
-        GlyphColor baseColor = cpal is null ? new GlyphColor(0, 0, 0, 0) : cpal.GetGlyphColor(0, paletteEntryIndex);
+        // An entry index outside the effective palette resolves as transparent, the same
+        // fallback used when the font carries no CPAL table at all.
+        GlyphColor baseColor = palette is null || (uint)paletteEntryIndex >= (uint)palette.Length
+            ? new GlyphColor(0, 0, 0, 0)
+            : palette[paletteEntryIndex];
 
         byte a = (byte)Math.Clamp((int)MathF.Round(baseColor.A * alphaMul), 0, 255);
         return new GlyphColor(baseColor.R, baseColor.G, baseColor.B, a);

@@ -2,14 +2,11 @@
 // Licensed under the Six Labors Split License.
 
 using System.Text;
-
-#if SUPPORTS_DRAWING
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Drawing;
 using SixLabors.ImageSharp.Drawing.Processing;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
-#endif
 
 namespace SixLabors.Fonts.Tests.Issues;
 
@@ -33,17 +30,12 @@ public class Issues_400
         int lineCount = TextMeasurer.CountLines(text, options);
         Assert.Equal(4, lineCount);
 
-#if SUPPORTS_DRAWING
         TextLayoutTestUtilities.TestLayout(
             text,
             options,
             afterAction: image => DrawBoundsOverlay(image, text, options));
-#else
-        TextLayoutTestUtilities.TestLayout(text, options);
-#endif
     }
 
-#if SUPPORTS_DRAWING
     private static void DrawBoundsOverlay(Image<Rgba32> image, string text, TextOptions options)
     {
         FontRectangle advance = TextMeasurer.MeasureAdvance(text, options);
@@ -77,5 +69,4 @@ public class Issues_400
             Pens.Solid(color, thickness),
             new RectanglePolygon(rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height));
     }
-#endif
 }

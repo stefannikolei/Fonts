@@ -165,6 +165,7 @@ public class FontSynthesisTests
             TextDecorations.None,
             LayoutMode.HorizontalTopBottom,
             ColorFontSupport.None,
+            null,
             out FontGlyphMetrics metrics));
 
         Assert.Equal(0F, metrics.GetObliqueSkew(null));
@@ -400,6 +401,7 @@ public class FontSynthesisTests
             TextDecorations.None,
             LayoutMode.HorizontalTopBottom,
             ColorFontSupport.None,
+            null,
             out FontGlyphMetrics metrics));
 
         Assert.False(metrics.ShouldSynthesizeBold(null));

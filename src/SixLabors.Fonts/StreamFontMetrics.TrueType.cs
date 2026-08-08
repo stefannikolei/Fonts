@@ -266,9 +266,8 @@ internal partial class StreamFontMetrics
         TextDecorations textDecorations,
         ColorFontSupport colorSupport,
         bool isVerticalLayout,
-        ushort paletteIndex = 0)
+        FontPalette? palette)
     {
-        // TODO: When do we require and how do we use the palette index?
         TrueTypeFontTables tables = this.trueTypeFontTables!;
         GlyphTable glyf = tables.Glyf;
         HorizontalMetricsTable htmx = tables.Htmx;
@@ -316,13 +315,14 @@ internal partial class StreamFontMetrics
         if ((colorSupport & ColorFontSupport.ColrV1) == ColorFontSupport.ColrV1 && colr?.ContainsColorV1Glyph(glyphId) == true)
         {
             CpalTable? cpal = tables.Cpal;
-            ColrV1GlyphSource glyphSource = new(colr, cpal, i => glyf.GetGlyph(i), this.GlyphVariationProcessor);
+            ColrV1GlyphSource glyphSource = new(colr, cpal, palette, i => glyf.GetGlyph(i), this.GlyphVariationProcessor);
 
             return new PaintedGlyphMetrics(
                 this,
                 glyphId,
                 codePoint,
                 glyphSource,
+                palette,
                 bounds,
                 advanceWidth,
                 advancedHeight,
@@ -336,13 +336,14 @@ internal partial class StreamFontMetrics
         if ((colorSupport & ColorFontSupport.ColrV0) == ColorFontSupport.ColrV0 && colr?.ContainsColorV0Glyph(glyphId) == true)
         {
             CpalTable? cpal = tables.Cpal;
-            ColrV0GlyphSource glyphSource = new(colr, cpal, i => glyf.GetGlyph(i));
+            ColrV0GlyphSource glyphSource = new(colr, cpal, palette, i => glyf.GetGlyph(i));
 
             return new PaintedGlyphMetrics(
                 this,
                 glyphId,
                 codePoint,
                 glyphSource,
+                palette,
                 bounds,
                 advanceWidth,
                 advancedHeight,
@@ -361,6 +362,7 @@ internal partial class StreamFontMetrics
                 glyphId,
                 codePoint,
                 this.GetOrCreateSvgGlyphSource(svg),
+                null,
                 bounds,
                 advanceWidth,
                 advancedHeight,

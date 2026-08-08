@@ -1223,7 +1223,6 @@ public class TextLayoutTests
         Assert.Throws<ArgumentException>(() => TextMeasurer.MeasureAdvance(text, options));
     }
 
-#if SUPPORTS_DRAWING
     [Theory]
     [InlineData(TextPlaceholderAlignment.Baseline)]
     [InlineData(TextPlaceholderAlignment.AboveBaseline)]
@@ -1330,9 +1329,7 @@ public class TextLayoutTests
         // also exposes one object-replacement glyph at the insertion point.
         Assert.Equal(1, CountGlyphs(metrics.GetGlyphMetrics().Span, CodePoint.ObjectReplacementChar));
     }
-#endif
 
-#if SUPPORTS_DRAWING
     [Theory]
     [InlineData(TextPlaceholderAlignment.Baseline)]
     [InlineData(TextPlaceholderAlignment.AboveBaseline)]
@@ -1438,7 +1435,6 @@ public class TextLayoutTests
         // The oversized visual still represents one atomic inline object.
         Assert.Equal(1, CountGlyphs(metrics.GetGlyphMetrics().Span, CodePoint.ObjectReplacementChar));
     }
-#endif
 
     /// <summary>
     /// Verifies that mixed vertical page orientation does not disable Arabic joining substitutions.

@@ -234,6 +234,7 @@ public abstract class FontMetrics
     /// <param name="textDecorations">The text decorations applied to the glyph.</param>
     /// <param name="layoutMode">The layout mode applied to the glyph.</param>
     /// <param name="support">Options for enabling color font support during layout and rendering.</param>
+    /// <param name="palette">The color palette selection for color fonts, or <see langword="null"/> for the font's default palette.</param>
     /// <param name="metrics">
     /// When this method returns, contains the metrics for the given codepoint and color support if the metrics
     /// are found; otherwise the default value. This parameter is passed uninitialized.
@@ -247,6 +248,7 @@ public abstract class FontMetrics
         TextDecorations textDecorations,
         LayoutMode layoutMode,
         ColorFontSupport support,
+        FontPalette? palette,
         [NotNullWhen(true)] out FontGlyphMetrics? metrics);
 
     /// <summary>
@@ -257,6 +259,7 @@ public abstract class FontMetrics
     /// <param name="textDecorations">The text decorations applied to the glyph.</param>
     /// <param name="layoutMode">The layout mode applied to the glyph.</param>
     /// <param name="support">Options for enabling color font support during layout and rendering.</param>
+    /// <param name="palette">The color palette selection for color fonts, or <see langword="null"/> for the font's default palette.</param>
     /// <param name="metrics">
     /// When this method returns, contains the metrics for the given glyph id and color support if the metrics
     /// are found; otherwise the default value. This parameter is passed uninitialized.
@@ -270,6 +273,7 @@ public abstract class FontMetrics
         TextDecorations textDecorations,
         LayoutMode layoutMode,
         ColorFontSupport support,
+        FontPalette? palette,
         [NotNullWhen(true)] out FontGlyphMetrics? metrics);
 
     /// <summary>
@@ -290,6 +294,7 @@ public abstract class FontMetrics
     /// <param name="textDecorations">The text decorations applied to the glyph.</param>
     /// <param name="layoutMode">The layout mode applied to the glyph.</param>
     /// <param name="colorSupport">Options for enabling color font support during layout and rendering.</param>
+    /// <param name="palette">The color palette selection for color fonts, or <see langword="null"/> for the font's default palette.</param>
     /// <returns>The font glyph metrics.</returns>
     internal abstract FontGlyphMetrics GetGlyphMetrics(
         CodePoint codePoint,
@@ -297,7 +302,8 @@ public abstract class FontMetrics
         TextAttributes textAttributes,
         TextDecorations textDecorations,
         LayoutMode layoutMode,
-        ColorFontSupport colorSupport);
+        ColorFontSupport colorSupport,
+        FontPalette? palette);
 
     /// <summary>
     /// Tries to get the GSUB table.

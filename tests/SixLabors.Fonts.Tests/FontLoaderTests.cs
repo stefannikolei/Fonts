@@ -19,6 +19,7 @@ public class FontLoaderTests
             TextDecorations.None,
             LayoutMode.HorizontalTopBottom,
             ColorFontSupport.None,
+            null,
             out FontGlyphMetrics _));
     }
 

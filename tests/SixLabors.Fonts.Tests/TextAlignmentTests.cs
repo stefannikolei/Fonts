@@ -12,7 +12,6 @@ using SixLabors.ImageSharp.Processing;
 
 namespace SixLabors.Fonts.Tests;
 
-#if SUPPORTS_DRAWING
 public class TextAlignmentTests
 {
     private const int Padding = 20;
@@ -234,4 +233,3 @@ public class TextAlignmentTests
         }
     }
 }
-#endif

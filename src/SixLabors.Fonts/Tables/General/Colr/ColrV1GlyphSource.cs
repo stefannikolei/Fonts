@@ -31,10 +31,11 @@ internal sealed class ColrV1GlyphSource : ColrGlyphSourceBase
     /// </summary>
     /// <param name="colr">The COLR table.</param>
     /// <param name="cpal">The CPAL table, or null if not present.</param>
+    /// <param name="palette">The palette selection, or null for the font's default palette.</param>
     /// <param name="glyphLoader">Delegate that loads a glyph outline for the given glyph id.</param>
     /// <param name="processor">The glyph variation processor for variable fonts, or null.</param>
-    public ColrV1GlyphSource(ColrTable colr, CpalTable? cpal, Func<ushort, GlyphVector?> glyphLoader, GlyphVariationProcessor? processor = null)
-        : base(colr, cpal, glyphLoader)
+    public ColrV1GlyphSource(ColrTable colr, CpalTable? cpal, FontPalette? palette, Func<ushort, GlyphVector?> glyphLoader, GlyphVariationProcessor? processor)
+        : base(colr, cpal, palette, glyphLoader)
         => this.processor = processor;
 
     /// <inheritdoc/>
@@ -87,7 +88,7 @@ internal sealed class ColrV1GlyphSource : ColrGlyphSourceBase
 
                     // Composite modes belong to the group commands; ordinary leaf application is SrcOver.
                     List<Rendering.Paint> leafPaints = [];
-                    FlattenPaint(rl.Paint, rl.PaintTransform, CompositeMode.SrcOver, this.Cpal, this.Colr, this.processor, leafPaints);
+                    FlattenPaint(rl.Paint, rl.PaintTransform, CompositeMode.SrcOver, this.PaletteColors, this.Colr, this.processor, leafPaints);
 
                     // Emit one layer per leaf paint.
                     for (int p = 0; p < leafPaints.Count; p++)

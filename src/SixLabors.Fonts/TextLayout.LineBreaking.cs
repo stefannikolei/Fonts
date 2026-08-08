@@ -93,7 +93,8 @@ internal static partial class TextLayout
                 run.TextRun.TextAttributes,
                 run.TextRun.TextDecorations,
                 shapedText.LayoutMode,
-                options.ColorFontSupport);
+                run.TextRun.ColorFontSupport ?? options.ColorFontSupport,
+                run.TextRun.FontPalette ?? options.FontPalette);
 
             // Full hinting substitutes whole pixel hinted advances on the flow axis only, so
             // the pen accumulates on the pixel grid exactly as the classic rasterizer's does
@@ -308,7 +309,8 @@ internal static partial class TextLayout
                                       glyph.TextAttributes,
                                       glyph.TextDecorations,
                                       shapedText.LayoutMode,
-                                      options.ColorFontSupport);
+                                      metricsSpan[0].TextRun.ColorFontSupport ?? options.ColorFontSupport,
+                                      metricsSpan[0].TextRun.FontPalette ?? options.FontPalette);
 
                                 // The tab advance lives only in the positioned snapshot;
                                 // the metrics instance is shared and must not be mutated.
@@ -663,7 +665,8 @@ internal static partial class TextLayout
             anchorMetric.TextAttributes,
             anchorMetric.TextDecorations,
             layoutMode,
-            options.ColorFontSupport);
+            anchor.TextRun.ColorFontSupport ?? options.ColorFontSupport,
+            anchor.TextRun.FontPalette ?? options.FontPalette);
 
         bool isHorizontalLayout = layoutMode.IsHorizontal();
         bool isVerticalLayout = layoutMode.IsVertical();

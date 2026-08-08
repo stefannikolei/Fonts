@@ -232,6 +232,13 @@ public abstract class FontGlyphMetrics
     /// </summary>
     public GlyphType GlyphType { get; }
 
+    /// <summary>
+    /// Gets the color palette selection the glyph's colors were resolved with, or
+    /// <see langword="null"/> when the glyph resolves no palette colors. Painted formats
+    /// override this so renderer caches can distinguish palette variants of one glyph.
+    /// </summary>
+    internal virtual FontPalette? FontPalette => null;
+
     /// <inheritdoc cref="FontMetrics.UnitsPerEm"/>
     public ushort UnitsPerEm { get; }
 

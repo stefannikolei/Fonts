@@ -544,8 +544,9 @@ internal sealed class HangulShaper : DefaultShaper
         TextAttributes textAttributes = textRun.TextAttributes;
         TextDecorations textDecorations = textRun.TextDecorations;
         LayoutMode layoutMode = buffer.TextOptions.LayoutMode;
-        ColorFontSupport colorFontSupport = buffer.TextOptions.ColorFontSupport;
-        if (fontMetrics.TryGetGlyphMetrics(data.CodePoint, textAttributes, textDecorations, layoutMode, colorFontSupport, out FontGlyphMetrics? metrics)
+        ColorFontSupport colorFontSupport = textRun.ColorFontSupport ?? buffer.TextOptions.ColorFontSupport;
+        FontPalette? fontPalette = textRun.FontPalette ?? buffer.TextOptions.FontPalette;
+        if (fontMetrics.TryGetGlyphMetrics(data.CodePoint, textAttributes, textDecorations, layoutMode, colorFontSupport, fontPalette, out FontGlyphMetrics? metrics)
             && metrics.AdvanceWidth == 0)
         {
             return;
@@ -578,8 +579,9 @@ internal sealed class HangulShaper : DefaultShaper
             TextAttributes textAttributes = textRun.TextAttributes;
             TextDecorations textDecorations = textRun.TextDecorations;
             LayoutMode layoutMode = buffer.TextOptions.LayoutMode;
-            ColorFontSupport colorFontSupport = buffer.TextOptions.ColorFontSupport;
-            if (fontMetrics.TryGetGlyphMetrics(data.CodePoint, textAttributes, textDecorations, layoutMode, colorFontSupport, out FontGlyphMetrics? metrics)
+            ColorFontSupport colorFontSupport = textRun.ColorFontSupport ?? buffer.TextOptions.ColorFontSupport;
+            FontPalette? fontPalette = textRun.FontPalette ?? buffer.TextOptions.FontPalette;
+            if (fontMetrics.TryGetGlyphMetrics(data.CodePoint, textAttributes, textDecorations, layoutMode, colorFontSupport, fontPalette, out FontGlyphMetrics? metrics)
                 && metrics.AdvanceWidth != 0)
             {
                 after = true;

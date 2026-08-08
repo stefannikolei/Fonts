@@ -47,6 +47,9 @@ public class GlyphOptions
     /// <inheritdoc cref="TextOptions.ColorFontSupport"/>
     public ColorFontSupport ColorFontSupport { get; set; } = ColorFontSupport.None;
 
+    /// <inheritdoc cref="TextOptions.FontPalette"/>
+    public FontPalette? FontPalette { get; set; }
+
     /// <inheritdoc cref="TextOptions.Origin"/>
     public Vector2 Origin { get; set; } = Vector2.Zero;
 
@@ -109,7 +112,9 @@ public class GlyphOptions
             End = this.GraphemeIndex + 1,
             Font = this.Font,
             TextAttributes = this.TextAttributes,
-            TextDecorations = this.TextDecorations
+            TextDecorations = this.TextDecorations,
+            ColorFontSupport = this.ColorFontSupport,
+            FontPalette = this.FontPalette
         };
 
     /// <summary>

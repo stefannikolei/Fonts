@@ -2,7 +2,6 @@
 // Licensed under the Six Labors Split License.
 
 using System.Diagnostics;
-using System.Globalization;
 using SixLabors.Fonts.Unicode;
 
 namespace SixLabors.Fonts.Rendering;

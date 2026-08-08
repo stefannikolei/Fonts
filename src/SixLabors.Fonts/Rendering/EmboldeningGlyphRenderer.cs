@@ -86,8 +86,8 @@ internal sealed class EmboldeningGlyphRenderer : IGlyphRenderer
     }
 
     /// <inheritdoc/>
-    public void BeginLayer(Paint? paint, FillRule fillRule, ClipQuad? clipBounds)
-        => this.inner.BeginLayer(paint, fillRule, clipBounds);
+    public void BeginLayer(Paint? paint, FillRule fillRule)
+        => this.inner.BeginLayer(paint, fillRule);
 
     /// <inheritdoc/>
     public void EndLayer()
@@ -95,6 +95,12 @@ internal sealed class EmboldeningGlyphRenderer : IGlyphRenderer
         this.Flush();
         this.inner.EndLayer();
     }
+
+    /// <inheritdoc/>
+    public void BeginGroup(CompositeMode mode) => this.inner.BeginGroup(mode);
+
+    /// <inheritdoc/>
+    public void EndGroup() => this.inner.EndGroup();
 
     /// <inheritdoc/>
     public void BeginFigure() => this.current = this.GetContour();

@@ -527,7 +527,8 @@ public abstract class FontGlyphMetrics
 
         Matrix3x2 rotation = GetRotationMatrix(mode);
         FontRectangle box = this.GetBoundingBox(mode, glyphOrigin, scaledPPEM, textRun, positionOffset, positionedAdvance);
-        GlyphRendererParameters parameters = new(this, textRun, pointSize, dpi, mode, graphemeIndex, hintingMode);
+        ClipBounds? clipBounds = this.GetClipBounds(glyphOrigin, mode, textRun, positionOffset, scaledPPEM);
+        GlyphRendererParameters parameters = new(this, textRun, pointSize, dpi, mode, graphemeIndex, hintingMode, clipBounds);
 
         if (!renderer.BeginGlyph(in box, in parameters))
         {
@@ -604,6 +605,24 @@ public abstract class FontGlyphMetrics
             scratch?.Release();
         }
     }
+
+    /// <summary>
+    /// Gets the clip bounds for the glyph at the given placement, or <see langword="null"/>
+    /// when the font defines none. Only painted glyph formats supply clip bounds.
+    /// </summary>
+    /// <param name="glyphOrigin">The origin used to render the glyph outline, in device pixels.</param>
+    /// <param name="mode">The glyph layout mode to render using.</param>
+    /// <param name="textRun">The text run providing the styling information for this glyph.</param>
+    /// <param name="positionOffset">The positioned placement offset in font design units, composed with the glyph's base offset.</param>
+    /// <param name="scaledPPEM">The scaled pixels-per-em value used to scale the outline.</param>
+    /// <returns>The clip bounds, or <see langword="null"/>.</returns>
+    internal virtual ClipBounds? GetClipBounds(
+        Vector2 glyphOrigin,
+        GlyphLayoutMode mode,
+        TextRun? textRun,
+        Vector2 positionOffset,
+        float scaledPPEM)
+        => null;
 
     /// <summary>
     /// Renders only the glyph outline geometry to the specified renderer, without glyph or

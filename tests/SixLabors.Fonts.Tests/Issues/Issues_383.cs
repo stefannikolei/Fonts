@@ -96,11 +96,21 @@ internal class NoOpGlyphRenderer : IGlyphRenderer
     {
     }
 
-    public void BeginLayer(Paint paint, FillRule fillRule, ClipQuad? clipBounds)
+    public void BeginLayer(Paint paint, FillRule fillRule)
     {
     }
 
     public void EndLayer()
+    {
+    }
+
+    /// <inheritdoc/>
+    public void BeginGroup(CompositeMode mode)
+    {
+    }
+
+    /// <inheritdoc/>
+    public void EndGroup()
     {
     }
 }

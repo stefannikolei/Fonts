@@ -173,6 +173,54 @@ public class TextRendererGlyphIdTests
         Assert.NotEmpty(renderer.SolidLayers);
     }
 
+    /// <summary>
+    /// Verifies that nested COLR v1 composite groups retain their branch boundaries and unbounded source paint.
+    /// </summary>
+    [Fact]
+    public void RenderGlyph_ColrV1NestedPaintComposite_PreservesGroupNesting()
+    {
+        Font font = TestFonts.GetFont(TestFonts.NotoColorEmojiRegular, 128);
+        GlyphOptions glyphOptions = new()
+        {
+            Font = font,
+            ColorFontSupport = ColorFontSupport.ColrV1
+        };
+
+        CompositeCaptureRenderer renderer = new();
+
+        // This fixture glyph is a SoftLight composite whose source is a nested SrcIn
+        // composite, and the inner source is a linear gradient with no outline. Each
+        // composite lowers to one isolating group holding a backdrop group and a source
+        // group, with the source group carrying the composite mode. The gradient arrives
+        // as an ordinary layer whose figure is the clip bounds or the glyph bounds.
+        TextRenderer.RenderTo(renderer, 2629, glyphOptions);
+
+        Assert.Single(renderer.GlyphKeys);
+        Assert.Equal(
+        [
+            "Group:SrcOver",
+            "Group:SrcOver",
+            "Layer:SolidPaint",
+            "Layer:SolidPaint",
+            "Layer:SolidPaint",
+            "End",
+            "Group:SoftLight",
+            "Group:SrcOver",
+            "Group:SrcOver",
+            "Layer:SolidPaint",
+            "Layer:SolidPaint",
+            "Layer:SolidPaint",
+            "End",
+            "Group:SrcIn",
+            "Layer:LinearGradientPaint",
+            "End",
+            "End",
+            "End",
+            "End"
+        ],
+        renderer.Events);
+    }
+
     private sealed class CustomGlyphOptions : GlyphOptions
     {
         protected internal override TextRun CreateTextRun()
@@ -194,14 +242,31 @@ public class TextRendererGlyphIdTests
     {
         public List<GlyphColor> SolidLayers { get; } = [];
 
-        public override void BeginLayer(Paint paint, FillRule fillRule, ClipQuad? clipBounds)
+        public override void BeginLayer(Paint paint, FillRule fillRule)
         {
             if (paint is SolidPaint solidPaint)
             {
                 this.SolidLayers.Add(solidPaint.Color);
             }
 
-            base.BeginLayer(paint, fillRule, clipBounds);
+            base.BeginLayer(paint, fillRule);
         }
+    }
+
+    private sealed class CompositeCaptureRenderer : GlyphRenderer
+    {
+        /// <summary>
+        /// Gets the ordered composite and paint events emitted by the renderer.
+        /// </summary>
+        public List<string> Events { get; } = [];
+
+        public override void BeginGroup(CompositeMode mode)
+            => this.Events.Add($"Group:{mode}");
+
+        public override void EndGroup()
+            => this.Events.Add("End");
+
+        public override void BeginLayer(Paint paint, FillRule fillRule)
+            => this.Events.Add($"Layer:{paint.GetType().Name}");
     }
 }

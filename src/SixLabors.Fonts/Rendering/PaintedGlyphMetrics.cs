@@ -86,6 +86,57 @@ public sealed class PaintedGlyphMetrics : FontGlyphMetrics
             return;
         }
 
+        FontRectangle box = this.GetBoundingBox(mode, glyphOrigin, scaledPPEM, textRun, positionOffset, positionedAdvance);
+
+        // Full transform from source doc-space to device space.
+        Matrix3x2 total = this.ComputeTotalTransform(in canvas, glyphOrigin, mode, textRun, positionOffset, scaledPPEM);
+
+        // Stream layers and commands with correct transforms.
+        StreamPaintedGlyph(glyph, in box, renderer, total);
+    }
+
+    /// <inheritdoc/>
+    internal override ClipBounds? GetClipBounds(
+        Vector2 glyphOrigin,
+        GlyphLayoutMode mode,
+        TextRun? textRun,
+        Vector2 positionOffset,
+        float scaledPPEM)
+    {
+        if (!this.source.TryGetPaintedGlyph(this.GlyphId, out PaintedGlyph glyph, out PaintedCanvasMetadata canvas)
+            || !glyph.ClipBounds.HasValue)
+        {
+            return null;
+        }
+
+        // Clip bounds live in the design grid, outside the paint graph, so only the root
+        // design-to-device transform applies to them. The renderer receives them untransformed
+        // and restricts each operation with one rectangle intersect.
+        Bounds clip = glyph.ClipBounds.Value;
+        Matrix3x2 total = this.ComputeTotalTransform(in canvas, glyphOrigin, mode, textRun, positionOffset, scaledPPEM);
+        return new ClipBounds(FontRectangle.FromLTRB(clip.Min.X, clip.Min.Y, clip.Max.X, clip.Max.Y), total);
+    }
+
+    /// <summary>
+    /// Computes the full transform from the interpreter's document space to device space:
+    /// the source-to-UPEM mapping followed by the scale, offset, oblique, rotation, Y
+    /// inversion, and final placement sequence shared with TrueType and CFF outlines.
+    /// </summary>
+    /// <param name="canvas">The painted canvas metadata.</param>
+    /// <param name="glyphOrigin">The origin used to render the glyph outline, in device pixels.</param>
+    /// <param name="mode">The glyph layout mode to render using.</param>
+    /// <param name="textRun">The text run providing the styling information for this glyph.</param>
+    /// <param name="positionOffset">The positioned placement offset in font design units.</param>
+    /// <param name="scaledPPEM">The scaled pixels-per-em value used to scale the outline.</param>
+    /// <returns>The document-space to device-space transform.</returns>
+    private Matrix3x2 ComputeTotalTransform(
+        in PaintedCanvasMetadata canvas,
+        Vector2 glyphOrigin,
+        GlyphLayoutMode mode,
+        TextRun? textRun,
+        Vector2 positionOffset,
+        float scaledPPEM)
+    {
         Vector2 scale = new Vector2(scaledPPEM) / this.ScaleFactor; // uniform
         Matrix3x2 outlineTransform = this.GetOutlineTransform(mode, textRun);
 
@@ -97,16 +148,8 @@ public sealed class PaintedGlyphMetrics : FontGlyphMetrics
         layout *= Matrix3x2.CreateScale(1F, -1F);
         layout.Translation += glyphOrigin;
 
-        FontRectangle box = this.GetBoundingBox(mode, glyphOrigin, scaledPPEM, textRun, positionOffset, positionedAdvance);
-
         // Source-to-UPEM: viewBox mapping (uniform "meet"), optional y-flip, optional root transform.
-        Matrix3x2 s2u = ComputeSourceToUpem(canvas, this.UnitsPerEm);
-
-        // Full transform from source doc-space to device space.
-        Matrix3x2 total = s2u * layout;
-
-        // Stream layers and commands with correct transforms.
-        StreamPaintedGlyph(glyph, in box, renderer, total);
+        return ComputeSourceToUpem(canvas, this.UnitsPerEm) * layout;
     }
 
     /// <summary>
@@ -162,17 +205,21 @@ public sealed class PaintedGlyphMetrics : FontGlyphMetrics
         Matrix3x2 xform)
     {
         IReadOnlyList<PaintedLayer> layers = glyph.Layers;
+        IReadOnlyList<PaintedCompositeCommand>? compositeCommands = glyph.CompositeCommands;
+        int compositeCommandIndex = 0;
+
         for (int i = 0; i < layers.Count; i++)
         {
+            StreamCompositeCommands(
+                compositeCommands,
+                i,
+                renderer,
+                ref compositeCommandIndex);
+
             PaintedLayer layer = layers[i];
 
             // pre-applied transforms (element/group)
             Matrix3x2 layerXform = layer.Transform * xform;
-
-            // Clip bounds in device space (if any).
-            ClipQuad? clipBounds = layer.ClipBounds.HasValue
-                ? ClipQuad.FromBounds(layer.ClipBounds.Value, layerXform)
-                : null;
 
             // Similarity decomposition for arc radii/angle/sweep adjustment (from layer).
             Similarity sim = Similarity.FromMatrix(layerXform);
@@ -180,7 +227,44 @@ public sealed class PaintedGlyphMetrics : FontGlyphMetrics
             // Transform userSpaceOnUse paints into device space; keep ObjectBoundingBox normalized.
             Paint? paint = TransformPaint(layer.Paint, in bounds, layerXform);
 
-            renderer.BeginLayer(paint, layer.FillRule, clipBounds);
+            if (layer.Path.Count == 0)
+            {
+                // The paint owns no outline, so its figure is the clip bounds, or the glyph
+                // bounds when the font defines none. Both sit outside the paint graph: the
+                // clip bounds take only the root design-to-device transform, and the glyph
+                // bounds are already in device space. The paint above keeps its own transforms.
+                Vector2 c0;
+                Vector2 c1;
+                Vector2 c2;
+                Vector2 c3;
+                if (glyph.ClipBounds.HasValue)
+                {
+                    Bounds clip = glyph.ClipBounds.Value;
+                    c0 = Vector2.Transform(clip.Min, xform);
+                    c1 = Vector2.Transform(new Vector2(clip.Max.X, clip.Min.Y), xform);
+                    c2 = Vector2.Transform(clip.Max, xform);
+                    c3 = Vector2.Transform(new Vector2(clip.Min.X, clip.Max.Y), xform);
+                }
+                else
+                {
+                    c0 = new Vector2(bounds.Left, bounds.Top);
+                    c1 = new Vector2(bounds.Right, bounds.Top);
+                    c2 = new Vector2(bounds.Right, bounds.Bottom);
+                    c3 = new Vector2(bounds.Left, bounds.Bottom);
+                }
+
+                renderer.BeginLayer(paint, layer.FillRule);
+                renderer.BeginFigure();
+                renderer.MoveTo(c0);
+                renderer.LineTo(c1);
+                renderer.LineTo(c2);
+                renderer.LineTo(c3);
+                renderer.EndFigure();
+                renderer.EndLayer();
+                continue;
+            }
+
+            renderer.BeginLayer(paint, layer.FillRule);
 
             bool open = false;
             IReadOnlyList<PathCommand> cmds = layer.Path;
@@ -258,6 +342,46 @@ public sealed class PaintedGlyphMetrics : FontGlyphMetrics
             }
 
             renderer.EndLayer();
+        }
+
+        StreamCompositeCommands(
+            compositeCommands,
+            layers.Count,
+            renderer,
+            ref compositeCommandIndex);
+    }
+
+    /// <summary>
+    /// Streams group transitions that occur before a painted layer.
+    /// </summary>
+    /// <param name="commands">The optional group command stream.</param>
+    /// <param name="layerIndex">The index of the next painted layer.</param>
+    /// <param name="renderer">The glyph renderer.</param>
+    /// <param name="commandIndex">The index of the next group command.</param>
+    private static void StreamCompositeCommands(
+        IReadOnlyList<PaintedCompositeCommand>? commands,
+        int layerIndex,
+        IGlyphRenderer renderer,
+        ref int commandIndex)
+    {
+        if (commands is null)
+        {
+            return;
+        }
+
+        // Several nested group transitions can share a layer boundary. Retaining list order
+        // preserves the exact depth-first traversal without allocating a render-time stack here.
+        while (commandIndex < commands.Count && commands[commandIndex].LayerIndex == layerIndex)
+        {
+            PaintedCompositeCommand command = commands[commandIndex++];
+            if (command.Kind == PaintedCompositeCommandKind.Begin)
+            {
+                renderer.BeginGroup(command.Mode);
+            }
+            else
+            {
+                renderer.EndGroup();
+            }
         }
     }
 
@@ -342,6 +466,7 @@ public sealed class PaintedGlyphMetrics : FontGlyphMetrics
                     Spread = lg.Spread,
                     Stops = lg.Stops,
                     Opacity = lg.Opacity,
+                    CompositeMode = lg.CompositeMode,
                     Transform = Matrix3x2.Identity
                 };
             }
@@ -393,6 +518,7 @@ public sealed class PaintedGlyphMetrics : FontGlyphMetrics
                     Spread = rg.Spread,
                     Stops = rg.Stops,
                     Opacity = rg.Opacity,
+                    CompositeMode = rg.CompositeMode,
                     Transform = Matrix3x2.Identity
                 };
             }
@@ -446,6 +572,7 @@ public sealed class PaintedGlyphMetrics : FontGlyphMetrics
                     Spread = sg.Spread,
                     Stops = sg.Stops,
                     Opacity = sg.Opacity,
+                    CompositeMode = sg.CompositeMode,
                     Transform = Matrix3x2.Identity
                 };
             }

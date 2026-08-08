@@ -86,11 +86,21 @@ public class GlyphRenderer : IGlyphRenderer
     public void SetDecoration(TextDecorations textDecorations, Vector2 start, Vector2 end, float thickness, ReadOnlyMemory<float> intersections)
         => this.Decorations.Add((textDecorations, start, end, thickness));
 
-    public virtual void BeginLayer(Paint paint, FillRule fillRule, ClipQuad? clipBounds)
+    public virtual void BeginLayer(Paint paint, FillRule fillRule)
     {
     }
 
     public void EndLayer()
+    {
+    }
+
+    /// <inheritdoc/>
+    public virtual void BeginGroup(CompositeMode mode)
+    {
+    }
+
+    /// <inheritdoc/>
+    public virtual void EndGroup()
     {
     }
 }

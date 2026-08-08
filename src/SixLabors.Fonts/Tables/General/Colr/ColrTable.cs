@@ -266,15 +266,25 @@ internal class ColrTable : Table
     /// <param name="layers">
     /// When this method returns, contains a list of resolved glyph layers if the operation succeeds; otherwise,
     /// <see langword="null"/>. This parameter is passed uninitialized.</param>
+    /// <param name="compositeCommands">
+    /// When this method returns, contains the group commands interleaved with <paramref name="layers"/>
+    /// if the operation succeeds; otherwise, <see langword="null"/>. This parameter is passed uninitialized.</param>
+    /// <param name="clipBounds">
+    /// When this method returns, contains the base glyph's clip bounds in the design grid if the
+    /// <c>ClipList</c> defines them; otherwise, <see langword="null"/>. This parameter is passed uninitialized.</param>
     /// <returns>
     /// <see langword="true"/> if the color glyph layers were successfully resolved; otherwise, <see langword="false"/>.
     /// </returns>
     internal bool TryGetColrV1Layers(
         ushort glyphId,
         GlyphVariationProcessor? processor,
-        [NotNullWhen(true)] out List<ResolvedGlyphLayer>? layers)
+        [NotNullWhen(true)] out List<ResolvedGlyphLayer>? layers,
+        [NotNullWhen(true)] out List<PaintedCompositeCommand>? compositeCommands,
+        out Bounds? clipBounds)
     {
         layers = null;
+        compositeCommands = null;
+        clipBounds = null;
 
         if (this.baseGlyphList is null || this.layerList is null || this.paintData is null)
         {
@@ -292,11 +302,24 @@ internal class ColrTable : Table
             return false;
         }
 
+        // The ClipList is keyed by base glyph id, so the fetch happens once here for the whole
+        // glyph. Paint-graph nodes never carry clip bounds of their own.
+        _ = this.TryGetClipBox(glyphId, processor, out clipBounds);
+
         // 2) Flatten paint graph to layers. Start with no current glyph id.
         List<ResolvedGlyphLayer> acc = [];
-        this.FlattenPaintToLayers(root, null, Matrix3x2.Identity, Matrix3x2.Identity, false, CompositeMode.SrcOver, processor, acc);
+        List<PaintedCompositeCommand> commands = [];
+        this.FlattenPaintToLayers(
+            root,
+            null,
+            Matrix3x2.Identity,
+            Matrix3x2.Identity,
+            false,
+            processor,
+            acc,
+            commands);
 
-        // 3) If nothing emitted, the graph did not bind any geometry (no PaintGlyph/ColrGlyph reached).
+        // 3) If nothing emitted, the graph contained no supported paint leaves.
         if (acc.Count == 0)
         {
             layers = null;
@@ -304,6 +327,7 @@ internal class ColrTable : Table
         }
 
         layers = acc;
+        compositeCommands = commands;
         return true;
     }
 
@@ -314,8 +338,8 @@ internal class ColrTable : Table
     /// <item><description><b>PaintGlyph</b> sets the current glyph id to its <c>GlyphId</c> and recurses into its child paint.</description></item>
     /// <item><description><b>PaintColrGlyph</b> resolves that glyph's root paint, sets the current glyph id, and recurses.</description></item>
     /// <item><description>Wrapper nodes (transform/translate/scale/rotate/skew, var forms) forward the current glyph id unchanged.</description></item>
-    /// <item><description><b>PaintComposite</b> flattens both branches independently, forwarding the current glyph id to each.</description></item>
-    /// <item><description>Leaf paints (solid/linear/radial/sweep, var forms) emit a layer only if <paramref name="currentGlyphId"/> has a value.</description></item>
+    /// <item><description><b>PaintComposite</b> preserves the backdrop and source boundaries around its flattened branches.</description></item>
+    /// <item><description>Leaf paints (solid/linear/radial/sweep, var forms) retain an optional glyph binding.</description></item>
     /// </list>
     /// </summary>
     /// <param name="node">The paint node to flatten.</param>
@@ -325,18 +349,18 @@ internal class ColrTable : Table
     /// <param name="glyphTransform">The accumulated transform to apply to the glyph's geometry.</param>
     /// <param name="paintTransform">The accumulated transform to apply to the paint.</param>
     /// <param name="transformPaint">Whether wrapper transforms should be applied to the paint (true) or to the glyph geometry (false).</param>
-    /// <param name="compositeMode">Accumulated composite mode.</param>
     /// <param name="processor">The glyph variation processor, or null for non-variable fonts.</param>
     /// <param name="outLayers">Accumulator for resolved layers.</param>
+    /// <param name="compositeCommands">Accumulator for composite-group commands.</param>
     private void FlattenPaintToLayers(
         Paint node,
         ushort? currentGlyphId,
         Matrix3x2 glyphTransform,
         Matrix3x2 paintTransform,
         bool transformPaint,
-        CompositeMode compositeMode,
         GlyphVariationProcessor? processor,
-        List<ResolvedGlyphLayer> outLayers)
+        List<ResolvedGlyphLayer> outLayers,
+        List<PaintedCompositeCommand> compositeCommands)
     {
         switch (node)
         {
@@ -361,7 +385,7 @@ internal class ColrTable : Table
 
                     if (this.TryGetPaint(off, out Paint? child))
                     {
-                        this.FlattenPaintToLayers(child, currentGlyphId, glyphTransform, paintTransform, transformPaint, compositeMode, processor, outLayers);
+                        this.FlattenPaintToLayers(child, currentGlyphId, glyphTransform, paintTransform, transformPaint, processor, outLayers, compositeCommands);
                     }
                 }
 
@@ -374,7 +398,7 @@ internal class ColrTable : Table
                 if (this.TryGetRootPaintOffset(pcg.GlyphId, out uint off) && off != 0
                     && this.TryGetPaint(off, out Paint? colrRoot))
                 {
-                    this.FlattenPaintToLayers(colrRoot, null, glyphTransform, Matrix3x2.Identity, false, compositeMode, processor, outLayers);
+                    this.FlattenPaintToLayers(colrRoot, null, glyphTransform, Matrix3x2.Identity, false, processor, outLayers, compositeCommands);
                 }
 
                 return;
@@ -383,7 +407,7 @@ internal class ColrTable : Table
             case PaintGlyph pg:
             {
                 // Bind geometry to the specified glyph id and recurse into its child paint.
-                this.FlattenPaintToLayers(pg.Child, pg.GlyphId, glyphTransform, Matrix3x2.Identity, true, compositeMode, processor, outLayers);
+                this.FlattenPaintToLayers(pg.Child, pg.GlyphId, glyphTransform, Matrix3x2.Identity, true, processor, outLayers, compositeCommands);
                 return;
             }
 
@@ -403,7 +427,7 @@ internal class ColrTable : Table
                     glyphTransform *= next;
                 }
 
-                this.FlattenPaintToLayers(pt.Child, currentGlyphId, glyphTransform, paintTransform, transformPaint, compositeMode, processor, outLayers);
+                this.FlattenPaintToLayers(pt.Child, currentGlyphId, glyphTransform, paintTransform, transformPaint, processor, outLayers, compositeCommands);
                 return;
             }
 
@@ -427,7 +451,7 @@ internal class ColrTable : Table
                     glyphTransform *= next;
                 }
 
-                this.FlattenPaintToLayers(pvt.Child, currentGlyphId, glyphTransform, paintTransform, transformPaint, compositeMode, processor, outLayers);
+                this.FlattenPaintToLayers(pvt.Child, currentGlyphId, glyphTransform, paintTransform, transformPaint, processor, outLayers, compositeCommands);
                 return;
             }
 
@@ -443,7 +467,7 @@ internal class ColrTable : Table
                     glyphTransform *= next;
                 }
 
-                this.FlattenPaintToLayers(t.Child, currentGlyphId, glyphTransform, paintTransform, transformPaint, compositeMode, processor, outLayers);
+                this.FlattenPaintToLayers(t.Child, currentGlyphId, glyphTransform, paintTransform, transformPaint, processor, outLayers, compositeCommands);
                 return;
             }
 
@@ -461,7 +485,7 @@ internal class ColrTable : Table
                     glyphTransform *= next;
                 }
 
-                this.FlattenPaintToLayers(vt.Child, currentGlyphId, glyphTransform, paintTransform, transformPaint, compositeMode, processor, outLayers);
+                this.FlattenPaintToLayers(vt.Child, currentGlyphId, glyphTransform, paintTransform, transformPaint, processor, outLayers, compositeCommands);
                 return;
             }
 
@@ -477,7 +501,7 @@ internal class ColrTable : Table
                     glyphTransform *= next;
                 }
 
-                this.FlattenPaintToLayers(s.Child, currentGlyphId, glyphTransform, paintTransform, transformPaint, compositeMode, processor, outLayers);
+                this.FlattenPaintToLayers(s.Child, currentGlyphId, glyphTransform, paintTransform, transformPaint, processor, outLayers, compositeCommands);
                 return;
             }
 
@@ -499,7 +523,7 @@ internal class ColrTable : Table
                     glyphTransform *= next;
                 }
 
-                this.FlattenPaintToLayers(vs.Child, currentGlyphId, glyphTransform, paintTransform, transformPaint, compositeMode, processor, outLayers);
+                this.FlattenPaintToLayers(vs.Child, currentGlyphId, glyphTransform, paintTransform, transformPaint, processor, outLayers, compositeCommands);
                 return;
             }
 
@@ -515,7 +539,7 @@ internal class ColrTable : Table
                     glyphTransform *= next;
                 }
 
-                this.FlattenPaintToLayers(r.Child, currentGlyphId, glyphTransform, paintTransform, transformPaint, compositeMode, processor, outLayers);
+                this.FlattenPaintToLayers(r.Child, currentGlyphId, glyphTransform, paintTransform, transformPaint, processor, outLayers, compositeCommands);
                 return;
             }
 
@@ -535,7 +559,7 @@ internal class ColrTable : Table
                     glyphTransform *= next;
                 }
 
-                this.FlattenPaintToLayers(vr.Child, currentGlyphId, glyphTransform, paintTransform, transformPaint, compositeMode, processor, outLayers);
+                this.FlattenPaintToLayers(vr.Child, currentGlyphId, glyphTransform, paintTransform, transformPaint, processor, outLayers, compositeCommands);
                 return;
             }
 
@@ -551,7 +575,7 @@ internal class ColrTable : Table
                     glyphTransform *= next;
                 }
 
-                this.FlattenPaintToLayers(k.Child, currentGlyphId, glyphTransform, paintTransform, transformPaint, compositeMode, processor, outLayers);
+                this.FlattenPaintToLayers(k.Child, currentGlyphId, glyphTransform, paintTransform, transformPaint, processor, outLayers, compositeCommands);
                 return;
             }
 
@@ -572,17 +596,27 @@ internal class ColrTable : Table
                     glyphTransform *= next;
                 }
 
-                this.FlattenPaintToLayers(vk.Child, currentGlyphId, glyphTransform, paintTransform, transformPaint, compositeMode, processor, outLayers);
+                this.FlattenPaintToLayers(vk.Child, currentGlyphId, glyphTransform, paintTransform, transformPaint, processor, outLayers, compositeCommands);
                 return;
             }
 
             case PaintComposite comp:
             {
-                compositeMode = MapCompositeMode(comp.CompositeMode);
+                CompositeMode compositeMode = MapCompositeMode(comp.CompositeMode);
 
-                // Backdrop first, then Source. Both inherit the current glyph id.
-                this.FlattenPaintToLayers(comp.Backdrop, currentGlyphId, glyphTransform, paintTransform, transformPaint, compositeMode, processor, outLayers);
-                this.FlattenPaintToLayers(comp.Source, currentGlyphId, glyphTransform, paintTransform, transformPaint, compositeMode, processor, outLayers);
+                // One isolated group wraps the pair, the backdrop and source branches become
+                // sibling groups inside it, and the source group carries the composite mode.
+                // A destructive mode can then only consume its partner stack, never content
+                // painted below the pair. Command layer indices keep the layer stream compact
+                // while preserving arbitrarily nested groups.
+                compositeCommands.Add(new(outLayers.Count, PaintedCompositeCommandKind.Begin, CompositeMode.SrcOver));
+                compositeCommands.Add(new(outLayers.Count, PaintedCompositeCommandKind.Begin, CompositeMode.SrcOver));
+                this.FlattenPaintToLayers(comp.Backdrop, currentGlyphId, glyphTransform, paintTransform, transformPaint, processor, outLayers, compositeCommands);
+                compositeCommands.Add(new(outLayers.Count, PaintedCompositeCommandKind.End));
+                compositeCommands.Add(new(outLayers.Count, PaintedCompositeCommandKind.Begin, compositeMode));
+                this.FlattenPaintToLayers(comp.Source, currentGlyphId, glyphTransform, paintTransform, transformPaint, processor, outLayers, compositeCommands);
+                compositeCommands.Add(new(outLayers.Count, PaintedCompositeCommandKind.End));
+                compositeCommands.Add(new(outLayers.Count, PaintedCompositeCommandKind.End));
                 return;
             }
 
@@ -598,12 +632,9 @@ internal class ColrTable : Table
             case PaintSweepGradient:
             case PaintVarSweepGradient:
             {
-                // Only emit if we have an active glyph id (i.e., we are inside a PaintGlyph/ColrGlyph branch).
-                if (currentGlyphId.HasValue)
-                {
-                    _ = this.TryGetClipBox(currentGlyphId.Value, processor, out Bounds? clip);
-                    outLayers.Add(new ResolvedGlyphLayer(currentGlyphId.Value, node, glyphTransform, paintTransform, compositeMode, clip));
-                }
+                // A paint without a bound outline stays a first-class layer; its figure is
+                // resolved at streaming time from the glyph's clip bounds or glyph bounds.
+                outLayers.Add(new ResolvedGlyphLayer(currentGlyphId, node, glyphTransform, paintTransform));
 
                 return;
             }
@@ -1567,7 +1598,7 @@ internal sealed class PaintCaches
 
 /// <summary>
 /// Represents a resolved COLR v1 glyph layer produced by flattening the paint DAG.
-/// Associates a glyph ID with its paint node, geometry transform, paint transform, composite mode, and optional clip box.
+/// Associates an optional glyph ID with its paint node, geometry transform, and paint transform.
 /// </summary>
 #pragma warning disable SA1201 // Elements should appear in the correct order
 [DebuggerDisplay("Id: {GlyphId}")]
@@ -1577,26 +1608,22 @@ internal readonly struct ResolvedGlyphLayer
     /// <summary>
     /// Initializes a new instance of the <see cref="ResolvedGlyphLayer"/> struct.
     /// </summary>
-    /// <param name="id">The glyph ID whose outline this layer paints.</param>
+    /// <param name="id">The optional glyph ID whose outline this layer paints.</param>
     /// <param name="paint">The leaf paint node for this layer.</param>
     /// <param name="glyphTransform">The accumulated affine transform applied to glyph geometry.</param>
     /// <param name="paintTransform">The accumulated affine transform applied to the leaf paint.</param>
-    /// <param name="mode">The composite mode to apply.</param>
-    /// <param name="clipBox">The optional clip box bounds, or <see langword="null"/>.</param>
-    public ResolvedGlyphLayer(ushort id, Paint paint, Matrix3x2 glyphTransform, Matrix3x2 paintTransform, CompositeMode mode, Bounds? clipBox)
+    public ResolvedGlyphLayer(ushort? id, Paint paint, Matrix3x2 glyphTransform, Matrix3x2 paintTransform)
     {
         this.GlyphId = id;
         this.Paint = paint;
         this.GlyphTransform = glyphTransform;
         this.PaintTransform = paintTransform;
-        this.CompositeMode = mode;
-        this.ClipBox = clipBox;
     }
 
     /// <summary>
-    /// Gets the glyph ID whose outline this layer paints.
+    /// Gets the glyph ID whose outline this layer paints, or <see langword="null"/> for an unbounded paint.
     /// </summary>
-    public ushort GlyphId { get; }
+    public ushort? GlyphId { get; }
 
     /// <summary>
     /// Gets the leaf paint node for this layer.
@@ -1612,14 +1639,4 @@ internal readonly struct ResolvedGlyphLayer
     /// Gets the accumulated affine transform applied to the leaf paint.
     /// </summary>
     public Matrix3x2 PaintTransform { get; }
-
-    /// <summary>
-    /// Gets the composite mode to apply when rendering this layer.
-    /// </summary>
-    public CompositeMode CompositeMode { get; }
-
-    /// <summary>
-    /// Gets the optional clip box bounds for this layer, or <see langword="null"/> if no clip applies.
-    /// </summary>
-    public Bounds? ClipBox { get; }
 }

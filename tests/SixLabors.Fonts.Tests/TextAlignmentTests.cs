@@ -215,7 +215,17 @@ public class TextAlignmentTests
         {
         }
 
-        public void BeginLayer(Paint paint, FillRule fillRule, ClipQuad? clipBounds)
+        public void BeginLayer(Paint paint, FillRule fillRule)
+        {
+        }
+
+        /// <inheritdoc/>
+        public void BeginGroup(CompositeMode mode)
+        {
+        }
+
+        /// <inheritdoc/>
+        public void EndGroup()
         {
         }
 

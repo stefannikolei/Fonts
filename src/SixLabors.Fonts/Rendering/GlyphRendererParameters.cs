@@ -2,7 +2,6 @@
 // Licensed under the Six Labors Split License.
 
 using System.Diagnostics;
-using System.Globalization;
 using SixLabors.Fonts.Unicode;
 
 namespace SixLabors.Fonts.Rendering;
@@ -21,7 +20,8 @@ public readonly struct GlyphRendererParameters : IEquatable<GlyphRendererParamet
         float dpi,
         GlyphLayoutMode layoutMode,
         int graphemeIndex,
-        HintingMode hintingMode)
+        HintingMode hintingMode,
+        ClipBounds? clipBounds)
     {
         // The upper-cased invariant name is computed once on the immutable description; doing it
         // here would allocate a string for every rendered glyph.
@@ -36,6 +36,7 @@ public readonly struct GlyphRendererParameters : IEquatable<GlyphRendererParamet
         this.CodePoint = metrics.CodePoint;
         this.LayoutMode = layoutMode;
         this.HintingMode = hintingMode;
+        this.ClipBounds = clipBounds;
     }
 
     /// <summary>
@@ -98,6 +99,14 @@ public readonly struct GlyphRendererParameters : IEquatable<GlyphRendererParamet
     /// so it participates in identity, allowing consumers to cache per mode.
     /// </summary>
     public HintingMode HintingMode { get; }
+
+    /// <summary>
+    /// Gets the clip bounds for the glyph, or <see langword="null"/> when the font defines
+    /// none. The renderer restricts every operation the glyph emits to these bounds.
+    /// The transform carries the glyph's placement, so the value is excluded from equality:
+    /// equality identifies a glyph variant across positions.
+    /// </summary>
+    public ClipBounds? ClipBounds { get; }
 
     /// <summary>
     /// Compares two <see cref="GlyphRendererParameters"/> objects for equality.

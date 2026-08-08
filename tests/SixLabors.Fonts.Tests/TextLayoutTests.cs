@@ -1255,7 +1255,6 @@ public class TextLayoutTests
             ]
         };
 
-        IReadOnlyList<GlyphPathCollection> glyphs = TextBuilder.GenerateGlyphs(text, options);
         TextMetrics metrics = TextMeasurer.Measure(text, options);
 
         LineMetrics line = metrics.LineMetrics[0];
@@ -1283,6 +1282,10 @@ public class TextLayoutTests
             180,
             image => image.Mutate(x => x.Paint(canvas =>
             {
+                // Must stay inside the deferred action so the test is a no-op when
+                // SUPPORTS_DRAWING is off.
+                IReadOnlyList<GlyphPathCollection> glyphs = TextBuilder.GenerateGlyphs(text, options);
+
                 RectanglePolygon lineBox = new(
                     0,
                     line.Start.Y,
@@ -1362,7 +1365,6 @@ public class TextLayoutTests
             ]
         };
 
-        IReadOnlyList<GlyphPathCollection> glyphs = TextBuilder.GenerateGlyphs(text, options);
         TextMetrics metrics = TextMeasurer.Measure(text, options);
 
         LineMetrics line = metrics.LineMetrics[0];
@@ -1389,6 +1391,10 @@ public class TextLayoutTests
             260,
             image => image.Mutate(x => x.Paint(canvas =>
             {
+                // Must stay inside the deferred action so the test is a no-op when
+                // SUPPORTS_DRAWING is off.
+                IReadOnlyList<GlyphPathCollection> glyphs = TextBuilder.GenerateGlyphs(text, options);
+
                 RectanglePolygon lineBox = new(
                     0,
                     line.Start.Y,

@@ -33,6 +33,7 @@ public class TextOptions
         this.Font = options.Font;
         this.FontWeight = options.FontWeight;
         this.FallbackFontFamilies = new List<FontFamily>(options.FallbackFontFamilies);
+        this.FontFallbackResolver = options.FontFallbackResolver;
         this.TabWidth = options.TabWidth;
         this.HintingMode = options.HintingMode;
         this.Dpi = options.Dpi;
@@ -92,6 +93,18 @@ public class TextOptions
     /// a specific glyph is missing from <see cref="Font"/>.
     /// </summary>
     public IReadOnlyList<FontFamily> FallbackFontFamilies { get; set; } = Array.Empty<FontFamily>();
+
+    /// <summary>
+    /// Gets or sets the resolver consulted for code points that neither <see cref="Font"/> nor any
+    /// <see cref="FallbackFontFamilies"/> entry can shape, or <see langword="null"/> to leave such
+    /// code points rendered as the missing-glyph outline.
+    /// </summary>
+    /// <remarks>
+    /// Resolution happens per distinct unresolved code point after every configured font has
+    /// attempted the text. <see cref="SystemFonts.FallbackResolver"/> selects from the fonts
+    /// installed on the current machine, so rendered output can differ between machines.
+    /// </remarks>
+    public IFontFallbackResolver? FontFallbackResolver { get; set; }
 
     /// <summary>
     /// Gets or sets the DPI (Dots Per Inch) to render/measure the text at.

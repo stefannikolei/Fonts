@@ -1983,6 +1983,29 @@ internal sealed class ShapingBuffer
     }
 
     /// <summary>
+    /// Collects the code points of records still carrying fallback metrics, in buffer order
+    /// and including repeats. Placeholders never resolve through fonts and controls keep
+    /// their synthetic fallback metrics by design, so both are excluded.
+    /// </summary>
+    /// <param name="destination">The list receiving the unresolved code points.</param>
+    public void CollectUnresolvedCodePoints(List<CodePoint> destination)
+    {
+        for (int i = 0; i < this.Count; i++)
+        {
+            ref GlyphShapingData slot = ref this.data[i];
+            if (slot.IsPlaceholder || CodePoint.IsControl(slot.CodePoint))
+            {
+                continue;
+            }
+
+            if (this.metrics[i].Metrics.GlyphType == GlyphType.Fallback)
+            {
+                destination.Add(slot.CodePoint);
+            }
+        }
+    }
+
+    /// <summary>
     /// Marks the glyph at the specified index as positioned. Positions accumulate in
     /// the position entry's shaping bounds and are read from there by consumers, so
     /// the shared metrics instance is never mutated.

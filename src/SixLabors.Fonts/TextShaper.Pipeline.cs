@@ -1,6 +1,7 @@
 // Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using SixLabors.Fonts.Tables.AdvancedTypographic;
 using SixLabors.Fonts.Unicode;
@@ -299,7 +300,7 @@ public static partial class TextShaper
 
             complete = substitutions.SeedMetricsInPlace(onlyRun.ResolvedFont);
 
-            if (complete || fallbackFonts.Length == 0)
+            if (complete || (fallbackFonts.Length == 0 && options.FontFallbackResolver is null))
             {
                 substitutions.SetRole(ShapingBufferRole.Positioning);
                 shaped = substitutions;
@@ -392,8 +393,44 @@ public static partial class TextShaper
                     substitutions,
                     positionings))
                 {
+                    complete = true;
                     break;
                 }
+            }
+        }
+
+        // Last-resort resolver passes: one whole-buffer pass per newly resolved family.
+        // The path only runs when unresolved code points remain, so its collections are
+        // transient.
+        List<Font>? resolverFonts = null;
+        if (!complete && options.FontFallbackResolver is IFontFallbackResolver resolver)
+        {
+            List<CodePoint> unresolved = [];
+            HashSet<int> queriedCodePoints = [];
+            HashSet<string> attemptedFamilies = [];
+
+            while (!complete && TryGetNextResolverFont(positionings, resolver, options, unresolved, queriedCodePoints, attemptedFamilies, out Font? next))
+            {
+                (resolverFonts ??= []).Add(next);
+
+                textRunIndex = 0;
+                codePointIndex = 0;
+                stringIndex = 0;
+                bidiRunIndex = 0;
+                complete = DoFontRun(
+                    text,
+                    0,
+                    textRuns,
+                    ref textRunIndex,
+                    ref codePointIndex,
+                    ref stringIndex,
+                    ref bidiRunIndex,
+                    true,
+                    next,
+                    bidiRuns,
+                    bidiMap,
+                    substitutions,
+                    positionings);
             }
         }
 
@@ -418,6 +455,14 @@ public static partial class TextShaper
         foreach (Font font in fallbackFonts)
         {
             font.FontMetrics.UpdatePositions(shaped);
+        }
+
+        if (resolverFonts is not null)
+        {
+            foreach (Font font in resolverFonts)
+            {
+                font.FontMetrics.UpdatePositions(shaped);
+            }
         }
 
         // Script-specific expansion runs only after every font has finished
@@ -696,6 +741,54 @@ public static partial class TextShaper
         {
             shaped.DeleteGlyphsInPlace(static data => data.IsDefaultIgnorable && !data.IsSubstituted && !data.IsHidden);
         }
+    }
+
+    /// <summary>
+    /// Finds the next font for a resolver fallback pass: re-collects the still-unresolved
+    /// code points, then queries the resolver for each code point not queried before until
+    /// one yields a family not shaped with before.
+    /// Termination is structural: a successful return consumes at least one code point from
+    /// <paramref name="queriedCodePoints"/>' complement, both sets only grow, and the
+    /// candidates come from the text's finite code points — so repeated calls must
+    /// eventually return <see langword="false"/> and the caller's loop is bounded by the
+    /// number of distinct unresolved code points.
+    /// </summary>
+    /// <param name="positionings">The accumulator buffer holding the shaped records.</param>
+    /// <param name="resolver">The configured fallback resolver.</param>
+    /// <param name="options">The text options supplying the requested family, size, style, and culture.</param>
+    /// <param name="unresolved">The reusable scratch list receiving the unresolved code points.</param>
+    /// <param name="queriedCodePoints">The code points already sent to the resolver, matched or not.</param>
+    /// <param name="attemptedFamilies">The family names already shaped with.</param>
+    /// <param name="font">When this method returns <see langword="true"/>, the font for the next pass.</param>
+    /// <returns><see langword="true"/> if a new family was resolved; otherwise, <see langword="false"/>.</returns>
+    private static bool TryGetNextResolverFont(
+        ShapingBuffer positionings,
+        IFontFallbackResolver resolver,
+        TextOptions options,
+        List<CodePoint> unresolved,
+        HashSet<int> queriedCodePoints,
+        HashSet<string> attemptedFamilies,
+        [NotNullWhen(true)] out Font? font)
+    {
+        unresolved.Clear();
+        positionings.CollectUnresolvedCodePoints(unresolved);
+
+        foreach (CodePoint codePoint in unresolved)
+        {
+            if (!queriedCodePoints.Add(codePoint.Value))
+            {
+                continue;
+            }
+
+            if (resolver.TryResolve(codePoint, options.Font.Family, options.Font.RequestedStyle, options.Culture, out FontFamily family) && attemptedFamilies.Add(family.Name))
+            {
+                font = new Font(family, options.Font.Size, options.Font.RequestedStyle);
+                return true;
+            }
+        }
+
+        font = null;
+        return false;
     }
 
     /// <summary>

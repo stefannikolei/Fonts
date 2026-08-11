@@ -164,6 +164,7 @@ internal static class TextLayoutTestUtilities
         {
             FontWeight = options.FontWeight,
             FallbackFontFamilies = new List<FontFamily>(options.FallbackFontFamilies),
+            FontFallbackResolver = options.FontFallbackResolver,
             TabWidth = options.TabWidth,
             HintingMode = options.HintingMode,
             Dpi = options.Dpi,

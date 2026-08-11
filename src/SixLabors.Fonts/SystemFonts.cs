@@ -14,10 +14,19 @@ public static class SystemFonts
 {
     private static readonly Lazy<SystemFontCollection> LazySystemFonts = new(() => new SystemFontCollection(), true);
 
+    private static readonly Lazy<SystemFontFallbackResolver> LazyFallbackResolver = new(() => new SystemFontFallbackResolver(), true);
+
     /// <summary>
     /// Gets the collection containing the globally installed system fonts.
     /// </summary>
     public static IReadOnlySystemFontCollection Collection => LazySystemFonts.Value;
+
+    /// <summary>
+    /// Gets a resolver that selects fallback font families from the installed system fonts.
+    /// Assign it to <see cref="TextOptions.FontFallbackResolver"/> to let shaping consult the
+    /// operating system for code points no configured font can shape.
+    /// </summary>
+    public static IFontFallbackResolver FallbackResolver => LazyFallbackResolver.Value;
 
     /// <summary>
     /// Gets the collection of <see cref="FontFamily"/>s installed on current system.

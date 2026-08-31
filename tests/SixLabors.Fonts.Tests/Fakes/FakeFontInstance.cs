@@ -38,7 +38,7 @@ internal class FakeFontInstance : StreamFontMetrics
         CMapTable cmap = GenerateCMapTable(glyphs);
         FakeGlyphTable glyf = new(glyphs);
         PostTable post = GeneratePostTable();
-        KerningTable kern = new(Array.Empty<KerningSubTable>());
+        KerningTable kern = new([]);
         OS2Table os2 = GenerateOS2TableWithVaryingVerticalFontMetrics();
         HorizontalMetricsTable htmx = GenerateHorizontalMetricsTable(glyphs);
         VerticalHeadTable vhea = GenerateVerticalHeadTable();
@@ -65,14 +65,14 @@ internal class FakeFontInstance : StreamFontMetrics
         CMapTable cmap = GenerateCMapTable(glyphs);
         FakeGlyphTable glyf = new(glyphs);
         PostTable post = GeneratePostTable();
-        KerningTable kern = new(Array.Empty<KerningSubTable>());
+        KerningTable kern = new([]);
         OS2Table os2 = GenerateOS2Table();
         HorizontalMetricsTable htmx = GenerateHorizontalMetricsTable(glyphs);
         VerticalHeadTable vhea = GenerateVerticalHeadTable();
         VerticalMetricsTable vmtx = GenerateVerticalMetricsTable(glyphs);
         IndexLocationTable loca = GenerateIndexLocationTable(glyphs);
 
-        return new(cmap, head, hhea, htmx, maxp, name, os2, post, glyf, loca)
+        return new TrueTypeFontTables(cmap, head, hhea, htmx, maxp, name, os2, post, glyf, loca)
         {
             Kern = kern,
             Vhea = vhea,
@@ -99,7 +99,7 @@ internal class FakeFontInstance : StreamFontMetrics
                 new NameRecord(WellKnownIds.PlatformIDs.Windows, 0, WellKnownIds.KnownNameIds.FullFontName, name),
                 new NameRecord(WellKnownIds.PlatformIDs.Windows, 0, WellKnownIds.KnownNameIds.FontFamilyName, name)
             ],
-            Array.Empty<string>());
+            []);
 
     private static CMapTable GenerateCMapTable(List<FakeGlyphSource> glyphs)
         => new(new[] { new FakeCmapSubtable(glyphs) });
@@ -114,10 +114,10 @@ internal class FakeFontInstance : StreamFontMetrics
         => new(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1);
 
     private static OS2Table GenerateOS2Table()
-        => new(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, Array.Empty<byte>(), 1, 1, 1, 1, string.Empty, OS2Table.FontStyleSelection.USE_TYPO_METRICS, 1, 1, 20, 10, 20, 1, 1);
+        => new(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, [], 1, 1, 1, 1, string.Empty, OS2Table.FontStyleSelection.USE_TYPO_METRICS, 1, 1, 20, 10, 20, 1, 1);
 
     private static OS2Table GenerateOS2TableWithVaryingVerticalFontMetrics()
-        => new(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, Array.Empty<byte>(), 1, 1, 1, 1, string.Empty, OS2Table.FontStyleSelection.USE_TYPO_METRICS, 1, 1, 35, 8, 12, 33, 11);
+        => new(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, [], 1, 1, 1, 1, string.Empty, OS2Table.FontStyleSelection.USE_TYPO_METRICS, 1, 1, 35, 8, 12, 33, 11);
 
     private static HorizontalMetricsTable GenerateHorizontalMetricsTable(List<FakeGlyphSource> glyphs)
         => new([.. glyphs.Select(_ => (ushort)30)], [.. glyphs.Select(_ => (short)10)]);
@@ -139,7 +139,7 @@ internal class FakeFontInstance : StreamFontMetrics
             1,
             HeadTable.IndexLocationFormats.Offset16);
 
-    private static PostTable GeneratePostTable() => new(2, 0, 0, 200, 35, 0, 0, 0, 0, 0, Array.Empty<PostNameRecord>());
+    private static PostTable GeneratePostTable() => new(2, 0, 0, 200, 35, 0, 0, 0, 0, 0, []);
 
     private sealed class SyntheticFontSource : FontSource
     {
@@ -151,6 +151,6 @@ internal class FakeFontInstance : StreamFontMetrics
         }
 
         /// <inheritdoc/>
-        public override Stream OpenStream() => new MemoryStream(Array.Empty<byte>(), writable: false);
+        public override Stream OpenStream() => new MemoryStream([], writable: false);
     }
 }

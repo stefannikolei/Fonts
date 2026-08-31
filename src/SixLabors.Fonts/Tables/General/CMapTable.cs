@@ -45,7 +45,7 @@ internal sealed class CMapTable : Table
     /// <summary>
     /// The format 14 subtables for Unicode variation sequences.
     /// </summary>
-    private readonly Format14SubTable[] format14SubTables = Array.Empty<Format14SubTable>();
+    private readonly Format14SubTable[] format14SubTables = [];
 
     /// <summary>
     /// The one subtable characters map through.
@@ -73,8 +73,8 @@ internal sealed class CMapTable : Table
     /// <param name="tables">The collection of CMap subtables.</param>
     public CMapTable(IEnumerable<CMapSubTable> tables)
     {
-        this.Tables = tables.OrderBy(t => GetPreferredPlatformOrder(t.Platform)).ToArray();
-        this.format14SubTables = this.Tables.OfType<Format14SubTable>().ToArray();
+        this.Tables = [.. tables.OrderBy(t => GetPreferredPlatformOrder(t.Platform))];
+        this.format14SubTables = [.. this.Tables.OfType<Format14SubTable>()];
         this.characterMap = SelectCharacterMap(this.Tables, out bool symbolic);
         this.isSymbolic = symbolic;
     }
@@ -280,7 +280,7 @@ internal sealed class CMapTable : Table
             return this.codepoints;
         }
 
-        HashSet<int> values = new();
+        HashSet<int> values = [];
         if (this.characterMap is not null)
         {
             // Only the subtable characters map through: a codepoint another
@@ -319,7 +319,7 @@ internal sealed class CMapTable : Table
             }
         }
 
-        return this.codepoints = values.OrderBy(v => v).Select(v => new CodePoint(v)).ToArray();
+        return this.codepoints = [.. values.OrderBy(v => v).Select(v => new CodePoint(v))];
     }
 
     /// <summary>
@@ -343,14 +343,14 @@ internal sealed class CMapTable : Table
         ushort version = reader.ReadUInt16();
         ushort numTables = reader.ReadUInt16();
 
-        var encodings = new EncodingRecord[numTables];
+        EncodingRecord[] encodings = new EncodingRecord[numTables];
         for (int i = 0; i < numTables; i++)
         {
             encodings[i] = EncodingRecord.Read(reader);
         }
 
         // foreach encoding we move forward looking for the subtables
-        var tables = new List<CMapSubTable>(numTables);
+        List<CMapSubTable> tables = new(numTables);
         foreach (IGrouping<uint, EncodingRecord> encoding in encodings.GroupBy(x => x.Offset))
         {
             long offset = encoding.Key;

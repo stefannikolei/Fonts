@@ -144,12 +144,12 @@ internal class NameTable : Table
     /// <returns>The loaded <see cref="NameTable"/>.</returns>
     public static NameTable Load(BigEndianBinaryReader reader)
     {
-        var strings = new List<StringLoader>();
+        List<StringLoader> strings = [];
         ushort format = reader.ReadUInt16();
         ushort nameCount = reader.ReadUInt16();
         ushort stringOffset = reader.ReadUInt16();
 
-        var names = new NameRecord[nameCount];
+        NameRecord[] names = new NameRecord[nameCount];
 
         for (int i = 0; i < nameCount; i++)
         {
@@ -161,7 +161,7 @@ internal class NameTable : Table
             }
         }
 
-        StringLoader[]? langs = Array.Empty<StringLoader>();
+        StringLoader[]? langs = [];
         if (format == 1)
         {
             // Format 1 adds language data.
@@ -184,7 +184,7 @@ internal class NameTable : Table
             readable.LoadValue(reader);
         }
 
-        string[] langNames = langs?.Select(x => x.Value).ToArray() ?? Array.Empty<string>();
+        string[] langNames = langs?.Select(x => x.Value).ToArray() ?? [];
 
         return new NameTable(names, langNames);
     }

@@ -1,7 +1,6 @@
 // Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
-using System;
 using System.Numerics;
 
 namespace SixLabors.Fonts.Tables.TrueType.Glyphs;
@@ -39,9 +38,9 @@ internal class SimpleGlyphLoader : GlyphLoader
     /// <param name="bounds">The glyph bounding box.</param>
     public SimpleGlyphLoader(Bounds bounds)
     {
-        this.controlPoints = Array.Empty<ControlPoint>();
-        this.endPoints = Array.Empty<ushort>();
-        this.instructions = Array.Empty<byte>();
+        this.controlPoints = [];
+        this.endPoints = [];
+        this.instructions = [];
         this.bounds = bounds;
     }
 
@@ -144,10 +143,10 @@ internal class SimpleGlyphLoader : GlyphLoader
         short[] xs = ReadCoordinates(reader, pointCount, flags, Flags.XByte, Flags.XSignOrSame);
         short[] ys = ReadCoordinates(reader, pointCount, flags, Flags.YByte, Flags.YSignOrSame);
 
-        var controlPoints = new ControlPoint[xs.Length];
+        ControlPoint[] controlPoints = new ControlPoint[xs.Length];
         for (int i = 0; i < flags.Length; i++)
         {
-            controlPoints[i] = new(new Vector2(xs[i], ys[i]), (flags[i] & Flags.OnCurve) == Flags.OnCurve);
+            controlPoints[i] = new ControlPoint(new Vector2(xs[i], ys[i]), (flags[i] & Flags.OnCurve) == Flags.OnCurve);
         }
 
         return new SimpleGlyphLoader(controlPoints, endPoints, bounds, instructions);
@@ -161,7 +160,7 @@ internal class SimpleGlyphLoader : GlyphLoader
     /// <returns>An array of flags, one per control point.</returns>
     private static Flags[] ReadFlags(BigEndianBinaryReader reader, int flagCount)
     {
-        var result = new Flags[flagCount];
+        Flags[] result = new Flags[flagCount];
         int c = 0;
         int repeatCount = 0;
         Flags flag = default;

@@ -1,8 +1,6 @@
 // Copyright (c) Six Labors.
 // Licensed under the Six Labors Split License.
 
-using System;
-
 namespace SixLabors.Fonts.Tables.General;
 
 /// <summary>
@@ -308,7 +306,7 @@ internal class HeadTable : Table
             throw new InvalidFontFileException($"invalid units per em expected value between 16 and 16384 but found {unitsPerEm} in 'head'");
         }
 
-        var startDate = new DateTime(1904, 01, 01, 0, 0, 0, DateTimeKind.Utc);
+        DateTime startDate = new(1904, 01, 01, 0, 0, 0, DateTimeKind.Utc);
         long seconds = reader.ReadInt64();
         DateTime created = startDate;
         if (seconds > 0)
@@ -329,7 +327,7 @@ internal class HeadTable : Table
             modified = startDate.AddSeconds(seconds);
         }
 
-        var bounds = Bounds.Load(reader); // xMin, yMin, xMax, yMax
+        Bounds bounds = Bounds.Load(reader); // xMin, yMin, xMax, yMax
 
         HeadMacStyle macStyle = reader.ReadUInt16<HeadMacStyle>();
         ushort lowestRecPPEM = reader.ReadUInt16();

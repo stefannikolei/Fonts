@@ -609,14 +609,14 @@ internal class ColrTable : Table
                 // A destructive mode can then only consume its partner stack, never content
                 // painted below the pair. Command layer indices keep the layer stream compact
                 // while preserving arbitrarily nested groups.
-                compositeCommands.Add(new(outLayers.Count, PaintedCompositeCommandKind.Begin, CompositeMode.SrcOver));
-                compositeCommands.Add(new(outLayers.Count, PaintedCompositeCommandKind.Begin, CompositeMode.SrcOver));
+                compositeCommands.Add(new PaintedCompositeCommand(outLayers.Count, PaintedCompositeCommandKind.Begin, CompositeMode.SrcOver));
+                compositeCommands.Add(new PaintedCompositeCommand(outLayers.Count, PaintedCompositeCommandKind.Begin, CompositeMode.SrcOver));
                 this.FlattenPaintToLayers(comp.Backdrop, currentGlyphId, glyphTransform, paintTransform, transformPaint, processor, outLayers, compositeCommands);
-                compositeCommands.Add(new(outLayers.Count, PaintedCompositeCommandKind.End));
-                compositeCommands.Add(new(outLayers.Count, PaintedCompositeCommandKind.Begin, compositeMode));
+                compositeCommands.Add(new PaintedCompositeCommand(outLayers.Count, PaintedCompositeCommandKind.End));
+                compositeCommands.Add(new PaintedCompositeCommand(outLayers.Count, PaintedCompositeCommandKind.Begin, compositeMode));
                 this.FlattenPaintToLayers(comp.Source, currentGlyphId, glyphTransform, paintTransform, transformPaint, processor, outLayers, compositeCommands);
-                compositeCommands.Add(new(outLayers.Count, PaintedCompositeCommandKind.End));
-                compositeCommands.Add(new(outLayers.Count, PaintedCompositeCommandKind.End));
+                compositeCommands.Add(new PaintedCompositeCommand(outLayers.Count, PaintedCompositeCommandKind.End));
+                compositeCommands.Add(new PaintedCompositeCommand(outLayers.Count, PaintedCompositeCommandKind.End));
                 return;
             }
 

@@ -69,7 +69,7 @@ public class GdiOutlineProbe
                 }
 
                 GlyphVector ours = tt.GetScaledOutline(ppem * 72f, HintingMode.Full);
-                List<(double X, double Y)> mine = new();
+                List<(double X, double Y)> mine = [];
                 foreach (ControlPoint cp in ours.ControlPoints)
                 {
                     // Only on curve vertices are compared. Off curve control points sit farther
@@ -200,7 +200,7 @@ public class GdiOutlineProbe
         uint size = GetGlyphOutlineW(hdc, c, GgoNative, out _, 0, IntPtr.Zero, ref identity);
         if (size == GdiError || size == 0)
         {
-            return new();
+            return [];
         }
 
         IntPtr buffer = Marshal.AllocHGlobal((int)size);
@@ -208,10 +208,10 @@ public class GdiOutlineProbe
         {
             if (GetGlyphOutlineW(hdc, c, GgoNative, out _, size, buffer, ref identity) == GdiError)
             {
-                return new();
+                return [];
             }
 
-            List<(double X, double Y)> points = new();
+            List<(double X, double Y)> points = [];
             int offset = 0;
             while (offset < size)
             {

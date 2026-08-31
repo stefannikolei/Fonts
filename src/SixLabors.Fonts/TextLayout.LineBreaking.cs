@@ -118,7 +118,7 @@ internal static partial class TextLayout
                 advanceWidth = (ushort)Math.Clamp(MathF.Floor(hintedUnits + 0.5F), 0F, ushort.MaxValue);
             }
 
-            glyphStorage[i] = new(glyphMetrics, advanceWidth, advanceHeight, position.Offset, run.TextRun);
+            glyphStorage[i] = new PositionedGlyphMetrics(glyphMetrics, advanceWidth, advanceHeight, position.Offset, run.TextRun);
         }
 
         // Word-boundary segments are prepared with the logical line, while grapheme
@@ -319,12 +319,12 @@ internal static partial class TextLayout
                                 if (isHorizontalLayout || shouldRotate)
                                 {
                                     glyphAdvance = spaceMetrics.AdvanceWidth * options.TabWidth;
-                                    glyphStorage[sliceStart] = new(glyph, (ushort)glyphAdvance, metricsSpan[0].AdvanceHeight, metricsSpan[0].Offset, metricsSpan[0].TextRun);
+                                    glyphStorage[sliceStart] = new PositionedGlyphMetrics(glyph, (ushort)glyphAdvance, metricsSpan[0].AdvanceHeight, metricsSpan[0].Offset, metricsSpan[0].TextRun);
                                 }
                                 else
                                 {
                                     glyphAdvance = spaceMetrics.AdvanceHeight * options.TabWidth;
-                                    glyphStorage[sliceStart] = new(glyph, metricsSpan[0].AdvanceWidth, (ushort)glyphAdvance, metricsSpan[0].Offset, metricsSpan[0].TextRun);
+                                    glyphStorage[sliceStart] = new PositionedGlyphMetrics(glyph, metricsSpan[0].AdvanceWidth, (ushort)glyphAdvance, metricsSpan[0].Offset, metricsSpan[0].TextRun);
                                 }
                             }
                         }
@@ -556,7 +556,7 @@ internal static partial class TextLayout
         // lazy cursor during line filling rather than materializing the paragraph's
         // candidates. Retain the text once so every wrapping length can run the
         // same streaming query.
-        return new LogicalTextLine(textLine, text.ToArray(), wordSegments, hyphenationMarkers);
+        return new LogicalTextLine(textLine, [.. text], wordSegments, hyphenationMarkers);
     }
 
     /// <summary>

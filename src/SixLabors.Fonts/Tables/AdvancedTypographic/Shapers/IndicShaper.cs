@@ -4,7 +4,6 @@
 using System.Globalization;
 using SixLabors.Fonts.Tables.AdvancedTypographic.GSub;
 using SixLabors.Fonts.Unicode;
-using SixLabors.Fonts.Unicode.Resources;
 using UnicodeTrieGenerator.StateAutomation;
 using static SixLabors.Fonts.Unicode.Resources.IndicShapingData;
 
@@ -544,7 +543,7 @@ internal sealed class IndicShaper : DefaultShaper
 
         if (this.hasBrokenClusters)
         {
-            if (fontMetrics.TryGetGlyphId(new(DottedCircle), out ushort circleId))
+            if (fontMetrics.TryGetGlyphId(new CodePoint(DottedCircle), out ushort circleId))
             {
                 Span<ushort> glyphs = stackalloc ushort[2];
                 while (start < max)

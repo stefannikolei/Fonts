@@ -29,7 +29,8 @@ internal sealed class ShapePlan
     /// list because a plan resolves a few dozen at most. Pause-time queries from the
     /// complex shapers read these instead of re-resolving per syllable.
     /// </summary>
-    private readonly List<(Tag Feature, List<(Tag Feature, ushort Index, GSub.LookupTable LookupTable)>? Lookups)> resolvedGsubFeatures = new();
+    private readonly List<(Tag Feature, List<(Tag Feature, ushort Index, GSub.LookupTable LookupTable)>? Lookups)> resolvedGsubFeatures =
+        [];
 
     /// <summary>
     /// The lazily built substitution stage groups. Shapers register their stages
@@ -153,7 +154,7 @@ internal sealed class ShapePlan
         List<ShapingStage> stages = shaper.GetShapingStages();
 
         _ = fontMetrics.TryGetGSubTable(out GSubTable? gsubTable);
-        return new(fontMetrics, script, scriptTag, shaper, stages, languageTags, gsubTable);
+        return new ShapePlan(fontMetrics, script, scriptTag, shaper, stages, languageTags, gsubTable);
     }
 
     /// <summary>
@@ -212,7 +213,7 @@ internal sealed class ShapePlan
         this.gposStageGroups = null;
         this.resolvedGsubFeatures.Clear();
 
-        List<ShapePlanStageGroup<GSub.LookupTable>> groups = new();
+        List<ShapePlanStageGroup<GSub.LookupTable>> groups = [];
         GSubTable? gsubTable = this.gsubTable;
         FontMetrics fontMetrics = this.FontMetrics;
         ScriptClass script = this.Script;
@@ -246,7 +247,7 @@ internal sealed class ShapePlan
     /// <returns>The positioning stage groups.</returns>
     private List<ShapePlanStageGroup<GPos.LookupTable>> BuildGPosStageGroups(GPosTable gposTable)
     {
-        List<ShapePlanStageGroup<GPos.LookupTable>> groups = new();
+        List<ShapePlanStageGroup<GPos.LookupTable>> groups = [];
         FontMetrics fontMetrics = this.FontMetrics;
         ScriptClass script = this.Script;
         Tag[] languageTags = this.LanguageTags;

@@ -2,7 +2,6 @@
 // Licensed under the Six Labors Split License.
 
 using System.Diagnostics;
-using System.IO;
 
 namespace SixLabors.Fonts.Tables.AdvancedTypographic.Variations;
 

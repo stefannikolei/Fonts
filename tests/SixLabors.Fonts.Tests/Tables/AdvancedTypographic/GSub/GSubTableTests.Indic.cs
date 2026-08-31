@@ -3,7 +3,6 @@
 
 using SixLabors.Fonts.Rendering;
 using SixLabors.Fonts.Unicode;
-using SixLabors.Fonts.Unicode.Resources;
 using Categories = SixLabors.Fonts.Unicode.Resources.IndicShapingData.Categories;
 
 namespace SixLabors.Fonts.Tests.Tables.AdvancedTypographic.GSub;

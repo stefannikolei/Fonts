@@ -39,7 +39,7 @@ internal static class TableLoadingUtils
         Span<ushort> seqRuleSetOffsets = seqRuleSetOffsetsBuffer.GetSpan();
         reader.ReadUInt16Array(seqRuleSetOffsets);
 
-        var seqRuleSets = new SequenceRuleSetTable[seqRuleSetCount];
+        SequenceRuleSetTable[] seqRuleSets = new SequenceRuleSetTable[seqRuleSetCount];
 
         for (int i = 0; i < seqRuleSets.Length; i++)
         {
@@ -86,7 +86,7 @@ internal static class TableLoadingUtils
         Span<ushort> classSeqRuleSetOffsets = classSeqRuleSetOffsetsBuffer.GetSpan();
         reader.ReadUInt16Array(classSeqRuleSetOffsets);
 
-        var coverageTable = CoverageTable.Load(reader, offset + coverageOffset);
+        CoverageTable coverageTable = CoverageTable.Load(reader, offset + coverageOffset);
         classDefTable = ClassDefinitionTable.Load(reader, offset + classDefOffset);
 
         classSeqRuleSets = new ClassSequenceRuleSetTable[classSeqRuleSetCount];
@@ -175,7 +175,7 @@ internal static class TableLoadingUtils
         Span<ushort> chainedSeqRuleSetOffsets = chainedSeqRuleSetOffsetsBuffer.GetSpan();
         reader.ReadUInt16Array(chainedSeqRuleSetOffsets);
 
-        var seqRuleSets = new ChainedSequenceRuleSetTable[chainedSeqRuleSetCount];
+        ChainedSequenceRuleSetTable[] seqRuleSets = new ChainedSequenceRuleSetTable[chainedSeqRuleSetCount];
 
         for (int i = 0; i < seqRuleSets.Length; i++)
         {
@@ -239,7 +239,7 @@ internal static class TableLoadingUtils
         ushort inputClassDefOffset = reader.ReadOffset16();
         ushort lookaheadClassDefOffset = reader.ReadOffset16();
         ushort chainedClassSeqRuleSetCount = reader.ReadUInt16();
-        ChainedClassSequenceRuleSetTable[] seqRuleSets = Array.Empty<ChainedClassSequenceRuleSetTable>();
+        ChainedClassSequenceRuleSetTable[] seqRuleSets = [];
         if (chainedClassSeqRuleSetCount != 0)
         {
             ushort[] chainedClassSeqRuleSetOffsets = new ushort[chainedClassSeqRuleSetCount];

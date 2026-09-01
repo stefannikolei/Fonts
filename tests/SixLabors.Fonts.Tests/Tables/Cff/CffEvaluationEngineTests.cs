@@ -2,9 +2,7 @@
 // Licensed under the Six Labors Split License.
 
 using System.Numerics;
-using SixLabors.Fonts.Rendering;
 using SixLabors.Fonts.Tables.Cff;
-
 namespace SixLabors.Fonts.Tests.Tables.Cff;
 
 public class CffEvaluationEngineTests
